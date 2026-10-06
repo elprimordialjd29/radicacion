@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 — 2026-10-06
+- **Pestaña Reporte**:
+  1. Prestadores con más periodos sin radicar (meses, contratos y valor esperado en riesgo).
+  2. Valor contrato vs radicado: esperado = VALOR CONTRATO ÷ meses de vigencia × meses
+     vigentes elegidos; desviación en $ y % de ejecución con barra (meta 100%),
+     agrupable por prestador o contrato y ordenable. Exporta a CSV.
+- Dashboard: varios meses a la vez (chips + Desde/Hasta), gráfica que sigue la selección
+  con animación, pendientes agrupados por contrato, descarga RIPS separada por régimen.
+- Consultas programadas a las 12:00 m y 12:00 a. m. (hora Colombia).
+
 ## 0.4.1 — 2026-10-06
 - Reparación: 644 radicaciones tenían el mes por fecha de recepción (consulta rápida);
   se recalcularon desde los soportes (288 consultas RS+RC sin errores).

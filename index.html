@@ -134,6 +134,17 @@ tr:hover td { background: var(--surface-2); }
 .job .acc { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .btn.sm { padding: 4px 10px; font-size: 12px; }
 .aviso { font-size: 12.5px; color: var(--ink-2); margin-top: 6px; }
+.rep-ctl { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+.rep-ctl select { min-width: 0; padding: 5px 8px; }
+.rep-sec { margin: 18px 0 8px; font-size: 14px; }
+.rep-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 6px 0 14px; }
+.rep-kpis .card { padding: 12px; }
+.ejec { display: flex; align-items: center; gap: 8px; min-width: 170px; }
+.ejec .pista { position: relative; flex: 1; height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.ejec .pista > div { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
+.ejec .pista .meta { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink-2); left: 66.6%; border-radius: 1px; }
+.ejec b { font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; font-size: 12.5px; }
+.desv-neg { color: var(--critical); } .desv-pos { color: var(--good); }
 .empty-state { padding: 40px 16px; text-align: center; color: var(--ink-2); }
 .list { margin: 0; padding: 0; list-style: none; max-height: 260px; overflow: auto; }
 .list li { padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
@@ -220,6 +231,7 @@ tr:hover td { background: var(--surface-2); }
         <button class="tab" role="tab" aria-selected="true" data-tab="matriz">Contratos × mes</button>
         <button class="tab" role="tab" aria-selected="false" data-tab="pend">Pendientes</button>
         <button class="tab" role="tab" aria-selected="false" data-tab="det">Radicaciones</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="rep">📊 Reporte</button>
         <button class="tab" role="tab" aria-selected="false" data-tab="corr">Corridas</button>
       </div>
       <div class="legend" id="leyenda">
@@ -408,9 +420,10 @@ function renderChart(lista, meses) {
       <div class="bar" style="height:${chartPrev[d.m] ?? 0}%"></div></div>`).join('');
   $('#xlab').innerHTML = datos.map((d) => `<span>${MESES[d.m - 1]}</span>`).join('');
   // siguiente frame: crecer/encoger hasta el valor nuevo (animación)
+  const cols = [...ch.querySelectorAll('.bar-col')];   // las de ESTE dibujo (puede haber otro antes del frame)
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    ch.querySelectorAll('.bar-col').forEach((col, i) => { col.querySelector('.bar').style.height = alto(datos[i]) + '%'; });
-    ch.classList.remove('cargando');
+    cols.forEach((col, i) => { if (col.isConnected && datos[i]) col.querySelector('.bar').style.height = alto(datos[i]) + '%'; });
+    if (cols[0]?.isConnected || !cols.length) ch.classList.remove('cargando');
   }));
   chartPrev = Object.fromEntries(datos.map((d) => [d.m, alto(d)]));
 }
@@ -518,9 +531,109 @@ function renderTabla(lista, meses) {
         return `<tr><td>${new Date(c.fecha).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}</td><td>${ms}</td><td class="num">${c.contratos}</td><td class="num">${c.radicados}</td><td class="num">${c.pendientes}</td><td class="num">${c.errores}</td><td class="num">${c.novedades}</td></tr>`;
       }).join('') + '</tbody></table>';
   }
+  if (st.tab === 'rep') html = reporte(lista, meses);
   $('#leyenda').style.display = st.tab === 'matriz' || st.tab === 'pend' ? '' : 'none';
   $('#tabla').innerHTML = html;
+  if (st.tab === 'rep') { $('#repAgrupar').value = repAgrupar; $('#repOrden').value = repOrden; }
 }
+
+// ---- reporte: periodos sin radicar y valor contrato vs radicado
+const numCOP = (v) => { const t = String(v ?? '').replace(/[^\d,]/g, '').replace(',', '.'); return parseFloat(t) || 0; };
+function mesesVigencia(c) {
+  if (!c.inicio || !c.fin) return 12;
+  const a = new Date(c.inicio + 'T00:00'), b = new Date(c.fin + 'T00:00');
+  return Math.max(1, (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth() + 1);
+}
+let repAgrupar = 'prestador', repOrden = 'desv';
+function filaReporte(c, meses) {
+  const vigentes = meses.filter((m) => vigente(c, st.anio, m));
+  const valor = numCOP(c.valor_contrato), mv = mesesVigencia(c);
+  const esperado = valor / mv * vigentes.length;
+  let radicado = 0, pend = 0, rad = 0, est = 0;
+  const mesesPend = [];
+  for (const m of vigentes) {
+    const e = estado(c, st.anio, m);
+    if (e.k === 'ok') { radicado += e.valor; rad++; est += e.regs.filter((r) => String(r.fuente || '').startsWith('ESTIMADO')).length ? 1 : 0; }
+    else if (['no', 'err', 'nc'].includes(e.k)) { pend++; mesesPend.push(m); }
+  }
+  return { c, valor, mv, vigentes: vigentes.length, esperado, radicado, pend, rad, est, mesesPend };
+}
+function sumar(filas, clave) {
+  const g = new Map();
+  for (const f of filas) {
+    const k = clave(f);
+    const a = g.get(k) || { nombre: k, nit: f.c.nit, munis: new Set(), contratos: [], valor: 0, esperado: 0, radicado: 0, pend: 0, rad: 0, vigentes: 0, est: 0, mesesPend: new Set() };
+    a.contratos.push(f.c.contrato); a.munis.add(f.c.municipio);
+    for (const x of ['valor', 'esperado', 'radicado', 'pend', 'rad', 'vigentes', 'est']) a[x] += f[x];
+    f.mesesPend.forEach((m) => a.mesesPend.add(m));
+    g.set(k, a);
+  }
+  return [...g.values()];
+}
+function barraEjec(pct) {
+  const ancho = Math.min(pct, 150) / 150 * 100;
+  const color = pct < 80 ? 'var(--critical)' : pct < 95 ? 'var(--warning)' : pct <= 110 ? 'var(--good)' : 'var(--accent)';
+  return `<div class="ejec"><div class="pista"><div style="width:${ancho}%;background:${color}"></div><span class="meta" title="100% del esperado"></span></div><b>${Math.round(pct)}%</b></div>`;
+}
+function reporte(lista, mesesTodos) {
+  const meses = selMeses(mesesTodos);
+  const filas = lista.map((c) => filaReporte(c, meses)).filter((f) => f.vigentes);
+  const T = filas.reduce((t, f) => { t.esp += f.esperado; t.rad += f.radicado; t.pend += f.pend; t.valor += f.valor; return t; }, { esp: 0, rad: 0, pend: 0, valor: 0 });
+  const ejecT = T.esp ? T.rad / T.esp * 100 : 0;
+  const hoy = new Date(), mesActual = hoy.getFullYear() === st.anio && meses.includes(hoy.getMonth() + 1);
+
+  // 1) ranking de prestadores por periodos sin radicar
+  const porPrest = sumar(filas, (f) => f.c.prestador || '(sin prestador)').filter((g) => g.pend)
+    .sort((a, b) => b.pend - a.pend || b.esperado - a.esperado);
+  // 2) desviación valor contrato vs radicado
+  const grupos = repAgrupar === 'contrato'
+    ? filas.map((f) => ({ nombre: f.c.contrato, sub: f.c.prestador, nit: f.c.nit, munis: new Set([f.c.municipio]), contratos: [f.c.contrato], ...f }))
+    : sumar(filas, (f) => f.c.prestador || '(sin prestador)');
+  for (const g of grupos) { g.desv = g.radicado - g.esperado; g.ejec = g.esperado ? g.radicado / g.esperado * 100 : 0; }
+  grupos.sort(repOrden === 'desv' ? (a, b) => a.desv - b.desv : repOrden === 'ejec' ? (a, b) => a.ejec - b.ejec : (a, b) => b.esperado - a.esperado);
+
+  filasCsv = [['Agrupado por', repAgrupar], ['Periodo', periodoTxt()], ['Régimen', st.reg || 'RS y RC'], [],
+    [repAgrupar === 'contrato' ? 'Contrato' : 'Prestador', repAgrupar === 'contrato' ? 'Prestador' : 'NIT', 'Contratos', 'Valor contrato (vigencia)', 'Esperado al periodo', 'Radicado', 'Desviación', '% ejecución', 'Periodos radicados', 'Periodos sin radicar', 'Meses sin radicar']];
+  for (const g of grupos) filasCsv.push([g.nombre, repAgrupar === 'contrato' ? g.sub : g.nit, g.contratos.length, Math.round(g.valor), Math.round(g.esperado), Math.round(g.radicado), Math.round(g.desv), g.ejec.toFixed(1), g.rad, g.pend, [...g.mesesPend].sort((a, b) => a - b).map((m) => MESES[m - 1]).join(' ')]);
+
+  const chipsMeses = (set) => [...set].sort((a, b) => a - b).map((m) => `<span class="st no"><i>✕</i> ${MESES[m - 1]}</span>`).join(' ');
+  return `
+  <div class="rep-kpis">
+    <div class="card"><div class="sub">Esperado al periodo</div><div style="font-size:20px;font-weight:650">${fmtCOP(T.esp)}</div><div class="muted" style="font-size:12px">${periodoTxt()}</div></div>
+    <div class="card"><div class="sub">Radicado</div><div style="font-size:20px;font-weight:650">${fmtCOP(T.rad)}</div><div class="muted" style="font-size:12px">${st.reg ? 'Régimen ' + st.reg : 'RS + RC'}</div></div>
+    <div class="card"><div class="sub">Desviación</div><div style="font-size:20px;font-weight:650" class="${T.rad - T.esp < 0 ? 'desv-neg' : 'desv-pos'}">${fmtCOP(T.rad - T.esp)}</div><div class="muted" style="font-size:12px">${ejecT.toFixed(1)}% de ejecución</div></div>
+    <div class="card"><div class="sub">Periodos sin radicar</div><div style="font-size:20px;font-weight:650">${fmtN(T.pend)}</div><div class="muted" style="font-size:12px">${porPrest.length} prestador(es)</div></div>
+  </div>
+  <p class="sub" style="margin:0 0 6px">Esperado = VALOR CONTRATO ÷ meses de vigencia × meses vigentes elegidos. Radicado = Valor AF por periodo de atención (incluye ≈ estimados).
+  ${mesActual ? '<b>Ojo:</b> el periodo incluye el mes actual, que normalmente aún no se ha radicado; eso aumenta la desviación.' : ''}
+  ${!st.reg ? '' : ' El valor del contrato no distingue régimen: con un solo régimen la ejecución sale más baja.'}</p>
+
+  <h3 class="rep-sec">1. Prestadores con más periodos sin radicar</h3>
+  <table><thead><tr><th>#</th><th>Prestador</th><th>NIT</th><th class="num">Periodos sin radicar</th><th class="num">Contratos</th><th>Meses</th><th class="num">Valor esperado en riesgo</th></tr></thead><tbody>
+  ${porPrest.slice(0, 25).map((g, i) => {
+    const riesgo = filas.filter((f) => (f.c.prestador || '(sin prestador)') === g.nombre).reduce((s, f) => s + f.esperado / Math.max(f.vigentes, 1) * f.pend, 0);
+    return `<tr><td class="muted">${i + 1}</td><td class="wrap"><b>${esc(g.nombre)}</b><br><small class="muted">${esc([...g.munis].join(', '))}</small></td><td>${esc(g.nit)}</td>
+      <td class="num"><b>${g.pend}</b></td><td class="num">${g.contratos.length}</td><td class="wrap"><div style="display:flex;flex-wrap:wrap;gap:4px">${chipsMeses(g.mesesPend)}</div></td><td class="num">${fmtCOP(riesgo)}</td></tr>`;
+  }).join('') || '<tr><td colspan="7" class="muted">Sin periodos pendientes en la selección.</td></tr>'}
+  </tbody></table>
+
+  <h3 class="rep-sec">2. Valor contrato vs radicado (desviación)</h3>
+  <div class="rep-ctl">
+    <label class="sub">Agrupar por <select id="repAgrupar"><option value="prestador">Prestador</option><option value="contrato">Contrato</option></select></label>
+    <label class="sub">Ordenar por <select id="repOrden"><option value="desv">Mayor faltante ($)</option><option value="ejec">Menor % ejecución</option><option value="esp">Mayor valor esperado</option></select></label>
+    <span class="sub">Barra: <span style="color:var(--critical)">■</span> &lt;80% · <span style="color:var(--warning)">■</span> 80–95% · <span style="color:var(--good)">■</span> 95–110% · <span style="color:var(--accent)">■</span> &gt;110% · la línea marca 100%</span>
+  </div>
+  <table><thead><tr><th>${repAgrupar === 'contrato' ? 'Contrato' : 'Prestador'}</th><th class="num">Contratos</th><th class="num">Valor contrato</th><th class="num">Esperado al periodo</th><th class="num">Radicado</th><th class="num">Desviación</th><th>Ejecución</th><th class="num">Periodos (rad./pend.)</th></tr></thead><tbody>
+  ${grupos.map((g) => `<tr><td class="wrap"><b>${esc(g.nombre)}</b>${repAgrupar === 'contrato' ? `<br><small class="muted">${esc(g.sub)}</small>` : `<br><small class="muted">NIT ${esc(g.nit)}</small>`}</td>
+    <td class="num">${g.contratos.length}</td><td class="num">${fmtCOP(g.valor)}</td><td class="num">${fmtCOP(g.esperado)}</td><td class="num">${fmtCOP(g.radicado)}</td>
+    <td class="num ${g.desv < 0 ? 'desv-neg' : 'desv-pos'}"><b>${g.desv < 0 ? '−' : '+'}${fmtCOP(Math.abs(g.desv))}</b></td>
+    <td>${barraEjec(g.ejec)}</td><td class="num">${g.rad} / ${g.pend ? `<span class="desv-neg">${g.pend}</span>` : 0}</td></tr>`).join('')}
+  </tbody></table>`;
+}
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'repAgrupar') { repAgrupar = e.target.value; render(); }
+  if (e.target.id === 'repOrden') { repOrden = e.target.value; render(); }
+});
 
 // ---- interacción
 function alternarMes(m) {
