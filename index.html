@@ -169,6 +169,24 @@ tr:hover td { background: var(--surface-2); }
 .pd-meses { display: flex; flex-wrap: wrap; gap: 3px; }
 .pd-meses span { font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: var(--critical-bg); color: var(--ink); }
 details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 6px 0; }
+.modal { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: center; align-items: flex-start; padding: 24px 16px; overflow: auto; }
+.modal[hidden] { display: none; }
+.modal-fondo { position: fixed; inset: 0; background: rgba(0,0,0,.55); }
+.modal-panel { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  width: min(980px, 100%); padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+.modal-x { position: absolute; top: 12px; right: 12px; font: inherit; font-size: 16px; border: 0; background: var(--surface-2);
+  color: var(--ink); width: 32px; height: 32px; border-radius: 8px; cursor: pointer; }
+.dt-h h3 { margin: 0 40px 2px 0; font-size: 19px; } .dt-h .sub { margin-bottom: 12px; }
+.dt-datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 10px 0 14px; }
+.dt-datos div { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }
+.dt-datos small { display: block; color: var(--ink-2); font-size: 11.5px; } .dt-datos b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.dt-expl { background: var(--surface-2); border-left: 3px solid var(--accent); border-radius: 6px; padding: 10px 12px; font-size: 13.5px; line-height: 1.55; margin-bottom: 14px; }
+.dt-expl ul { margin: 6px 0 0; padding-left: 18px; }
+.dt-tabla td, .dt-tabla th { padding: 6px 7px; font-size: 12.5px; }
+.dt-tabla .bajo { color: var(--critical); } .dt-tabla .alto { color: var(--accent); } .dt-tabla .bien { color: var(--good); }
+.dt-contrato { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
+.ej-row, .pd-row { cursor: pointer; }
+.lnk { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; } .lnk:hover { color: var(--accent); }
 .rep-ctl { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
 .rep-ctl select { min-width: 0; padding: 5px 8px; }
 .rep-sec { margin: 18px 0 8px; font-size: 14px; }
@@ -287,6 +305,11 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
    <div id="vistaReporte" hidden></div>
   </div>
 </div>
+<div class="modal" id="modal" hidden><div class="modal-fondo" data-cerrar></div>
+  <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modalTitulo">
+    <button class="modal-x" data-cerrar aria-label="Cerrar">✕</button>
+    <div id="modalCuerpo"></div>
+  </div></div>
 <div class="tip" id="tip"></div>
 
 <script>
@@ -518,7 +541,7 @@ function renderTabla(lista, meses) {
         return `<td>${CELDA[e.k](e)}</td>`;
       }).join('');
       filasCsv.push(fila);
-      html += `<tr><td><b>${esc(c.contrato)}</b></td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.municipio)}</td>${celdas}<td class="num">${total ? fmtCOP(total) : '<span class="muted">—</span>'}</td></tr>`;
+      html += `<tr><td><b class="lnk" data-det="contrato" data-clave="${esc(c.contrato)}" title="Ver detalle explicado">${esc(c.contrato)}</b></td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.municipio)}</td>${celdas}<td class="num">${total ? fmtCOP(total) : '<span class="muted">—</span>'}</td></tr>`;
     }
     html += '</tbody></table>';
   } else if (st.tab === 'pend') {
@@ -663,12 +686,12 @@ function renderReporteVista(lista, mesesTodos) {
       <div class="rv-ctl">
         <span class="seg" id="rvAgrupar"><button data-v="prestador" aria-pressed="${repAgrupar === 'prestador'}">Prestador</button><button data-v="contrato" aria-pressed="${repAgrupar === 'contrato'}">Contrato</button></span>
         <label>Ordenar <select id="repOrden"><option value="desv">Mayor faltante ($)</option><option value="ejec">Menor % ejecución</option><option value="esp">Mayor valor esperado</option></select></label>
-        <span>· barra = radicado, recuadro punteado = esperado (100 %)</span>
+        <span>· barra = radicado, recuadro punteado = esperado (100 %) · <b>clic en una fila para ver la explicación</b></span>
       </div>
       <div class="ej-escala"><span></span><span class="ticks"><span>0%</span><span>50%</span><span>100%</span><span>150%</span></span><span></span><span style="text-align:right">Desviación</span></div>
       ${filasEj.map((g) => {
         const tip = `${g.nombre}: radicado ${fmtCOP(g.radicado)} de ${fmtCOP(g.esperado)} esperados (${g.ejec.toFixed(1)}%) · ${g.rad} periodos radicados, ${g.pend} sin radicar · valor contrato ${fmtCOP(g.valor)}`;
-        return `<div class="ej-row" data-tip="${esc(tip)}">
+        return `<div class="ej-row" data-tip="${esc(tip + ' · clic para ver el detalle')}" data-det="${repAgrupar}" data-clave="${esc(g.nombre)}">
           <span class="nm">${esc(g.nombre)}<small>${repAgrupar === 'contrato' ? esc(g.sub) : g.contratos.length + ' contrato(s)'}${g.pend ? ` · <span class="desv-neg">${g.pend} sin radicar</span>` : ''}</small></span>
           <span class="ej-bar"><span class="esp" style="width:${100 / ESCALA * 100}%"></span><span class="rad" style="width:calc(${Math.min(g.ejec, ESCALA) / ESCALA * 100}% - 4px);background:${colorEjec(g.ejec)}"></span></span>
           <span class="pc" style="color:${colorEjec(g.ejec)}">${Math.round(g.ejec)}%</span>
@@ -681,7 +704,7 @@ function renderReporteVista(lista, mesesTodos) {
     <div class="card">
       <h2 style="margin-bottom:4px">Más periodos sin radicar</h2>
       <p class="sub" style="margin:0 0 6px;font-size:12px">Prestadores ordenados por contrato-mes pendientes · valor en riesgo = lo que deberían haber radicado.</p>
-      ${R.porPrest.slice(0, 12).map((g, i) => `<div class="pd-row" data-tip="${esc(g.nombre + ': ' + g.pend + ' periodos sin radicar en ' + g.contratos.length + ' contrato(s) · NIT ' + g.nit)}">
+      ${R.porPrest.slice(0, 12).map((g, i) => `<div class="pd-row" data-det="prestador" data-clave="${esc(g.nombre)}" data-tip="${esc(g.nombre + ': ' + g.pend + ' periodos sin radicar en ' + g.contratos.length + ' contrato(s) · NIT ' + g.nit + ' · clic para ver el detalle')}">
         <div class="pd-top"><span class="nm">${i + 1}. ${esc(g.nombre)}</span><span><b>${g.pend}</b> <span class="muted">· ${fmtCOP(g.riesgo)}</span></span></div>
         <div class="pd-bar"><div style="width:${g.pend / maxPend * 100}%"></div></div>
         <div class="pd-meses">${[...g.mesesPend].sort((a, b) => a - b).map((m) => `<span>${MESES[m - 1]}</span>`).join('')}</div>
@@ -699,6 +722,116 @@ function renderReporteVista(lista, mesesTodos) {
   $('#repOrden').value = repOrden;
 }
 
+// ---- detalle explicado (clic en un contrato o prestador del reporte)
+const ESTADO_MES = {
+  ok: ['ok', '✓', 'Radicado'], est: ['ok', '≈', 'Radicado (periodo estimado)'], no: ['no', '✕', 'Sin radicar'],
+  err: ['err', '!', 'Error al consultar'], nc: ['nc', '?', 'No consultado'], na: ['na', '—', 'Fuera de vigencia'],
+};
+function analisisContrato(c, mesesSel) {
+  const valor = numCOP(c.valor_contrato), mv = mesesVigencia(c), mensual = valor / mv;
+  const meses = mesesSel.filter((m) => vigente(c, st.anio, m));
+  const filas = meses.map((m) => {
+    const e = estado(c, st.anio, m);
+    const regs = e.k === 'ok' ? e.regs : [];
+    const rs = regs.filter((r) => r.regimen === 'RS').reduce((s, r) => s + (r.valor || 0), 0);
+    const rc = regs.filter((r) => r.regimen === 'RC').reduce((s, r) => s + (r.valor || 0), 0);
+    const rad = rs + rc + regs.filter((r) => !['RS', 'RC'].includes(r.regimen)).reduce((s, r) => s + (r.valor || 0), 0);
+    const est = regs.length && regs.every((r) => String(r.fuente || '').startsWith('ESTIMADO'));
+    const k = e.k === 'ok' ? (est ? 'est' : 'ok') : e.k;
+    const pct = mensual ? rad / mensual * 100 : 0;
+    return { m, e, k, regs, rs, rc, rad, dif: rad - mensual, pct };
+  });
+  const radicados = filas.filter((f) => f.e.k === 'ok'), pendientes = filas.filter((f) => f.e.k !== 'ok');
+  const esperado = mensual * meses.length, radicado = radicados.reduce((s, f) => s + f.rad, 0);
+  return { c, valor, mv, mensual, meses, filas, radicados, pendientes, esperado, radicado,
+    desv: radicado - esperado,
+    porPendientes: -mensual * pendientes.length,                      // lo que falta por no radicar
+    porValores: radicados.reduce((s, f) => s + f.dif, 0),             // diferencias en meses radicados
+    sobre: radicados.filter((f) => f.pct > 110), bajo: radicados.filter((f) => f.pct < 90) };
+}
+const signo = (v) => (v < 0 ? '−' : '+') + fmtCOP(Math.abs(v));
+const listaMeses = (fs) => fs.map((f) => MESES_L[f.m - 1]).join(', ');
+
+function explicacion(A) {
+  const pct = A.esperado ? A.radicado / A.esperado * 100 : 0;
+  const L = [];
+  L.push(`El contrato vale <b>${fmtCOP(A.valor)}</b> para <b>${A.mv} meses</b> de vigencia, o sea <b>${fmtCOP(A.mensual)} por mes</b>.`);
+  L.push(`En ${periodoTxt()} está vigente <b>${A.meses.length} mes(es)</b>, así que se esperaban <b>${fmtCOP(A.esperado)}</b>; se han radicado <b>${fmtCOP(A.radicado)}</b> (<b>${pct.toFixed(1)}%</b>).`);
+  const por = [];
+  if (A.pendientes.length) por.push(`<b>${signo(A.porPendientes)}</b> por <b>${A.pendientes.length} periodo(s) sin radicar</b>: ${listaMeses(A.pendientes)}${A.pendientes.some((f) => f.e.k === 'nc') ? ' (algunos aún no consultados en el SIE)' : ''}.`);
+  if (Math.abs(A.porValores) >= 1) por.push(`<b>${signo(A.porValores)}</b> por <b>diferencias de valor</b> en los meses radicados (lo facturado no coincide exactamente con el valor mensual).`);
+  if (A.sobre.length) por.push(`<b>Sobre-ejecución</b> en ${listaMeses(A.sobre)}: se radicó más del 110% del mes${A.sobre.some((f) => f.regs.length > 1) ? ' (hay más de una radicación en el mes, p. ej. RS y RC o una factura adicional)' : ''}.`);
+  if (A.bajo.length) por.push(`<b>Sub-ejecución</b> en ${listaMeses(A.bajo)}: se radicó menos del 90% del valor mensual.`);
+  const est = A.filas.filter((f) => f.k === 'est');
+  if (est.length) por.push(`${listaMeses(est)}: periodo <b>estimado (≈)</b>, el soporte RIPS del SIE no trae atenciones.`);
+  const resumen = Math.abs(A.desv) < A.mensual * 0.05 ? 'La ejecución está prácticamente al día.'
+    : A.desv < 0 ? `Faltan <b>${fmtCOP(-A.desv)}</b> por radicar respecto a lo esperado. Se explica así:` : `Se ha radicado <b>${fmtCOP(A.desv)}</b> más de lo esperado. Se explica así:`;
+  return `<div class="dt-expl">${L.join(' ')}<br>${resumen}${por.length ? '<ul>' + por.map((x) => `<li>${x}</li>`).join('') + '</ul>' : ''}</div>`;
+}
+
+function tablaMeses(A) {
+  return `<div class="tbl-wrap"><table class="dt-tabla"><thead><tr><th>Mes</th><th>Estado</th><th class="num">Esperado</th><th class="num">Radicado RS</th><th class="num">Radicado RC</th><th class="num">Total</th><th class="num">Diferencia</th><th class="num">% del mes</th><th>Recepciones</th><th>RIPS</th></tr></thead><tbody>
+  ${A.filas.map((f) => {
+    const [cls, ico, txt] = ESTADO_MES[f.k];
+    const nivel = f.e.k !== 'ok' ? 'bajo' : f.pct > 110 ? 'alto' : f.pct < 90 ? 'bajo' : 'bien';
+    const nota = f.e.k !== 'ok' ? '' : f.pct > 110 ? ' · sobre-ejecutado' : f.pct < 90 ? ' · sub-ejecutado' : '';
+    return `<tr><td><b>${MESES_L[f.m - 1]}</b></td><td><span class="st ${cls}"><i>${ico}</i> ${txt}</span><small class="muted">${nota}</small></td>
+      <td class="num">${fmtCOP(A.mensual)}</td><td class="num">${f.rs ? fmtCOP(f.rs) : '—'}</td><td class="num">${f.rc ? fmtCOP(f.rc) : '—'}</td>
+      <td class="num"><b>${f.rad ? fmtCOP(f.rad) : '—'}</b></td><td class="num ${nivel}">${signo(f.dif)}</td><td class="num ${nivel}">${f.e.k === 'ok' ? Math.round(f.pct) + '%' : '0%'}</td>
+      <td class="muted" style="font-size:11.5px">${f.regs.map((r) => `${esc(r.recepcion)} <small>(${esc(r.regimen)}${r.fecha_recepcion ? ', ' + esc(String(r.fecha_recepcion).slice(0, 10)) : ''})</small>`).join('<br>') || '—'}</td>
+      <td>${f.regs.length ? [...new Set(f.regs.map((r) => r.regimen))].map((rg) => `<div style="margin-bottom:2px"><span class="rg" style="font-size:10.5px;font-weight:700">${rg}</span> ${botonesRips(A.c.contrato, st.anio, f.m, rg)}</div>`).join('') : ''}</td></tr>`;
+  }).join('')}
+  <tr style="font-weight:700"><td>Total</td><td></td><td class="num">${fmtCOP(A.esperado)}</td><td class="num">${fmtCOP(A.filas.reduce((s, f) => s + f.rs, 0))}</td><td class="num">${fmtCOP(A.filas.reduce((s, f) => s + f.rc, 0))}</td><td class="num">${fmtCOP(A.radicado)}</td><td class="num ${A.desv < 0 ? 'bajo' : 'bien'}">${signo(A.desv)}</td><td class="num">${A.esperado ? Math.round(A.radicado / A.esperado * 100) : 0}%</td><td></td><td></td></tr>
+  </tbody></table></div>`;
+}
+
+function bloqueContrato(c, mesesSel, conTitulo) {
+  const A = analisisContrato(c, mesesSel);
+  return `<div class="${conTitulo ? 'dt-contrato' : ''}">
+    ${conTitulo ? `<h4 style="margin:0 0 4px;font-size:15px">${esc(c.contrato)} <small class="muted">· ${esc(c.municipio)}</small></h4>` : ''}
+    <div class="dt-datos">
+      <div><small>Vigencia</small><b>${esc(c.inicio)} → ${esc(c.fin)}</b><small>${A.mv} meses · ${esc(c.estado_contrato || '')}</small></div>
+      <div><small>Valor contrato</small><b>${fmtCOP(A.valor)}</b></div>
+      <div><small>Valor mensual esperado</small><b>${fmtCOP(A.mensual)}</b></div>
+      <div><small>Esperado ${periodoTxt()}</small><b>${fmtCOP(A.esperado)}</b></div>
+      <div><small>Radicado</small><b>${fmtCOP(A.radicado)}</b></div>
+      <div><small>Desviación</small><b class="${A.desv < 0 ? 'desv-neg' : 'desv-pos'}">${signo(A.desv)}</b></div>
+    </div>
+    ${explicacion(A)}
+    ${tablaMeses(A)}
+  </div>`;
+}
+
+function abrirDetalle(tipo, clave) {
+  const mesesSel = selMeses(mesesActivos());
+  let html;
+  if (tipo === 'contrato') {
+    const c = D.contratos.find((x) => x.contrato === clave); if (!c) return;
+    html = `<div class="dt-h"><h3 id="modalTitulo">${esc(c.contrato)}</h3>
+      <div class="sub">${esc(c.prestador)} · NIT ${esc(c.nit)} · ${esc(c.municipio)} · ${periodoTxt()}${st.reg ? ' · régimen ' + st.reg : ' · RS + RC'}</div></div>
+      ${bloqueContrato(c, mesesSel, false)}`;
+  } else {
+    const cs = filtrados().filter((x) => (x.prestador || '(sin prestador)') === clave && mesesSel.some((m) => vigente(x, st.anio, m)));
+    const As = cs.map((c) => analisisContrato(c, mesesSel));
+    const esp = As.reduce((s, a) => s + a.esperado, 0), rad = As.reduce((s, a) => s + a.radicado, 0);
+    const pend = As.reduce((s, a) => s + a.pendientes.length, 0), porP = As.reduce((s, a) => s + a.porPendientes, 0), porV = As.reduce((s, a) => s + a.porValores, 0);
+    html = `<div class="dt-h"><h3 id="modalTitulo">${esc(clave)}</h3>
+      <div class="sub">NIT ${esc(cs[0]?.nit || '')} · ${cs.length} contrato(s) · ${periodoTxt()}${st.reg ? ' · régimen ' + st.reg : ' · RS + RC'}</div></div>
+      <div class="dt-expl">En ${periodoTxt()} este prestador debía radicar <b>${fmtCOP(esp)}</b> y ha radicado <b>${fmtCOP(rad)}</b> (<b>${esp ? (rad / esp * 100).toFixed(1) : 0}%</b>), una desviación de <b class="${rad - esp < 0 ? 'desv-neg' : 'desv-pos'}">${signo(rad - esp)}</b>:
+        <ul><li><b>${signo(porP)}</b> por <b>${pend} periodo(s) sin radicar</b> en sus contratos.</li>
+        <li><b>${signo(porV)}</b> por diferencias de valor en los meses radicados.</li></ul>
+        Abajo, el detalle de cada contrato (de mayor a menor faltante).</div>
+      ${cs.map((c, i) => [c, As[i]]).sort((a, b) => a[1].desv - b[1].desv).map(([c]) => bloqueContrato(c, mesesSel, true)).join('')}`;
+  }
+  $('#modalCuerpo').innerHTML = html;
+  $('#modal').hidden = false;
+  document.body.style.overflow = 'hidden';
+  $('#modal .modal-x').focus();
+}
+function cerrarDetalle() { $('#modal').hidden = true; document.body.style.overflow = ''; }
+$('#modal').addEventListener('click', (e) => { if (e.target.closest('[data-cerrar]')) cerrarDetalle(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#modal').hidden) cerrarDetalle(); });
+
 // ---- cambio de vista (Tablero / Reporte), recordado en la URL (#reporte)
 let vista = location.hash === '#reporte' ? 'reporte' : 'tablero';
 function aplicarVista() {
@@ -712,7 +845,13 @@ document.querySelector('.vistas').onclick = (e) => {
   const b = e.target.closest('[data-vista]'); if (!b) return;
   vista = b.dataset.vista; aplicarVista(); if (D) render();
 };
+window.addEventListener('hashchange', () => {
+  const v = location.hash === '#reporte' ? 'reporte' : 'tablero';
+  if (v !== vista) { vista = v; aplicarVista(); if (D) render(); }
+});
 $('#vistaReporte').addEventListener('click', (e) => {
+  const d = e.target.closest('[data-det]');
+  if (d && !e.target.closest('a')) { abrirDetalle(d.dataset.det, d.dataset.clave); return; }
   const a = e.target.closest('#rvAgrupar [data-v]');
   if (a) { repAgrupar = a.dataset.v; render(); }
   if (e.target.closest('#rvMas')) { rvVerTodos = !rvVerTodos; render(); }
@@ -904,6 +1043,9 @@ async function recargarDatos() {
   } catch {}
 }
 
+$('#tabla').addEventListener('click', (e) => {
+  const d = e.target.closest('[data-det]'); if (d) abrirDetalle(d.dataset.det, d.dataset.clave);
+});
 $('#jobs').addEventListener('click', async (e) => {
   const c = e.target.closest('[data-cancel]'), l = e.target.closest('[data-log]');
   if (c && confirm('¿Cancelar esta consulta?')) {
