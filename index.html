@@ -186,7 +186,7 @@ tr:hover td { background: var(--surface-2); }
             <label class="chk"><input type="checkbox" class="cReg" value="RS" checked> Subsidiado (Capita RS)</label>
             <label class="chk"><input type="checkbox" class="cReg" value="RC" checked> Contributivo (Capita RC)</label>
           </div>
-          <label class="chk"><input type="checkbox" id="cRapido"> Rápido (sin descargar soportes RIPS; usa la fecha de recepción)</label>
+          <label class="chk"><input type="checkbox" id="cRapido"> Rápido — <span style="color:var(--critical)">no recomendado</span>: no descarga soportes y toma el mes de la fecha de recepción (puede quedar corrido 1–2 meses). No reemplaza periodos ya calculados.</label>
           <div style="margin-top:8px"><button class="btn primary" id="btnConsultar">▶ Consultar en SIE</button></div>
           <div class="aviso" id="cAviso">La consulta corre en el servidor; puedes cerrar esta página y volver luego.</div>
         </div>
@@ -630,6 +630,7 @@ $('#btnConsultar').onclick = async () => {
   const contratos = alc === 'todos' ? [] : filtrados().map((c) => c.contrato);
   if (alc !== 'todos' && !contratos.length) return alert('No hay contratos con el filtro actual.');
   const n = contratos.length || D.contratos.length;
+  if ($('#cRapido').checked && !confirm('Modo rápido: el mes saldrá de la fecha de recepción y puede no coincidir con el periodo de atención. ¿Continuar?')) return;
   if (!confirm(`Consultar en el SIE ${n} contrato(s), régimen ${regimenes.join(' y ')}, para ${meses.map((m) => MESES_L[m - 1]).join(', ')} ${st.anio}?`)) return;
   const b = $('#btnConsultar'); b.disabled = true; b.textContent = 'Enviando…';
   try {
