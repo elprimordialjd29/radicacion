@@ -41,7 +41,18 @@ h2 { font-size: 15px; margin: 0 0 12px; }
 .filters label { font-size: 12px; color: var(--ink-2); display: flex; flex-direction: column; gap: 3px; }
 select, input[type=search] { font: inherit; color: var(--ink); background: var(--surface);
   border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; min-width: 120px; }
-input[type=search] { min-width: 220px; }
+input[type=search] { min-width: 260px; }
+.search { position: relative; display: flex; gap: 6px; align-items: flex-end; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.sugs { position: absolute; top: 100%; left: 0; z-index: 20; margin-top: 4px; width: min(520px, calc(100vw - 32px));
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  max-height: 340px; overflow: auto; display: none; }
+.sugs.open { display: block; }
+.sug { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border); font-size: 13px; }
+.sug:last-child { border-bottom: 0; }
+.sug:hover, .sug.act { background: var(--surface-2); }
+.sug b { font-weight: 600; } .sug small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 1px; }
+.sug mark { background: var(--accent-soft); color: inherit; border-radius: 3px; padding: 0 1px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
   border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); }
@@ -112,7 +123,11 @@ tr:hover td { background: var(--surface-2); }
     <label>Año <select id="fAnio"></select></label>
     <label>Tipo <select id="fTipo"><option value="">Todos</option></select></label>
     <label>Municipio <select id="fMuni"><option value="">Todos</option></select></label>
-    <label>Buscar <input type="search" id="fTexto" placeholder="Contrato, prestador o NIT"></label>
+    <div class="search">
+      <label>Buscar <input type="search" id="fTexto" placeholder="Prestador, contrato o NIT" autocomplete="off"></label>
+      <button class="btn primary" id="btnBuscar">🔍 Buscar</button>
+      <div class="sugs" id="sugs" role="listbox"></div>
+    </div>
   </div>
   <div class="chips" id="fMes" role="group" aria-label="Mes"></div>
 
@@ -209,7 +224,7 @@ function preparar() {
   const f = new Date(D.generado);
   $('#actualizado').textContent = 'Actualizado ' + f.toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })
     + ' · ' + D.contratos.length + ' contratos · ' + fmtN(D.registros.length) + ' radicaciones en historial';
-  if (D.ultima?.meses?.length) st.mes = D.ultima.meses[D.ultima.meses.length - 1];
+  st.mes = 0; // 0 = todos los meses
 }
 const tipoDe = (c) => (c.match(/^[A-Z]+(?:-[A-Z]+)?(?=-\d)/) || [c.split('-')[0]])[0];
 
@@ -230,9 +245,12 @@ function estado(c, anio, mes) {
 }
 function filtrados() {
   const t = st.texto.toLowerCase();
+  // si el texto es exactamente un prestador (elegido de las sugerencias) se filtra solo ese
+  const exacto = t && D.contratos.some((c) => (c.prestador || '').toLowerCase() === t);
   return D.contratos.filter((c) =>
     (!st.tipo || tipoDe(c.contrato) === st.tipo) && (!st.muni || c.municipio === st.muni) &&
-    (!t || [c.contrato, c.prestador, c.nit, c.municipio].join(' ').toLowerCase().includes(t)));
+    (!t || (exacto ? (c.prestador || '').toLowerCase() === t
+                   : [c.contrato, c.prestador, c.nit, c.municipio].join(' ').toLowerCase().includes(t))));
 }
 function mesesActivos() {
   // meses con algún contrato vigente o alguna radicación, hasta el mes actual
@@ -246,33 +264,37 @@ function mesesActivos() {
 
 function render() {
   const meses = mesesActivos();
-  if (!st.mes || !meses.includes(st.mes)) st.mes = meses[meses.length - 1];
-  $('#fMes').innerHTML = meses.map((m) =>
+  if (st.mes === null || (st.mes && !meses.includes(st.mes))) st.mes = 0;
+  $('#fMes').innerHTML = `<button class="chip" aria-pressed="${st.mes === 0}" data-m="0">Todos</button>` + meses.map((m) =>
     `<button class="chip" aria-pressed="${m === st.mes}" data-m="${m}">${MESES_L[m - 1]}</button>`).join('');
   const lista = filtrados();
-  renderKpis(lista);
+  renderKpis(lista, meses);
   renderChart(lista, meses);
   renderNovedades();
   renderTabla(lista, meses);
 }
 
-function renderKpis(lista) {
+const selMeses = (meses) => (st.mes ? [st.mes] : meses);
+const periodoTxt = () => (st.mes ? MESES_L[st.mes - 1] + ' ' + st.anio : 'todos los meses ' + st.anio);
+
+function renderKpis(lista, meses) {
   let vig = 0, ok = 0, no = 0, nc = 0, valor = 0, regs = 0;
-  for (const c of lista) {
-    const e = estado(c, st.anio, st.mes);
+  const conRad = new Set(), conPend = new Set();
+  for (const c of lista) for (const m of selMeses(meses)) {
+    const e = estado(c, st.anio, m);
     if (e.k === 'na') continue;
     vig++;
-    if (e.k === 'ok') { ok++; valor += e.valor; regs += e.regs.length; }
-    else if (e.k === 'no' || e.k === 'err') no++;
+    if (e.k === 'ok') { ok++; valor += e.valor; regs += e.regs.length; conRad.add(c.contrato); }
+    else if (e.k === 'no' || e.k === 'err') { no++; conPend.add(c.contrato); }
     else nc++;
   }
   const pct = vig ? Math.round((ok / vig) * 100) : 0;
-  const mesTxt = MESES_L[st.mes - 1] + ' ' + st.anio;
+  const todos = !st.mes;
   $('#kpis').innerHTML = [
-    ['Cumplimiento ' + mesTxt, pct + '%', `${ok} de ${vig} contratos vigentes`],
-    ['Contratos radicados', fmtN(ok), fmtN(regs) + ' radicaciones'],
-    ['Pendientes por radicar', fmtN(no), nc ? nc + ' sin consultar aún' : 'consultados en el SIE'],
-    ['Valor radicado', fmtCOP(valor), 'Valor AF del periodo'],
+    ['Cumplimiento ' + periodoTxt(), pct + '%', todos ? `${ok} de ${vig} contrato-mes radicados` : `${ok} de ${vig} contratos vigentes`],
+    ['Contratos radicados', fmtN(conRad.size), fmtN(regs) + ' radicaciones'],
+    ['Pendientes por radicar', fmtN(todos ? no : conPend.size), todos ? `${conPend.size} contratos con algún mes pendiente` : (nc ? nc + ' sin consultar aún' : 'consultados en el SIE')],
+    ['Valor radicado', fmtCOP(valor), 'Valor AF ' + (todos ? 'del año' : 'del periodo')],
   ].map(([l, v, d]) => `<div class="card kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
 }
 
@@ -330,20 +352,25 @@ function renderTabla(lista, meses) {
     }
     html += '</tbody></table>';
   } else if (st.tab === 'pend') {
-    const pend = lista.map((c) => ({ c, e: estado(c, st.anio, st.mes) })).filter((x) => ['no', 'err', 'nc'].includes(x.e.k));
-    filasCsv = [['Contrato', 'Prestador', 'NIT', 'Municipio', 'Estado', 'Última consulta']];
-    html = `<p class="sub" style="margin-top:0">${pend.length} contratos vigentes sin radicación para <b>${MESES_L[st.mes - 1]} ${st.anio}</b>.</p>
-      <table><thead><tr><th>Contrato</th><th>Prestador</th><th>NIT</th><th>Municipio</th><th>Estado</th><th>Última consulta</th></tr></thead><tbody>` +
-      pend.map(({ c, e }) => {
+    const pend = [];
+    for (const c of lista) for (const m of selMeses(meses)) {
+      const e = estado(c, st.anio, m);
+      if (['no', 'err', 'nc'].includes(e.k)) pend.push({ c, e, m });
+    }
+    filasCsv = [['Contrato', 'Prestador', 'NIT', 'Municipio', 'Mes', 'Estado', 'Última consulta']];
+    html = `<p class="sub" style="margin-top:0">${pend.length} ${st.mes ? 'contratos vigentes' : 'contrato-mes'} sin radicación en <b>${periodoTxt()}</b>.</p>
+      <table><thead><tr><th>Contrato</th><th>Prestador</th><th>NIT</th><th>Municipio</th><th>Mes</th><th>Estado</th><th>Última consulta</th></tr></thead><tbody>` +
+      pend.map(({ c, e, m }) => {
         const fq = e.q?.fecha ? new Date(e.q.fecha).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }) : '—';
-        filasCsv.push([c.contrato, c.prestador, c.nit, c.municipio, e.k === 'nc' ? 'No consultado' : e.k === 'err' ? 'Error' : 'Sin radicar', fq]);
-        return `<tr><td><b>${esc(c.contrato)}</b></td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.nit)}</td><td>${esc(c.municipio)}</td><td>${CELDA[e.k](e)}</td><td class="muted">${fq}</td></tr>`;
+        filasCsv.push([c.contrato, c.prestador, c.nit, c.municipio, MESES_L[m - 1], e.k === 'nc' ? 'No consultado' : e.k === 'err' ? 'Error' : 'Sin radicar', fq]);
+        return `<tr><td><b>${esc(c.contrato)}</b></td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.nit)}</td><td>${esc(c.municipio)}</td><td>${MESES[m - 1]}</td><td>${CELDA[e.k](e)}</td><td class="muted">${fq}</td></tr>`;
       }).join('') + '</tbody></table>';
   } else if (st.tab === 'det') {
     const set = new Set(lista.map((c) => c.contrato));
-    const regs = D.registros.filter((r) => set.has(r.contrato) && r.periodo_anio == st.anio && r.periodo_mes == st.mes);
+    const ms = new Set(selMeses(meses));
+    const regs = D.registros.filter((r) => set.has(r.contrato) && r.periodo_anio == st.anio && ms.has(r.periodo_mes));
     filasCsv = [['Contrato', 'Recepción RIPS', 'IPS', 'Fecha recepción', 'Periodo', 'Atención desde', 'Atención hasta', 'N° radicación', 'Valor', 'Fuente']];
-    html = `<p class="sub" style="margin-top:0">${regs.length} radicaciones con periodo de atención <b>${MESES_L[st.mes - 1]} ${st.anio}</b>.</p>
+    html = `<p class="sub" style="margin-top:0">${regs.length} radicaciones con periodo de atención en <b>${periodoTxt()}</b>.</p>
       <table><thead><tr><th>Contrato</th><th>Recepción</th><th>IPS</th><th>Fecha recepción</th><th>Atención</th><th>N° radicación</th><th class="num">Valor AF</th><th>Fuente periodo</th></tr></thead><tbody>` +
       regs.map((r) => {
         filasCsv.push([r.contrato, r.recepcion, r.ips, r.fecha_recepcion, MESES_L[r.periodo_mes - 1] + ' ' + r.periodo_anio, r.fecha_min, r.fecha_max, r.radicacion, r.valor, r.fuente]);
@@ -368,7 +395,62 @@ $('#chart').onclick = (e) => { const b = e.target.closest('[data-m]'); if (b) { 
 $('#fAnio').onchange = (e) => { st.anio = +e.target.value; st.mes = null; render(); };
 $('#fTipo').onchange = (e) => { st.tipo = e.target.value; render(); };
 $('#fMuni').onchange = (e) => { st.muni = e.target.value; render(); };
-$('#fTexto').oninput = (e) => { st.texto = e.target.value; render(); };
+const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const fTexto = $('#fTexto'), sugs = $('#sugs');
+let sugAct = -1;
+function buscar(valor) {
+  if (valor !== undefined) fTexto.value = valor;
+  st.texto = fTexto.value.trim();
+  sugs.classList.remove('open');
+  render();
+}
+function resaltar(texto, q) {
+  const t = String(texto || ''), i = norm(t).indexOf(q);
+  return i < 0 ? esc(t) : esc(t.slice(0, i)) + '<mark>' + esc(t.slice(i, i + q.length)) + '</mark>' + esc(t.slice(i + q.length));
+}
+function sugerir() {
+  const q = norm(fTexto.value.trim());
+  sugAct = -1;
+  if (!q || !D) { sugs.classList.remove('open'); return; }
+  // agrupar contratos por prestador; coincide si el nombre (o una palabra) empieza por lo escrito,
+  // o si el contrato / NIT lo contiene
+  const grupos = new Map();
+  for (const c of D.contratos) {
+    const nombre = c.prestador || '(sin prestador)';
+    const palabras = norm(nombre).split(/\s+/);
+    const ok = norm(nombre).startsWith(q) || palabras.some((w) => w.startsWith(q)) ||
+               norm(c.contrato).includes(q) || norm(c.nit).includes(q);
+    if (!ok) continue;
+    if (!grupos.has(nombre)) grupos.set(nombre, []);
+    grupos.get(nombre).push(c);
+  }
+  const lista = [...grupos.entries()].sort((a, b) =>
+    (norm(b[0]).startsWith(q) - norm(a[0]).startsWith(q)) || a[0].localeCompare(b[0]));
+  if (!lista.length) { sugs.innerHTML = '<div class="sug muted">Sin coincidencias</div>'; sugs.classList.add('open'); return; }
+  sugs.innerHTML = lista.slice(0, 30).map(([nombre, cs]) => {
+    const munis = [...new Set(cs.map((c) => c.municipio).filter(Boolean))].join(', ');
+    return `<div class="sug" role="option" data-v="${esc(nombre)}"><b>${resaltar(nombre, q)}</b>
+      <small>${cs.length} contrato${cs.length > 1 ? 's' : ''}: ${cs.map((c) => resaltar(c.contrato, q)).join(' · ')}${munis ? ' — ' + esc(munis) : ''}</small></div>`;
+  }).join('');
+  sugs.classList.add('open');
+}
+fTexto.addEventListener('input', () => { sugerir(); if (!fTexto.value) buscar(''); });
+fTexto.addEventListener('keydown', (e) => {
+  const items = [...sugs.querySelectorAll('.sug[data-v]')];
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!items.length) return;
+    e.preventDefault();
+    sugAct = (sugAct + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items.forEach((x, i) => x.classList.toggle('act', i === sugAct));
+    items[sugAct].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    buscar(sugAct >= 0 && items[sugAct] ? items[sugAct].dataset.v : undefined);
+  } else if (e.key === 'Escape') sugs.classList.remove('open');
+});
+sugs.addEventListener('mousedown', (e) => { const it = e.target.closest('.sug[data-v]'); if (it) { e.preventDefault(); buscar(it.dataset.v); } });
+fTexto.addEventListener('blur', () => setTimeout(() => sugs.classList.remove('open'), 150));
+$('#btnBuscar').onclick = () => buscar();
 document.querySelector('.tabs').onclick = (e) => {
   const t = e.target.closest('[data-tab]'); if (!t) return;
   st.tab = t.dataset.tab;
@@ -387,7 +469,7 @@ $('#btnCsv').onclick = () => {
   const csv = filasCsv.map((f) => f.map((v) => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(';')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `radicacion_${st.tab}_${st.anio}-${String(st.mes).padStart(2, '0')}.csv`; a.click();
+  a.download = `radicacion_${st.tab}_${st.anio}-${st.mes ? String(st.mes).padStart(2, '0') : 'todos'}.csv`; a.click();
 };
 
 cargar();
