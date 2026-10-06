@@ -206,6 +206,7 @@ tr:hover td { background: var(--surface-2); }
       </div>
       <div class="legend" id="leyenda">
         <span class="st ok"><i>✓</i> Radicado</span>
+        <span class="st ok" title="El soporte RIPS del SIE viene sin atenciones; el mes se estimó por secuencia"><i>≈</i> Radicado, periodo estimado</span>
         <span class="st no"><i>✕</i> Sin radicar</span>
         <span class="st err"><i>!</i> Error al consultar</span>
         <span class="st nc">? No consultado</span>
@@ -387,7 +388,9 @@ function renderNovedades() {
 const CELDA = {
   ok: (e) => {
     const regs = [...new Set(e.regs.map((r) => r.regimen))].join('/');
-    return `<span class="st ok"><i>✓</i> ${e.regs.length}</span>${!st.reg && regs ? `<span class="reg-tag">${regs}</span>` : ''}${botonesRips(e.c.contrato, e.anio, e.mes)}`;
+    const est = e.regs.filter((r) => String(r.fuente || '').startsWith('ESTIMADO')).length;
+    const tip = est ? `title="${est} de ${e.regs.length} con periodo ESTIMADO: el soporte RIPS del SIE no trae atenciones; se asignó el mes siguiente al último periodo confirmado."` : '';
+    return `<span class="st ok" ${tip}><i>${est === e.regs.length ? '≈' : '✓'}</i> ${e.regs.length}${est && est < e.regs.length ? ' <small>(' + est + '≈)</small>' : ''}</span>${!st.reg && regs ? `<span class="reg-tag">${regs}</span>` : ''}${botonesRips(e.c.contrato, e.anio, e.mes)}`;
   },
   no: () => '<span class="st no"><i>✕</i> Pend.</span>',
   err: () => '<span class="st err"><i>!</i> Error</span>',

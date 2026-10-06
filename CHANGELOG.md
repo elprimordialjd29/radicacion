@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1 — 2026-10-06
+- Reparación: 644 radicaciones tenían el mes por fecha de recepción (consulta rápida);
+  se recalcularon desde los soportes (288 consultas RS+RC sin errores).
+- **Periodo estimado (≈)**: 233 radicaciones reales tienen el soporte RIPS del SIE vacío
+  (solo encabezado de factura). Se les asigna el mes siguiente al último periodo
+  confirmado del mismo contrato y régimen; se reemplaza si luego llega un soporte con fechas.
+- `--solo-publicar`: recalcula estimados y republica sin consultar el SIE.
+
 ## 0.4.0 — 2026-10-06
 - **Descarga de RIPS por mes**: botones TXT (archivo plano original del SIE) y JSON
   (estructura Res. 2275: factura → usuarios → servicios) en cada mes radicado y en
