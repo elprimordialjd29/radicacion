@@ -1,0 +1,21 @@
+# Secretos y datos (NUNCA al repo: es público)
+.env
+.env.*
+!.env.example
+bot/.env
+bot/contratos.*
+bot/historial.db
+bot/descargas/
+bot/logs/
+*.xlsx
+*.xls
+*.csv
+*.db
+
+# Entornos
+bot/.venv/
+.venv/
+__pycache__/
+node_modules/
+.vercel/
+.DS_Store

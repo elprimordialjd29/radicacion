@@ -1,0 +1,22 @@
+{
+  "name": "radicasion",
+  "version": "0.2.0",
+  "description": "Seguimiento de radicación de contratos cápita (SIE Dusakawi) + dashboard en Vercel",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@vercel/blob": "^2.8.1",
+    "@vercel/functions": "^3.9.11"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}
