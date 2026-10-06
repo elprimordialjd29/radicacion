@@ -608,6 +608,10 @@ function mesesVigencia(c) {
   return Math.max(1, (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth() + 1);
 }
 let repAgrupar = 'prestador', repOrden = 'exceso';
+// margen aceptable: la cápita se liquida por UPC × usuarios cada mes, siempre hay variación
+let repMargen = 10;
+try { repMargen = +(localStorage.getItem('rad-margen') || 10) || 10; } catch {}
+const ATIPICO = 50;   // más de 50 % sobre el tope = cifra atípica, revisar
 
 // análisis mes a mes de un contrato: tope mensual, radicado, exceso (desviación) y saldo por radicar
 function analisisContrato(c, mesesSel) {
@@ -620,8 +624,12 @@ function analisisContrato(c, mesesSel) {
     const rc = regs.filter((r) => r.regimen === 'RC').reduce((s, r) => s + (r.valor || 0), 0);
     const rad = regs.reduce((s, r) => s + (r.valor || 0), 0);
     const est = regs.length && regs.every((r) => String(r.fuente || '').startsWith('ESTIMADO'));
-    return { m, e, k: e.k === 'ok' ? (est ? 'est' : 'ok') : e.k, regs, rs, rc, rad,
-      exceso: Math.max(0, rad - tope), saldo: Math.max(0, tope - rad), pct: tope ? rad / tope * 100 : 0 };
+    const pct = tope ? rad / tope * 100 : 0;
+    const fuera = rad > tope * (1 + repMargen / 100);          // supera tope + margen → desviación
+    return { m, e, k: e.k === 'ok' ? (est ? 'est' : 'ok') : e.k, regs, rs, rc, rad, pct,
+      exceso: fuera ? rad - tope : 0,                          // todo lo que pasó del tope
+      dentro: !fuera && rad > tope,                            // por encima, pero dentro del margen
+      atipico: pct > 100 + ATIPICO, saldo: Math.max(0, tope - rad) };
   });
   const esperado = tope * meses.length, radicado = filas.reduce((s, f) => s + f.rad, 0);
   // acumulado del año contra el valor total del contrato (nunca puede superarlo)
@@ -629,7 +637,8 @@ function analisisContrato(c, mesesSel) {
     .filter((r) => r.periodo_anio == st.anio && (!st.reg || r.regimen === st.reg)).reduce((s, r) => s + (r.valor || 0), 0);
   return { c, valor, mv, tope, meses, filas, esperado, radicado,
     exceso: filas.reduce((s, f) => s + f.exceso, 0), saldo: filas.reduce((s, f) => s + f.saldo, 0),
-    sobre: filas.filter((f) => f.exceso > 0), pendientes: filas.filter((f) => f.e.k !== 'ok'),
+    sobre: filas.filter((f) => f.exceso > 0), dentro: filas.filter((f) => f.dentro), atipicos: filas.filter((f) => f.atipico),
+    pendientes: filas.filter((f) => f.e.k !== 'ok'),
     bajo: filas.filter((f) => f.e.k === 'ok' && f.saldo > 0), radAnio, superaContrato: radAnio > valor };
 }
 function sumar(As, clave) {
@@ -637,10 +646,10 @@ function sumar(As, clave) {
   for (const A of As) {
     const k = clave(A);
     const a = g.get(k) || { nombre: k, nit: A.c.nit, munis: new Set(), contratos: [], valor: 0, esperado: 0, radicado: 0,
-      exceso: 0, saldo: 0, nSobre: 0, pend: 0, nRad: 0, mesesSobre: new Set(), mesesPend: new Set(), superan: 0 };
+      exceso: 0, saldo: 0, nSobre: 0, nAtip: 0, nDentro: 0, pend: 0, nRad: 0, mesesSobre: new Set(), mesesPend: new Set(), superan: 0 };
     a.contratos.push(A.c.contrato); a.munis.add(A.c.municipio);
     for (const x of ['valor', 'esperado', 'radicado', 'exceso', 'saldo']) a[x] += A[x];
-    a.nSobre += A.sobre.length; a.pend += A.pendientes.length; a.nRad += A.filas.length - A.pendientes.length;
+    a.nSobre += A.sobre.length; a.nAtip += A.atipicos.length; a.nDentro += A.dentro.length; a.pend += A.pendientes.length; a.nRad += A.filas.length - A.pendientes.length;
     a.superan += A.superaContrato ? 1 : 0;
     A.sobre.forEach((f) => a.mesesSobre.add(f.m)); A.pendientes.forEach((f) => a.mesesPend.add(f.m));
     g.set(k, a);
@@ -651,13 +660,13 @@ function datosReporte(lista, mesesTodos) {
   const meses = selMeses(mesesTodos);
   const As = lista.map((c) => analisisContrato(c, meses)).filter((A) => A.meses.length);
   const T = As.reduce((t, A) => { t.esp += A.esperado; t.rad += A.radicado; t.exc += A.exceso; t.saldo += A.saldo;
-    t.nSobre += A.sobre.length; t.pend += A.pendientes.length; t.superan += A.superaContrato ? 1 : 0; return t; },
-    { esp: 0, rad: 0, exc: 0, saldo: 0, nSobre: 0, pend: 0, superan: 0 });
+    t.nSobre += A.sobre.length; t.nAtip += A.atipicos.length; t.nDentro += A.dentro.length; t.pend += A.pendientes.length; t.superan += A.superaContrato ? 1 : 0; return t; },
+    { esp: 0, rad: 0, exc: 0, saldo: 0, nSobre: 0, nAtip: 0, nDentro: 0, pend: 0, superan: 0 });
   const prest = (A) => A.c.prestador || '(sin prestador)';
   const porPrest = sumar(As, prest).filter((g) => g.pend).sort((a, b) => b.pend - a.pend || b.esperado - a.esperado);
   const grupos = repAgrupar === 'contrato'
     ? As.map((A) => ({ nombre: A.c.contrato, sub: A.c.prestador, nit: A.c.nit, contratos: [A.c.contrato], valor: A.valor, esperado: A.esperado,
-        radicado: A.radicado, exceso: A.exceso, saldo: A.saldo, nSobre: A.sobre.length, pend: A.pendientes.length,
+        radicado: A.radicado, exceso: A.exceso, saldo: A.saldo, nSobre: A.sobre.length, nAtip: A.atipicos.length, nDentro: A.dentro.length, pend: A.pendientes.length,
         nRad: A.filas.length - A.pendientes.length, mesesSobre: new Set(A.sobre.map((f) => f.m)), mesesPend: new Set(A.pendientes.map((f) => f.m)), superan: A.superaContrato ? 1 : 0 }))
     : sumar(As, prest);
   for (const g of grupos) { g.pctExc = g.esperado ? g.exceso / g.esperado * 100 : 0; g.ejec = g.esperado ? g.radicado / g.esperado * 100 : 0; }
@@ -670,7 +679,7 @@ const signo = (v) => (v < 0 ? '−' : '+') + fmtCOP(Math.abs(v));
 const mesesTxt = (set) => [...set].sort((a, b) => a - b).map((m) => MESES[m - 1]).join(', ');
 
 function csvReporte(R) {
-  filasCsv = [['Desviación = radicado por encima del tope mensual (valor contrato ÷ meses de vigencia)'], ['Periodo', periodoTxt()], ['Régimen', st.reg || 'RS y RC'], [],
+  filasCsv = [[`Desviación = meses que superan el tope mensual + ${repMargen}% (se cuenta lo radicado por encima del tope)`], ['Periodo', periodoTxt()], ['Régimen', st.reg || 'RS y RC'], [],
     [repAgrupar === 'contrato' ? 'Contrato' : 'Prestador', repAgrupar === 'contrato' ? 'Prestador' : 'NIT', 'Contratos', 'Valor contrato', 'Esperado (tope) al periodo', 'Radicado',
      'Desviación (sobre-ejecución)', '% sobre lo esperado', 'Meses sobre-ejecutados', 'Saldo por radicar', 'Periodos sin radicar', 'Meses sin radicar', 'Contratos que superan su valor total']];
   for (const g of R.grupos) filasCsv.push([g.nombre, repAgrupar === 'contrato' ? g.sub : g.nit, g.contratos.length, Math.round(g.valor), Math.round(g.esperado), Math.round(g.radicado),
@@ -689,10 +698,15 @@ function renderReporteVista(lista, mesesTodos) {
   $('#vistaReporte').innerHTML = `
   <div class="rv-head"><h2>Reporte de radicación · ${periodoTxt()}</h2>
     <span class="sub">${st.reg ? 'Régimen ' + st.reg : 'RS + RC'} · ${R.As.length} contratos vigentes${st.texto || st.tipo || st.muni ? ' (filtrados)' : ''}</span></div>
-  <p class="sub" style="margin:-4px 0 12px">Tope mensual = VALOR CONTRATO ÷ meses de vigencia (10 meses de marzo a diciembre). <b>Desviación = lo radicado por encima del tope</b>: no se puede ejecutar más de lo esperado.</p>
+  <div class="rv-ctl" style="margin:-4px 0 10px">
+    <span>Tope mensual = VALOR CONTRATO ÷ meses de vigencia (RS + RC). La liquidación por UPC × usuarios varía cada mes:</span>
+    <span>Margen aceptable</span>
+    <span class="seg" id="rvMargen">${[5, 10, 15, 20].map((m) => `<button data-v="${m}" aria-pressed="${repMargen === m}">±${m}%</button>`).join('')}</span>
+    <span>· <b>Desviación</b> = mes que supera el tope + ${repMargen}% (se cuenta todo lo que pasó del tope) · ⚠ &gt;${ATIPICO}% = cifra atípica, revisar</span>
+  </div>
   ${R.mesActual ? '<p class="aviso" style="margin:-6px 0 12px">⚠️ El periodo incluye el mes actual, que normalmente aún no se ha radicado.</p>' : ''}
   <div class="rv-kpis">
-    <div class="card rv-kpi"><div class="l">Desviación (sobre-ejecución)</div><div class="v ${T.exc > 0 ? 'desv-neg' : 'desv-pos'}">${T.exc > 0 ? '+' + fmtCOP(T.exc) : '$0'}</div><div class="d">${fmtN(T.nSobre)} contrato-mes por encima del tope · ${conExc.length} ${repAgrupar === 'contrato' ? 'contratos' : 'prestadores'}</div></div>
+    <div class="card rv-kpi"><div class="l">Desviación (fuera del margen ±${repMargen}%)</div><div class="v ${T.exc > 0 ? 'desv-neg' : 'desv-pos'}">${T.exc > 0 ? '+' + fmtCOP(T.exc) : '$0'}</div><div class="d">${fmtN(T.nSobre)} contrato-mes fuera del margen · ${conExc.length} ${repAgrupar === 'contrato' ? 'contratos' : 'prestadores'}${T.nAtip ? ` · <b class="desv-neg">⚠ ${T.nAtip} atípicos</b>` : ''}<br>${fmtN(T.nDentro)} por encima del tope pero dentro del margen (normal)</div></div>
     <div class="card rv-kpi"><div class="l">Esperado (tope) al periodo</div><div class="v">${fmtCOP(T.esp)}</div><div class="d">valor contrato ÷ meses de vigencia</div></div>
     <div class="card rv-kpi"><div class="l">Radicado</div><div class="v">${fmtCOP(T.rad)}</div><div class="d">${T.esp ? (T.rad / T.esp * 100).toFixed(1) : 0}% del esperado</div></div>
     <div class="card rv-kpi"><div class="l">Saldo por radicar</div><div class="v">${fmtCOP(T.saldo)}</div><div class="d">${fmtN(T.pend)} periodos sin radicar (no es desviación)</div></div>
@@ -709,14 +723,14 @@ function renderReporteVista(lista, mesesTodos) {
       ${filasEj.map((g) => {
         const tip = `${g.nombre}: radicado ${fmtCOP(g.radicado)} con tope ${fmtCOP(g.esperado)} · desviación ${fmtCOP(g.exceso)} en ${g.nSobre} mes(es)${g.mesesSobre.size ? ' (' + mesesTxt(g.mesesSobre) + ')' : ''} · saldo por radicar ${fmtCOP(g.saldo)} · clic para ver el detalle`;
         return `<div class="ej-row" data-tip="${esc(tip)}" data-det="${repAgrupar}" data-clave="${esc(g.nombre)}">
-          <span class="nm">${esc(g.nombre)}<small>${repAgrupar === 'contrato' ? esc(g.sub) : g.contratos.length + ' contrato(s)'}${g.mesesSobre.size ? ` · <span class="desv-neg">sobre: ${mesesTxt(g.mesesSobre)}</span>` : ''}</small></span>
+          <span class="nm">${g.nAtip ? '<span title="Cifra atípica: revisar">⚠ </span>' : ''}${esc(g.nombre)}<small>${repAgrupar === 'contrato' ? esc(g.sub) : g.contratos.length + ' contrato(s)'}${g.mesesSobre.size ? ` · <span class="desv-neg">fuera del margen: ${mesesTxt(g.mesesSobre)}</span>` : ''}</small></span>
           <span class="ej-bar"><span class="rad" style="width:calc(${g.exceso / maxExc * 100}% - 4px);background:var(--critical)"></span></span>
           <span class="pc ${g.exceso > 0 ? 'desv-neg' : 'muted'}">${g.exceso > 0 ? g.pctExc.toFixed(1) + '%' : '0%'}</span>
           <span class="dv ${g.exceso > 0 ? 'desv-neg' : 'muted'}">${g.exceso > 0 ? '+' + fmtCOP(g.exceso) : 'sin desviación'}</span>
         </div>`;
       }).join('') || '<p class="muted">Sin contratos vigentes en la selección.</p>'}
       ${R.grupos.length > 15 ? `<div style="margin-top:10px"><button class="btn sm" id="rvMas">${rvVerTodos ? 'Ver solo 15' : `Ver los ${R.grupos.length}`}</button></div>` : ''}
-      <div class="sub" style="margin-top:10px;font-size:12px">Barra = desviación en $ (relativa a la mayor) · % = desviación ÷ esperado del periodo.</div>
+      <div class="sub" style="margin-top:10px;font-size:12px">Barra = desviación en $ (relativa a la mayor) · % = desviación ÷ esperado del periodo · ⚠ = algún mes más de ${ATIPICO}% sobre el tope.</div>
     </div>
     <div class="card">
       <h2 style="margin-bottom:4px">Más periodos sin radicar</h2>
@@ -746,14 +760,15 @@ const ESTADO_MES = {
 const listaMeses = (fs) => fs.map((f) => MESES_L[f.m - 1]).join(', ');
 
 function explicacion(A) {
-  const L = [`El contrato vale <b>${fmtCOP(A.valor)}</b> para <b>${A.mv} meses</b>, así que el <b>tope mensual es ${fmtCOP(A.tope)}</b>: el prestador no puede radicar más que eso en un mes.`];
+  const L = [`El contrato vale <b>${fmtCOP(A.valor)}</b> para <b>${A.mv} meses</b>, así que el <b>tope mensual es ${fmtCOP(A.tope)}</b> (RS + RC). Como la cápita se liquida por UPC × usuarios, se acepta una variación de <b>±${repMargen}%</b> (hasta ${fmtCOP(A.tope * (1 + repMargen / 100))}).`];
   const items = [];
   if (A.sobre.length) {
-    items.push(`<b class="desv-neg">Desviación: +${fmtCOP(A.exceso)}</b> — radicó por encima del tope en <b>${listaMeses(A.sobre)}</b>:` +
-      '<ul>' + A.sobre.map((f) => `<li>${MESES_L[f.m - 1]}: radicó ${fmtCOP(f.rad)}${f.rs && f.rc ? ` (RS ${fmtCOP(f.rs)} + RC ${fmtCOP(f.rc)})` : ''} → <b class="desv-neg">+${fmtCOP(f.exceso)}</b> sobre el tope (${(f.pct - 100).toFixed(2)}%)${f.regs.length > 1 ? ` · ${f.regs.length} radicaciones en el mes` : ''}</li>`).join('') + '</ul>');
+    items.push(`<b class="desv-neg">Desviación: +${fmtCOP(A.exceso)}</b> — superó el tope + ${repMargen}% en <b>${listaMeses(A.sobre)}</b>:` +
+      '<ul>' + A.sobre.map((f) => `<li>${f.atipico ? '<b class="desv-neg">⚠ REVISAR</b> ' : ''}${MESES_L[f.m - 1]}: radicó ${fmtCOP(f.rad)}${f.rs && f.rc ? ` (RS ${fmtCOP(f.rs)} + RC ${fmtCOP(f.rc)})` : ''} → <b class="desv-neg">+${fmtCOP(f.exceso)}</b> sobre el tope (+${(f.pct - 100).toFixed(1)}%)${f.regs.length > 1 ? ` · ${f.regs.length} radicaciones en el mes` : ''}${f.atipico ? ' — cifra atípica: verificar si hay facturas duplicadas o de otro periodo' : ''}</li>`).join('') + '</ul>');
   } else {
-    items.push(`<b class="desv-pos">Sin desviación</b>: en ${periodoTxt()} ningún mes supera el tope.`);
+    items.push(`<b class="desv-pos">Sin desviación</b>: en ${periodoTxt()} ningún mes supera el tope + ${repMargen}%.`);
   }
+  if (A.dentro.length) items.push(`Por encima del tope pero <b>dentro del margen</b> (variación normal de la liquidación por UPC): ${A.dentro.map((f) => `${MESES_L[f.m - 1]} (+${(f.pct - 100).toFixed(1)}%)`).join(', ')}.`);
   if (A.superaContrato) items.push(`<b class="desv-neg">⛔ En ${st.anio} ya radicó ${fmtCOP(A.radAnio)}, más que el valor total del contrato (${fmtCOP(A.valor)}).</b>`);
   if (A.pendientes.length) items.push(`Periodos <b>sin radicar</b> (no es desviación, es saldo pendiente): ${listaMeses(A.pendientes)} → ${fmtCOP(A.pendientes.length * A.tope)}.`);
   if (A.bajo.length) items.push(`Radicado <b>por debajo del tope</b> en ${listaMeses(A.bajo)} (dentro de lo permitido).`);
@@ -766,12 +781,13 @@ function tablaMeses(A) {
   return `<div class="tbl-wrap"><table class="dt-tabla"><thead><tr><th>Mes</th><th>Estado</th><th class="num">Tope mensual</th><th class="num">Radicado RS</th><th class="num">Radicado RC</th><th class="num">Total radicado</th><th class="num">Desviación</th><th class="num">Saldo por radicar</th><th class="num">% del tope</th><th>Recepciones</th><th>RIPS</th></tr></thead><tbody>
   ${A.filas.map((f) => {
     const [cls, ico, txt] = ESTADO_MES[f.k];
-    return `<tr><td><b>${MESES_L[f.m - 1]}</b></td><td><span class="st ${cls}"><i>${ico}</i> ${txt}</span>${f.exceso > 0 ? ' <small class="desv-neg">· sobre el tope</small>' : ''}</td>
+    const nota = f.exceso > 0 ? ` <small class="desv-neg">· ${f.atipico ? '⚠ revisar' : 'fuera del margen'}</small>` : f.dentro ? ' <small class="muted">· dentro del margen</small>' : '';
+    return `<tr><td><b>${MESES_L[f.m - 1]}</b></td><td><span class="st ${cls}"><i>${ico}</i> ${txt}</span>${nota}</td>
       <td class="num">${fmtCOP(A.tope)}</td><td class="num">${f.rs ? fmtCOP(f.rs) : '—'}</td><td class="num">${f.rc ? fmtCOP(f.rc) : '—'}</td>
       <td class="num"><b>${f.rad ? fmtCOP(f.rad) : '—'}</b></td>
       <td class="num ${f.exceso > 0 ? 'bajo' : 'muted'}">${f.exceso > 0 ? '<b>+' + fmtCOP(f.exceso) + '</b>' : '—'}</td>
       <td class="num muted">${f.saldo > 0 ? fmtCOP(f.saldo) : '—'}</td>
-      <td class="num ${f.exceso > 0 ? 'bajo' : ''}">${f.pct.toFixed(f.exceso > 0 ? 2 : 0)}%</td>
+      <td class="num ${f.exceso > 0 ? 'bajo' : ''}">${f.pct.toFixed(1)}%</td>
       <td class="muted" style="font-size:11.5px">${f.regs.map((r) => `${esc(r.recepcion)} <small>(${esc(r.regimen)}${r.fecha_recepcion ? ', ' + esc(String(r.fecha_recepcion).slice(0, 10)) : ''})</small>`).join('<br>') || '—'}</td>
       <td>${f.regs.length ? [...new Set(f.regs.map((r) => r.regimen))].map((rg) => `<div style="margin-bottom:2px"><span style="font-size:10.5px;font-weight:700">${rg}</span> ${botonesRips(A.c.contrato, st.anio, f.m, rg)}</div>`).join('') : ''}</td></tr>`;
   }).join('')}
@@ -789,7 +805,7 @@ function bloqueContrato(c, mesesSel, conTitulo) {
       <div><small>Tope mensual</small><b>${fmtCOP(A.tope)}</b></div>
       <div><small>Esperado ${periodoTxt()}</small><b>${fmtCOP(A.esperado)}</b></div>
       <div><small>Radicado</small><b>${fmtCOP(A.radicado)}</b></div>
-      <div><small>Desviación (sobre el tope)</small><b class="${A.exceso > 0 ? 'desv-neg' : 'desv-pos'}">${A.exceso > 0 ? '+' + fmtCOP(A.exceso) : '$0'}</b></div>
+      <div><small>Desviación (fuera de ±${repMargen}%)</small><b class="${A.exceso > 0 ? 'desv-neg' : 'desv-pos'}">${A.exceso > 0 ? '+' + fmtCOP(A.exceso) : '$0'}</b></div>
     </div>
     ${explicacion(A)}
     ${tablaMeses(A)}
@@ -813,7 +829,7 @@ function abrirDetalle(tipo, clave) {
     html = `<div class="dt-h"><h3 id="modalTitulo">${esc(clave)}</h3>
       <div class="sub">NIT ${esc(cs[0]?.nit || '')} · ${cs.length} contrato(s) · ${periodoTxt()}${st.reg ? ' · régimen ' + st.reg : ' · RS + RC'}</div></div>
       <div class="dt-expl">En ${periodoTxt()} el tope de este prestador (suma de sus contratos) es <b>${fmtCOP(esp)}</b> y ha radicado <b>${fmtCOP(rad)}</b>.
-        <ul><li>${exc > 0 ? `<b class="desv-neg">Desviación: +${fmtCOP(exc)}</b> radicados por encima del tope en <b>${nS} contrato-mes</b>.` : '<b class="desv-pos">Sin desviación</b>: ningún contrato supera su tope mensual.'}</li>
+        <ul><li>${exc > 0 ? `<b class="desv-neg">Desviación: +${fmtCOP(exc)}</b> en <b>${nS} contrato-mes</b> que superan el tope + ${repMargen}%.` : `<b class="desv-pos">Sin desviación</b>: ningún contrato supera su tope + ${repMargen}%.`}</li>
         <li>Saldo por radicar: ${fmtCOP(saldo)} (${pend} periodo(s) sin radicar) — no es desviación.</li></ul>
         Abajo, el detalle de cada contrato (primero los de mayor desviación).</div>
       ${cs.map((c, i) => [c, As[i]]).sort((a, b) => b[1].exceso - a[1].exceso || b[1].pendientes.length - a[1].pendientes.length).map(([c]) => bloqueContrato(c, mesesSel, true)).join('')}`;
@@ -849,6 +865,8 @@ window.addEventListener('hashchange', () => {
   if (v !== vista) { vista = v; aplicarVista(); if (D) render(); }
 });
 $('#vistaReporte').addEventListener('click', (e) => {
+  const mg = e.target.closest('#rvMargen [data-v]');
+  if (mg) { repMargen = +mg.dataset.v; try { localStorage.setItem('rad-margen', repMargen); } catch {} render(); return; }
   const d = e.target.closest('[data-det]');
   if (d && !e.target.closest('a')) { abrirDetalle(d.dataset.det, d.dataset.clave); return; }
   const a = e.target.closest('#rvAgrupar [data-v]');
