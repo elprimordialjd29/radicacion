@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1 — 2026-10-06
+- Corrección: el bot hacía clic en el buscador general de la barra superior
+  (`cmdGeneralSearch`) en lugar del Buscar del formulario (`#cmdBuscar`), y leía
+  los registros por defecto de 2022.
+- El soporte RIPS se descarga con el botón "descargar el soporte de Rips" de cada fila.
+- Probado en el VPS con ASB-20001-2026-36: 6 radicaciones; periodo de marzo de 2026
+  según 1.546 consultas del soporte.
+
 ## 0.3.0 — 2026-10-06
 - **100% web**: las consultas al SIE se lanzan desde el dashboard y corren en el VPS
   (`worker/app.py`, FastAPI + cola, una consulta a la vez) con avance en vivo,

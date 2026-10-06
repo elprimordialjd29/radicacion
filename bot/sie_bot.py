@@ -317,7 +317,9 @@ def descargar_soporte(page, fila, contrato, recepcion):
     previos = list(carpeta.glob(f"{limpiar_nombre(recepcion)}__*"))
     if previos:
         return previos[0]
-    boton = fila.locator("td").nth(COL_SOPORTE).locator("a, button").first
+    boton = fila.locator('button[title*="soporte de Rips"]').first
+    if not boton.count():  # respaldo: 4ª columna de íconos
+        boton = fila.locator("td").nth(COL_SOPORTE).locator("a, button").first
     with page.expect_download(timeout=90000) as dl:
         boton.click()
     d = dl.value
@@ -390,8 +392,14 @@ def buscar_contrato(page, contrato, con_soportes=True):
     campo = campo_texto(page, "Número Contrato Prestador")
     campo.fill("")
     campo.fill(contrato)
-    page.get_by_role("button", name="Buscar").first.click()
+    # OJO: la barra superior tiene otro botón "buscar" (cmdGeneralSearch) que abre un diálogo
+    # de búsqueda en el menú; el de la consulta es #cmdBuscar dentro del formulario formMtto.
+    boton = page.locator("#cmdBuscar")
+    if not boton.count():
+        boton = page.locator("form#formMtto button", has_text="Buscar").first
+    boton.click()
     esperar_ajax(page)
+    page.wait_for_timeout(800)
 
     tabla = page.locator(".ui-datatable").filter(
         has=page.locator("th", has_text="Estado")).first
