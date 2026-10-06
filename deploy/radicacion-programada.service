@@ -1,0 +1,8 @@
+[Unit]
+Description=Radicacion capita - consulta programada al SIE (todos los contratos, RS y RC)
+After=radicacion-worker.service
+Requires=radicacion-worker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/radicacion/deploy/consulta_programada.sh

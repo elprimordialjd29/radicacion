@@ -32,6 +32,15 @@ Usuarios ─► radicacion.vercel.app ─► /api/consultas (Vercel, con WORKER_
 ## Variables en Vercel
 `WORKER_URL=https://evaluador3280.duckdns.org:8443` y `WORKER_TOKEN` (el mismo del servidor).
 
+## Consultas programadas
+`radicacion-programada.timer` lanza una consulta completa (todos los contratos, RS y RC,
+enero → mes actual) a las **12:00 m y 12:00 a. m. hora Colombia**. Entra a la cola del worker
+como usuario `programada`.
+```bash
+systemctl list-timers radicacion-programada.timer   # próxima ejecución
+systemctl start radicacion-programada.service       # lanzarla ya
+```
+
 ## Actualizar el servidor
 ```bash
 ssh root@207.180.243.127 /opt/radicacion/deploy/actualizar.sh
