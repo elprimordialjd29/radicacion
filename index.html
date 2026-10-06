@@ -54,6 +54,10 @@ input[type=search] { min-width: 260px; }
 .sug b { font-weight: 600; } .sug small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 1px; }
 .sug mark { background: var(--accent-soft); color: inherit; border-radius: 3px; padding: 0 1px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mes-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.rango { display: flex; gap: 8px; align-items: center; }
+.rango label { font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.rango select { min-width: 0; padding: 5px 8px; }
 .chip { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
   border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); }
 .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -160,7 +164,14 @@ tr:hover td { background: var(--surface-2); }
       <div class="sugs" id="sugs" role="listbox"></div>
     </div>
   </div>
-  <div class="chips" id="fMes" role="group" aria-label="Mes"></div>
+  <div class="mes-bar">
+    <div class="chips" id="fMes" role="group" aria-label="Meses (puedes marcar varios)"></div>
+    <div class="rango">
+      <label>Desde <select id="fDesde"></select></label>
+      <label>Hasta <select id="fHasta"></select></label>
+    </div>
+  </div>
+  <div class="sub" style="margin-top:6px;font-size:12px">Toca varios meses para sumarlos, o elige un rango con Desde/Hasta.</div>
 
   <div id="contenido" style="margin-top:16px">
     <div class="kpis" id="kpis"></div>
@@ -231,7 +242,7 @@ const fmtN = (n) => (n || 0).toLocaleString('es-CO');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 let D = null;
-const st = { anio: null, mes: null, tipo: '', muni: '', texto: '', tab: 'matriz', reg: '' };
+const st = { anio: null, meses: [], tipo: '', muni: '', texto: '', tab: 'matriz', reg: '' };
 try { const t = localStorage.getItem('rad-tema'); if (t) document.documentElement.dataset.theme = t; } catch {}
 
 $('#btnTema').onclick = () => {
@@ -281,7 +292,7 @@ function preparar() {
   const f = new Date(D.generado);
   $('#actualizado').textContent = 'Actualizado ' + f.toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })
     + ' · ' + D.contratos.length + ' contratos · ' + fmtN(D.registros.length) + ' radicaciones en historial';
-  st.mes = 0; // 0 = todos los meses
+  st.meses = []; // vacío = todos los meses
 }
 const tipoDe = (c) => (c.match(/^[A-Z]+(?:-[A-Z]+)?(?=-\d)/) || [c.split('-')[0]])[0];
 
@@ -330,9 +341,13 @@ function mesesActivos() {
 
 var render = function () {
   const meses = mesesActivos();
-  if (st.mes === null || (st.mes && !meses.includes(st.mes))) st.mes = 0;
-  $('#fMes').innerHTML = `<button class="chip" aria-pressed="${st.mes === 0}" data-m="0">Todos</button>` + meses.map((m) =>
-    `<button class="chip" aria-pressed="${m === st.mes}" data-m="${m}">${MESES_L[m - 1]}</button>`).join('');
+  st.meses = st.meses.filter((m) => meses.includes(m));
+  $('#fMes').innerHTML = `<button class="chip" aria-pressed="${!st.meses.length}" data-m="0">Todos</button>` + meses.map((m) =>
+    `<button class="chip" aria-pressed="${st.meses.includes(m)}" data-m="${m}">${MESES_L[m - 1]}</button>`).join('');
+  const opts = meses.map((m) => `<option value="${m}">${MESES_L[m - 1]}</option>`).join('');
+  const sel = selMeses(meses);
+  $('#fDesde').innerHTML = opts; $('#fDesde').value = Math.min(...sel);
+  $('#fHasta').innerHTML = opts; $('#fHasta').value = Math.max(...sel);
   const lista = filtrados();
   renderKpis(lista, meses);
   renderChart(lista, meses);
@@ -340,8 +355,14 @@ var render = function () {
   renderTabla(lista, meses);
 }
 
-const selMeses = (meses) => (st.mes ? [st.mes] : meses);
-const periodoTxt = () => (st.mes ? MESES_L[st.mes - 1] + ' ' + st.anio : 'todos los meses ' + st.anio);
+const selMeses = (meses) => (st.meses.length ? [...st.meses].sort((a, b) => a - b) : meses);
+function periodoTxt() {
+  const m = [...st.meses].sort((a, b) => a - b);
+  if (!m.length) return 'todos los meses ' + st.anio;
+  if (m.length === 1) return MESES_L[m[0] - 1] + ' ' + st.anio;
+  const seguidos = m.every((x, i) => i === 0 || x === m[i - 1] + 1);
+  return (seguidos ? `${MESES_L[m[0] - 1]} a ${MESES_L[m[m.length - 1] - 1]}` : m.map((x) => MESES[x - 1]).join(', ')) + ' ' + st.anio;
+}
 
 function renderKpis(lista, meses) {
   let vig = 0, ok = 0, no = 0, nc = 0, valor = 0, regs = 0;
@@ -355,7 +376,7 @@ function renderKpis(lista, meses) {
     else nc++;
   }
   const pct = vig ? Math.round((ok / vig) * 100) : 0;
-  const todos = !st.mes;
+  const todos = st.meses.length !== 1;
   $('#kpis').innerHTML = [
     ['Cumplimiento ' + periodoTxt(), pct + '%', todos ? `${ok} de ${vig} contrato-mes radicados` : `${ok} de ${vig} contratos vigentes`],
     ['Contratos radicados', fmtN(conRad.size), fmtN(regs) + ' radicaciones'],
@@ -371,7 +392,7 @@ function renderChart(lista, meses) {
     return { m, vig, ok, valor, pct: vig ? (ok / vig) * 100 : 0 };
   });
   $('#chart').innerHTML = datos.map((d) =>
-    `<div class="bar-col ${d.ok ? '' : 'empty'} ${d.m === st.mes ? 'sel' : ''}" data-m="${d.m}"
+    `<div class="bar-col ${d.ok ? '' : 'empty'} ${st.meses.includes(d.m) ? 'sel' : ''}" data-m="${d.m}"
       data-tip="${MESES_L[d.m - 1]}: ${d.ok}/${d.vig} contratos radicados (${Math.round(d.pct)}%) · ${fmtCOP(d.valor)}">
       <span class="val">${d.vig ? Math.round(d.pct) + '%' : ''}</span>
       <div class="bar" style="height:${Math.max(d.pct, d.vig ? 1.5 : 0) * 0.82}%"></div></div>`).join('');
@@ -436,7 +457,7 @@ function renderTabla(lista, meses) {
       if (['no', 'err', 'nc'].includes(e.k)) pend.push({ c, e, m });
     }
     filasCsv = [['Contrato', 'Prestador', 'NIT', 'Municipio', 'Mes', 'Estado', 'Última consulta']];
-    html = `<p class="sub" style="margin-top:0">${pend.length} ${st.mes ? 'contratos vigentes' : 'contrato-mes'} sin radicación en <b>${periodoTxt()}</b>.</p>
+    html = `<p class="sub" style="margin-top:0">${pend.length} ${st.meses.length === 1 ? 'contratos vigentes' : 'contrato-mes'} sin radicación en <b>${periodoTxt()}</b>.</p>
       <table><thead><tr><th>Contrato</th><th>Prestador</th><th>NIT</th><th>Municipio</th><th>Mes</th><th>Estado</th><th>Última consulta</th></tr></thead><tbody>` +
       pend.map(({ c, e, m }) => {
         const fq = e.q?.fecha ? new Date(e.q.fecha).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }) : '—';
@@ -468,9 +489,24 @@ function renderTabla(lista, meses) {
 }
 
 // ---- interacción
-$('#fMes').onclick = (e) => { const b = e.target.closest('[data-m]'); if (b) { st.mes = +b.dataset.m; render(); } };
-$('#chart').onclick = (e) => { const b = e.target.closest('[data-m]'); if (b) { st.mes = +b.dataset.m; render(); } };
-$('#fAnio').onchange = (e) => { st.anio = +e.target.value; st.mes = null; render(); };
+function alternarMes(m) {
+  if (!m) st.meses = [];
+  else st.meses = st.meses.includes(m) ? st.meses.filter((x) => x !== m) : [...st.meses, m];
+  sincronizarConsulta(); render();
+}
+$('#fMes').onclick = (e) => { const b = e.target.closest('[data-m]'); if (b) alternarMes(+b.dataset.m); };
+$('#chart').onclick = (e) => { const b = e.target.closest('[data-m]'); if (b) alternarMes(+b.dataset.m); };
+function aplicarRango() {
+  let d = +$('#fDesde').value, h = +$('#fHasta').value;
+  if (d > h) [d, h] = [h, d];
+  const activos = mesesActivos();
+  st.meses = activos.filter((m) => m >= d && m <= h);
+  if (st.meses.length === activos.length) st.meses = [];
+  sincronizarConsulta(); render();
+}
+$('#fDesde').onchange = aplicarRango;
+$('#fHasta').onchange = aplicarRango;
+$('#fAnio').onchange = (e) => { st.anio = +e.target.value; st.meses = []; render(); };
 $('#fTipo').onchange = (e) => { st.tipo = e.target.value; render(); };
 $('#fReg').onchange = (e) => { st.reg = e.target.value; render(); };
 $('#fMuni').onchange = (e) => { st.muni = e.target.value; render(); };
@@ -548,7 +584,7 @@ $('#btnCsv').onclick = () => {
   const csv = filasCsv.map((f) => f.map((v) => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(';')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `radicacion_${st.tab}_${st.anio}-${st.mes ? String(st.mes).padStart(2, '0') : 'todos'}.csv`; a.click();
+  a.download = `radicacion_${st.tab}_${st.anio}-${st.meses.length ? [...st.meses].sort((a, b) => a - b).map((m) => String(m).padStart(2, '0')).join('_') : 'todos'}.csv`; a.click();
 };
 
 // ---- consultas al SIE (servidor)
@@ -560,10 +596,11 @@ let jobsPrev = {}, jobsTimer = null, abiertos = new Set();
 
 function renderMesesConsulta() {
   const hoy = new Date(), lim = st.anio < hoy.getFullYear() ? 12 : hoy.getMonth() + 1;
-  const sel = st.mes ? [st.mes] : mesesActivos();
+  const sel = selMeses(mesesActivos());
   $('#cMeses').innerHTML = Array.from({ length: lim }, (_, i) => i + 1).map((m) =>
     `<label><input type="checkbox" value="${m}" ${sel.includes(m) ? 'checked' : ''}><span>${MESES[m - 1]}</span></label>`).join('');
 }
+function sincronizarConsulta() { if (D && $('#cMeses')) renderMesesConsulta(); }
 function renderAlcance() {
   const n = filtrados().length;
   $('#cAlcFiltro').textContent = `Los filtrados arriba (${n})`;
