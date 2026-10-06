@@ -474,6 +474,7 @@ def preparar(df, por_soporte=True):
         f = pd.to_datetime(df[c_fecha], errors="coerce", format="mixed") if c_fecha else pd.NaT
         df["Año"] = f.dt.year
         df["Mes"] = f.dt.month.map(NOMBRE_MES)
+        df["Fuente periodo"] = "FECHA RECEPCIÓN"
     df = df.drop(columns=["Periodo Mes N"], errors="ignore")
     c_valor = col(df, "valor")
     df["Valor (número)"] = df[c_valor].map(a_numero) if c_valor else 0.0
@@ -527,7 +528,7 @@ def actualizar_historial(df, regimen):
     for i, r in df.iterrows():
         g = lambda c: (None if c is None or pd.isna(r.get(c)) else r.get(c))
         clave = f"{r['Contrato Consultado']}|{g(c_rec) or ''}"
-        previo = con.execute("SELECT estado, radicacion FROM registros WHERE clave=?",
+        previo = con.execute("SELECT estado, radicacion, fuente FROM registros WHERE clave=?",
                              (clave,)).fetchone()
         est, rad = g(c_est) or "", g(c_rad) or ""
         anio = int(r["Año"]) if pd.notna(r.get("Año")) else None
@@ -547,6 +548,13 @@ def actualizar_historial(df, regimen):
         else:
             if (previo[0], previo[1]) != (est, rad):
                 nuevos.append(i)
+            # un periodo calculado desde el soporte RIPS no se reemplaza por uno "rápido"
+            # (fecha de recepción) ni por un soporte que no se pudo leer
+            soporte_previo = (previo[2] or "").startswith(("CONSULTAS", "OTROS"))
+            soporte_nuevo = str(datos["fuente"]).startswith(("CONSULTAS", "OTROS"))
+            if soporte_previo and not soporte_nuevo:
+                for k in ("periodo_anio", "periodo_mes", "fecha_min", "fecha_max", "fuente"):
+                    datos.pop(k)
             con.execute(f"UPDATE registros SET {', '.join(k + '=?' for k in datos)} WHERE clave=?",
                         list(datos.values()) + [clave])
     con.commit()
