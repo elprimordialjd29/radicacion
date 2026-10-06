@@ -97,6 +97,10 @@ tr:hover td { background: var(--surface-2); }
   border-radius: 5px; padding: 1px 5px; line-height: 1.5; background: var(--surface); }
 .dl a:hover { color: var(--accent); border-color: var(--accent); }
 .reg-tag { font-size: 10.5px; color: var(--ink-3); margin-left: 3px; }
+.celda { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.celda .lin { display: flex; align-items: center; gap: 4px; }
+.celda .rg { font-size: 10.5px; font-weight: 700; color: var(--ink-2); min-width: 20px; }
+.celda .dl { margin-left: 0; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 10px; font-size: 12px; color: var(--ink-2); }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
 .tab { font: inherit; background: none; border: 0; padding: 8px 12px; cursor: pointer; color: var(--ink-2);
@@ -298,10 +302,12 @@ function estado(c, anio, mes) {
   if (!ok) return { k: 'err', q: qs[0] };
   return { k: 'no', q: ok };
 }
-const ripsUrl = (contrato, anio, mes, formato) =>
-  `/api/rips?${new URLSearchParams({ contrato, anio, mes, regimen: st.reg, formato })}`;
-function botonesRips(contrato, anio, mes) {
-  return `<span class="dl"><a href="${ripsUrl(contrato, anio, mes, 'txt')}" title="Descargar RIPS original (TXT)">TXT</a><a href="${ripsUrl(contrato, anio, mes, 'json')}" title="Descargar RIPS en JSON (Res. 2275)">JSON</a></span>`;
+const ripsUrl = (contrato, anio, mes, regimen, formato) =>
+  `/api/rips?${new URLSearchParams({ contrato, anio, mes, regimen, formato })}`;
+function botonesRips(contrato, anio, mes, regimen) {
+  const r = regimen || st.reg;
+  const etq = r ? ` ${r}` : '';
+  return `<span class="dl"><a href="${ripsUrl(contrato, anio, mes, r, 'txt')}" title="Descargar RIPS${etq} original (TXT)">TXT</a><a href="${ripsUrl(contrato, anio, mes, r, 'json')}" title="Descargar RIPS${etq} en JSON (Res. 2275)">JSON</a></span>`;
 }
 function filtrados() {
   const t = st.texto.toLowerCase();
@@ -387,10 +393,18 @@ function renderNovedades() {
 
 const CELDA = {
   ok: (e) => {
-    const regs = [...new Set(e.regs.map((r) => r.regimen))].join('/');
-    const est = e.regs.filter((r) => String(r.fuente || '').startsWith('ESTIMADO')).length;
-    const tip = est ? `title="${est} de ${e.regs.length} con periodo ESTIMADO: el soporte RIPS del SIE no trae atenciones; se asignó el mes siguiente al último periodo confirmado."` : '';
-    return `<span class="st ok" ${tip}><i>${est === e.regs.length ? '≈' : '✓'}</i> ${e.regs.length}${est && est < e.regs.length ? ' <small>(' + est + '≈)</small>' : ''}</span>${!st.reg && regs ? `<span class="reg-tag">${regs}</span>` : ''}${botonesRips(e.c.contrato, e.anio, e.mes)}`;
+    // una línea por régimen, cada una con su descarga (RS y RC por separado)
+    const porReg = {};
+    for (const r of e.regs) (porReg[r.regimen || 'RS'] ??= []).push(r);
+    const lineas = Object.keys(porReg).sort((a, b) => (a === 'RS' ? -1 : 1)).map((rg) => {
+      const lst = porReg[rg];
+      const est = lst.filter((r) => String(r.fuente || '').startsWith('ESTIMADO')).length;
+      const tip = `${rg}: ${lst.length} radicación(es) · ${fmtCOP(lst.reduce((s, r) => s + (r.valor || 0), 0))} · Recepción ${lst.map((r) => r.recepcion).join(', ')}` +
+        (est ? ` · ${est} con periodo ESTIMADO (el soporte RIPS del SIE no trae atenciones)` : '');
+      return `<span class="lin" data-tip="${esc(tip)}"><span class="st ok"><i>${est === lst.length ? '≈' : '✓'}</i> ${lst.length}</span>` +
+        `<span class="rg">${rg}</span>${botonesRips(e.c.contrato, e.anio, e.mes, rg)}</span>`;
+    });
+    return `<div class="celda">${lineas.join('')}</div>`;
   },
   no: () => '<span class="st no"><i>✕</i> Pend.</span>',
   err: () => '<span class="st err"><i>!</i> Error</span>',
@@ -409,8 +423,7 @@ function renderTabla(lista, meses) {
       const celdas = meses.map((m) => {
         const e = estado(c, st.anio, m); if (e.k === 'ok') total += e.valor;
         fila.push({ ok: 'Radicado (' + (e.regs?.length || 0) + ')', no: 'Sin radicar', err: 'Error', nc: 'No consultado', na: 'Fuera de vigencia' }[e.k]);
-        const tip = e.k === 'ok' ? `${e.regs.length} radicación(es) · ${fmtCOP(e.valor)} · Recepción ${e.regs.map((r) => r.recepcion).join(', ')}` : '';
-        return `<td data-tip="${esc(tip)}">${CELDA[e.k](e)}</td>`;
+        return `<td>${CELDA[e.k](e)}</td>`;
       }).join('');
       filasCsv.push(fila);
       html += `<tr><td><b>${esc(c.contrato)}</b></td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.municipio)}</td>${celdas}<td class="num">${total ? fmtCOP(total) : '<span class="muted">—</span>'}</td></tr>`;
@@ -439,7 +452,7 @@ function renderTabla(lista, meses) {
       <table><thead><tr><th>Contrato</th><th>Régimen</th><th>Recepción</th><th>IPS</th><th>Fecha recepción</th><th>Atención</th><th>N° radicación</th><th class="num">Valor AF</th><th>Fuente periodo</th><th>RIPS</th></tr></thead><tbody>` +
       regs.map((r) => {
         filasCsv.push([r.contrato, r.regimen, r.recepcion, r.ips, r.fecha_recepcion, MESES_L[r.periodo_mes - 1] + ' ' + r.periodo_anio, r.fecha_min, r.fecha_max, r.radicacion, r.valor, r.fuente]);
-        return `<tr><td><b>${esc(r.contrato)}</b></td><td>${esc(r.regimen)}</td><td>${esc(r.recepcion)}</td><td class="wrap">${esc(r.ips)}</td><td>${esc(r.fecha_recepcion)}</td><td>${esc(r.fecha_min)} → ${esc(r.fecha_max)}</td><td>${esc(r.radicacion) || '<span class="muted">—</span>'}</td><td class="num">${fmtCOP(r.valor)}</td><td class="muted">${esc(r.fuente)}</td><td>${botonesRips(r.contrato, r.periodo_anio, r.periodo_mes)}</td></tr>`;
+        return `<tr><td><b>${esc(r.contrato)}</b></td><td>${esc(r.regimen)}</td><td>${esc(r.recepcion)}</td><td class="wrap">${esc(r.ips)}</td><td>${esc(r.fecha_recepcion)}</td><td>${esc(r.fecha_min)} → ${esc(r.fecha_max)}</td><td>${esc(r.radicacion) || '<span class="muted">—</span>'}</td><td class="num">${fmtCOP(r.valor)}</td><td class="muted">${esc(r.fuente)}</td><td>${botonesRips(r.contrato, r.periodo_anio, r.periodo_mes, r.regimen)}</td></tr>`;
       }).join('') + '</tbody></table>';
   } else {
     filasCsv = [['Fecha', 'Meses', 'Contratos', 'Radicados', 'Pendientes', 'Errores', 'Novedades']];
