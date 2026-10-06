@@ -294,17 +294,9 @@ def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "
     if not archivos:
         raise HTTPException(404, "No hay soportes descargados para ese periodo")
 
-    # nombre corto que termina con el periodo: PMS-44847-2026-35_RS_2026-03.txt
-    periodo = f"{anio}-{mes:02d}"
-    por_reg = {}
-    for rec, reg, _ in archivos:
-        por_reg.setdefault(reg or "NA", []).append(rec)
-
+    base = f"RIPS_{_limpio(contrato)}_{anio}-{mes:02d}"
     def nombre(rec, reg):
-        reg = reg or "NA"
-        recs = por_reg[reg]
-        n = f"_{recs.index(rec) + 1}" if len(recs) > 1 else ""   # varias radicaciones en el mismo mes
-        return f"{_limpio(contrato)}_{reg}{n}_{periodo}.{formato}"
+        return f"{base}_{reg or 'NA'}_rec{_limpio(rec)}.{formato}"
 
     def contenido(ruta):
         if formato == "json":
@@ -326,6 +318,6 @@ def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "
     if buf.tell() > 4_400_000:
         raise HTTPException(413, "El RIPS de ese periodo es demasiado grande para descargarlo en línea; "
                                  "filtra por régimen o descarga cada radicación por separado.")
-    reg_zip = f"_{regimen.upper()}" if regimen else ""
+    sufijo = f"_{regimen.upper()}" if regimen else ""
     return Response(buf.getvalue(), media_type="application/zip",
-                    headers={"Content-Disposition": f'attachment; filename="{_limpio(contrato)}{reg_zip}_{periodo}.zip"'})
+                    headers={"Content-Disposition": f'attachment; filename="{base}{sufijo}_{formato}.zip"'})
