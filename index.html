@@ -467,18 +467,36 @@ function renderTabla(lista, meses) {
     }
     html += '</tbody></table>';
   } else if (st.tab === 'pend') {
-    const pend = [];
-    for (const c of lista) for (const m of selMeses(meses)) {
-      const e = estado(c, st.anio, m);
-      if (['no', 'err', 'nc'].includes(e.k)) pend.push({ c, e, m });
+    // una fila por contrato con todos sus meses pendientes juntos
+    const filas = [];
+    let total = 0;
+    for (const c of lista) {
+      const pend = [];
+      for (const m of selMeses(meses)) {
+        const e = estado(c, st.anio, m);
+        if (['no', 'err', 'nc'].includes(e.k)) pend.push({ m, e });
+      }
+      if (!pend.length) continue;
+      total += pend.length;
+      const ult = pend.map((p) => p.e.q?.fecha).filter(Boolean).sort().pop();
+      filas.push({ c, pend, ult });
     }
-    filasCsv = [['Contrato', 'Prestador', 'NIT', 'Municipio', 'Mes', 'Estado', 'Última consulta']];
-    html = `<p class="sub" style="margin-top:0">${pend.length} ${st.meses.length === 1 ? 'contratos vigentes' : 'contrato-mes'} sin radicación en <b>${periodoTxt()}</b>.</p>
-      <table><thead><tr><th>Contrato</th><th>Prestador</th><th>NIT</th><th>Municipio</th><th>Mes</th><th>Estado</th><th>Última consulta</th></tr></thead><tbody>` +
-      pend.map(({ c, e, m }) => {
-        const fq = e.q?.fecha ? new Date(e.q.fecha).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }) : '—';
-        filasCsv.push([c.contrato, c.prestador, c.nit, c.municipio, MESES_L[m - 1], e.k === 'nc' ? 'No consultado' : e.k === 'err' ? 'Error' : 'Sin radicar', fq]);
-        return `<tr><td><b>${esc(c.contrato)}</b></td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.nit)}</td><td>${esc(c.municipio)}</td><td>${MESES[m - 1]}</td><td>${CELDA[e.k](e)}</td><td class="muted">${fq}</td></tr>`;
+    filas.sort((a, b) => b.pend.length - a.pend.length || a.c.contrato.localeCompare(b.c.contrato));
+    const NOMBRE_EST = { no: 'Sin radicar', err: 'Error', nc: 'No consultado' };
+    filasCsv = [['Contrato', 'Prestador', 'NIT', 'Municipio', 'Meses pendientes', 'N° meses', 'Detalle', 'Última consulta']];
+    html = `<p class="sub" style="margin-top:0">${filas.length} contrato(s) con ${total} mes(es) sin radicación en <b>${periodoTxt()}</b>${st.reg ? ' · régimen ' + st.reg : ''}.</p>
+      <table><thead><tr><th>Contrato</th><th>Prestador</th><th>NIT</th><th>Municipio</th><th>Meses pendientes</th><th class="num">N°</th><th>Última consulta</th></tr></thead><tbody>` +
+      filas.map(({ c, pend, ult }) => {
+        const fq = ult ? new Date(ult).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+        filasCsv.push([c.contrato, c.prestador, c.nit, c.municipio, pend.map((p) => MESES_L[p.m - 1]).join(', '), pend.length,
+          pend.map((p) => `${MESES[p.m - 1]}: ${NOMBRE_EST[p.e.k]}`).join(' · '), fq]);
+        const chips = pend.map((p) => {
+          const cls = p.e.k === 'err' ? 'err' : p.e.k === 'nc' ? 'nc' : 'no';
+          const ico = p.e.k === 'err' ? '!' : p.e.k === 'nc' ? '?' : '✕';
+          return `<span class="st ${cls}" title="${MESES_L[p.m - 1]}: ${NOMBRE_EST[p.e.k]}"><i>${ico}</i> ${MESES[p.m - 1]}</span>`;
+        }).join(' ');
+        return `<tr><td><b>${esc(c.contrato)}</b></td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.nit)}</td><td>${esc(c.municipio)}</td>
+          <td class="wrap"><div style="display:flex;flex-wrap:wrap;gap:4px">${chips}</div></td><td class="num">${pend.length}</td><td class="muted">${fq}</td></tr>`;
       }).join('') + '</tbody></table>';
   } else if (st.tab === 'det') {
     const set = new Set(lista.map((c) => c.contrato));
