@@ -1,0 +1,16 @@
+[Unit]
+Description=Radicacion capita - worker de consultas SIE
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/radicacion/worker
+ExecStart=/opt/radicacion/bot/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8092 --workers 1
+Restart=always
+RestartSec=5
+# Chromium puede usar bastante memoria; el VPS tiene 4 GB compartidos con otras apps
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target

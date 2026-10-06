@@ -97,6 +97,27 @@ tr:hover td { background: var(--surface-2); }
 .tab { font: inherit; background: none; border: 0; padding: 8px 12px; cursor: pointer; color: var(--ink-2);
   border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .tab[aria-selected="true"] { color: var(--ink); border-color: var(--accent); font-weight: 600; }
+.consulta-grid { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; }
+@media (max-width: 900px) { .consulta-grid { grid-template-columns: 1fr; } }
+.fld { margin-bottom: 12px; } .fld > .lbl { font-size: 12px; color: var(--ink-2); margin-bottom: 6px; display: block; }
+.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin: 0 12px 6px 0; cursor: pointer; }
+.chk input { accent-color: var(--accent); width: 15px; height: 15px; }
+.mes-chk { display: flex; flex-wrap: wrap; gap: 6px; }
+.mes-chk label { border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 12.5px; cursor: pointer; user-select: none; }
+.mes-chk input { display: none; }
+.mes-chk input:checked + span { color: #fff; }
+.mes-chk label:has(input:checked) { background: var(--accent); border-color: var(--accent); color: #fff; }
+.jobs { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow: auto; }
+.job { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.job-h { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
+.job-m { font-size: 12px; color: var(--ink-2); margin-top: 3px; }
+.prog { height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin-top: 8px; }
+.prog > div { height: 100%; background: var(--accent); border-radius: 999px; transition: width .4s; }
+.job pre { white-space: pre-wrap; font-size: 11.5px; max-height: 220px; overflow: auto; background: var(--surface-2);
+  padding: 8px; border-radius: 6px; margin: 8px 0 0; }
+.job .acc { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.btn.sm { padding: 4px 10px; font-size: 12px; }
+.aviso { font-size: 12.5px; color: var(--ink-2); margin-top: 6px; }
 .empty-state { padding: 40px 16px; text-align: center; color: var(--ink-2); }
 .list { margin: 0; padding: 0; list-style: none; max-height: 260px; overflow: auto; }
 .list li { padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
@@ -143,6 +164,26 @@ tr:hover td { background: var(--surface-2); }
       <div class="card">
         <h2>Novedades de la última corrida</h2>
         <ul class="list" id="novedades"></ul>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <h2>🔄 Consultar en el SIE</h2>
+      <div class="consulta-grid">
+        <div>
+          <div class="fld"><span class="lbl">Meses de atención a consultar</span><div class="mes-chk" id="cMeses"></div></div>
+          <div class="fld"><span class="lbl">Contratos</span>
+            <label class="chk"><input type="radio" name="cAlc" value="filtro" checked> <span id="cAlcFiltro">Los filtrados arriba</span></label>
+            <label class="chk"><input type="radio" name="cAlc" value="todos"> <span id="cAlcTodos">Todos</span></label>
+          </div>
+          <label class="chk"><input type="checkbox" id="cRapido"> Rápido (sin descargar soportes RIPS; usa la fecha de recepción)</label>
+          <div style="margin-top:8px"><button class="btn primary" id="btnConsultar">▶ Consultar en SIE</button></div>
+          <div class="aviso" id="cAviso">La consulta corre en el servidor; puedes cerrar esta página y volver luego.</div>
+        </div>
+        <div>
+          <span class="lbl" style="font-size:12px;color:var(--ink-2)">Consultas recientes</span>
+          <ul class="jobs" id="jobs"><li class="muted">Cargando…</li></ul>
+        </div>
       </div>
     </div>
 
@@ -262,7 +303,7 @@ function mesesActivos() {
   return out.length ? out : [hoy.getMonth() + 1];
 }
 
-function render() {
+var render = function () {
   const meses = mesesActivos();
   if (st.mes === null || (st.mes && !meses.includes(st.mes))) st.mes = 0;
   $('#fMes').innerHTML = `<button class="chip" aria-pressed="${st.mes === 0}" data-m="0">Todos</button>` + meses.map((m) =>
@@ -472,7 +513,118 @@ $('#btnCsv').onclick = () => {
   a.download = `radicacion_${st.tab}_${st.anio}-${st.mes ? String(st.mes).padStart(2, '0') : 'todos'}.csv`; a.click();
 };
 
-cargar();
+// ---- consultas al SIE (servidor)
+const ESTADO_JOB = {
+  en_cola: ['nc', '⏳', 'En cola'], corriendo: ['ok', '⟳', 'Consultando'], terminada: ['ok', '✓', 'Terminada'],
+  error: ['no', '✕', 'Error'], cancelada: ['na', '—', 'Cancelada'], cancelando: ['err', '!', 'Cancelando'],
+};
+let jobsPrev = {}, jobsTimer = null, abiertos = new Set();
+
+function renderMesesConsulta() {
+  const hoy = new Date(), lim = st.anio < hoy.getFullYear() ? 12 : hoy.getMonth() + 1;
+  const sel = st.mes ? [st.mes] : mesesActivos();
+  $('#cMeses').innerHTML = Array.from({ length: lim }, (_, i) => i + 1).map((m) =>
+    `<label><input type="checkbox" value="${m}" ${sel.includes(m) ? 'checked' : ''}><span>${MESES[m - 1]}</span></label>`).join('');
+}
+function renderAlcance() {
+  const n = filtrados().length;
+  $('#cAlcFiltro').textContent = `Los filtrados arriba (${n})`;
+  $('#cAlcTodos').textContent = `Todos (${D.contratos.length})`;
+}
+function fmtFecha(f) { return f ? new Date(f).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }) : ''; }
+function duracion(a, b) {
+  if (!a) return ''; const s = Math.round(((b ? new Date(b) : new Date()) - new Date(a)) / 1000);
+  return s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + (s % 60) + ' s';
+}
+
+async function cargarJobs() {
+  let lista;
+  try {
+    const r = await fetch('/api/consultas', { cache: 'no-store' });
+    lista = await r.json();
+    if (!r.ok) throw new Error(lista.error || r.status);
+  } catch (e) {
+    $('#jobs').innerHTML = `<li class="muted">Servidor de consultas no disponible: ${esc(e.message)}</li>`;
+    $('#btnConsultar').disabled = true;
+    return;
+  }
+  $('#btnConsultar').disabled = false;
+  let recargar = false;
+  for (const j of lista) {
+    if (jobsPrev[j.id] && jobsPrev[j.id] !== 'terminada' && j.estado === 'terminada') recargar = true;
+    jobsPrev[j.id] = j.estado;
+  }
+  if (recargar) { await recargarDatos(); }
+  const det = {};
+  await Promise.all([...abiertos].map(async (id) => {
+    try { det[id] = await (await fetch('/api/consultas?id=' + id, { cache: 'no-store' })).json(); } catch {}
+  }));
+  $('#jobs').innerHTML = lista.length ? lista.map((j) => {
+    const [cls, ico, txt] = ESTADO_JOB[j.estado] || ['nc', '?', j.estado];
+    const pct = j.total ? Math.round((j.hechos / j.total) * 100) : 0;
+    const meses = j.meses.length ? j.meses.map((m) => MESES[m - 1]).join(', ') : 'todos';
+    const activa = ['en_cola', 'corriendo'].includes(j.estado);
+    return `<li class="job">
+      <div class="job-h"><span><span class="st ${cls}"><i>${ico}</i> ${txt}</span> <b style="margin-left:6px">${j.anio} · ${esc(meses)}</b></span>
+        <span class="muted" style="font-size:12px">${esc(j.usuario)} · ${fmtFecha(j.creada)}</span></div>
+      <div class="job-m">${j.n_contratos ? j.n_contratos + ' contrato(s)' : 'Todos los contratos'}${j.sin_soportes ? ' · rápido' : ''}
+        ${j.estado === 'corriendo' ? ` · ${j.hechos}/${j.total} · ${esc(j.actual || 'iniciando…')} · ${duracion(j.inicio)}` : ''}
+        ${j.fin ? ' · duró ' + duracion(j.inicio, j.fin) : ''}</div>
+      ${j.estado === 'corriendo' ? `<div class="prog"><div style="width:${pct}%"></div></div>` : ''}
+      <div class="acc">
+        ${j.tiene_excel ? `<a class="btn sm" href="/api/excel?id=${j.id}">⬇ Excel</a>` : ''}
+        ${activa ? `<button class="btn sm" data-cancel="${j.id}">Cancelar</button>` : ''}
+        <button class="btn sm" data-log="${j.id}">${abiertos.has(j.id) ? 'Ocultar detalle' : 'Ver detalle'}</button>
+      </div>
+      ${abiertos.has(j.id) && det[j.id] ? `<pre>${esc(det[j.id].log || det[j.id].resumen || 'Sin registro aún')}</pre>` : ''}
+    </li>`;
+  }).join('') : '<li class="muted">Aún no hay consultas. Elige meses y dale "Consultar en SIE".</li>';
+  clearTimeout(jobsTimer);
+  jobsTimer = setTimeout(cargarJobs, lista.some((j) => ['en_cola', 'corriendo', 'cancelando'].includes(j.estado)) ? 4000 : 30000);
+}
+
+async function recargarDatos() {
+  try {
+    const r = await fetch('/api/datos', { cache: 'no-store' });
+    if (r.ok) { const nuevo = await r.json(); const keep = { ...st }; D = nuevo; preparar(); Object.assign(st, keep); render(); }
+  } catch {}
+}
+
+$('#jobs').addEventListener('click', async (e) => {
+  const c = e.target.closest('[data-cancel]'), l = e.target.closest('[data-log]');
+  if (c && confirm('¿Cancelar esta consulta?')) {
+    await fetch(`/api/consultas?id=${c.dataset.cancel}&accion=cancelar`, { method: 'POST' });
+  }
+  if (l) { abiertos.has(l.dataset.log) ? abiertos.delete(l.dataset.log) : abiertos.add(l.dataset.log); }
+  if (c || l) cargarJobs();
+});
+
+$('#btnConsultar').onclick = async () => {
+  const meses = [...document.querySelectorAll('#cMeses input:checked')].map((x) => +x.value);
+  if (!meses.length) return alert('Elige al menos un mes.');
+  const alc = document.querySelector('input[name="cAlc"]:checked').value;
+  const contratos = alc === 'todos' ? [] : filtrados().map((c) => c.contrato);
+  if (alc !== 'todos' && !contratos.length) return alert('No hay contratos con el filtro actual.');
+  const n = contratos.length || D.contratos.length;
+  if (!confirm(`Consultar en el SIE ${n} contrato(s) para ${meses.map((m) => MESES_L[m - 1]).join(', ')} ${st.anio}?`)) return;
+  const b = $('#btnConsultar'); b.disabled = true; b.textContent = 'Enviando…';
+  try {
+    const catalogo = D.contratos.map(({ contrato, prestador, nit, municipio, inicio, fin, estado_contrato, valor_contrato }) =>
+      ({ contrato, prestador, nit, municipio, inicio, fin, estado_contrato, valor_contrato }));
+    const r = await fetch('/api/consultas', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ anio: st.anio, meses, contratos, catalogo, sin_soportes: $('#cRapido').checked }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || j.error || r.status);
+    $('#cAviso').textContent = j.duplicada ? 'Ya había una consulta igual en curso; se muestra abajo.' : 'Consulta enviada. Verás el avance abajo.';
+  } catch (e) { alert('No se pudo enviar: ' + e.message); }
+  b.disabled = false; b.textContent = '▶ Consultar en SIE';
+  cargarJobs();
+};
+
+const _renderOrig = render;
+render = function () { _renderOrig(); if (D) { renderAlcance(); if (!$('#cMeses').dataset.anio || +$('#cMeses').dataset.anio !== st.anio || !$('#cMeses').children.length) { renderMesesConsulta(); $('#cMeses').dataset.anio = st.anio; } } };
+
+cargar().then(() => { if (D) { renderMesesConsulta(); cargarJobs(); } });
 </script>
 </body>
 </html>

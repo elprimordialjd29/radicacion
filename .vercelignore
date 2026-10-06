@@ -2,3 +2,5 @@ bot/
 docs/
 *.md
 .tools/
+deploy/
+worker/

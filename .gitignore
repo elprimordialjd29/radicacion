@@ -22,3 +22,4 @@ node_modules/
 .tools/
 .vercel
 .env*
+bot/worker_datos/

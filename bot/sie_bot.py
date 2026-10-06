@@ -60,6 +60,8 @@ def log(msg):
 
 def notificar(titulo, texto):
     """Notificación nativa de macOS (no falla si no se puede)."""
+    if sys.platform != "darwin":
+        return
     texto = texto.replace('"', "'")
     try:
         subprocess.run(["osascript", "-e",
@@ -79,7 +81,17 @@ def cargar_contratos(ruta):
         sys.exit(f"No existe el listado de contratos: {ruta}\n"
                  "Configura SIE_CONTRATOS en bot/.env con la ruta del Excel.")
     meta = {}
-    if ruta.suffix.lower() in (".xlsx", ".xls", ".csv"):
+    if ruta.suffix.lower() == ".json":
+        # [{"contrato": "...", "prestador": "...", "inicio": "YYYY-MM-DD", ...}, ...]
+        filas = json.loads(ruta.read_text(encoding="utf-8"))
+        valores = []
+        for f in filas:
+            c = str(f.get("contrato", "")).strip()
+            if c:
+                valores.append(c)
+                meta[c] = {k: str(f.get(k) or "") for k in ("prestador", "nit", "municipio", "inicio",
+                                                          "fin", "estado_contrato", "valor_contrato")}
+    elif ruta.suffix.lower() in (".xlsx", ".xls", ".csv"):
         df = pd.read_csv(ruta, dtype=str) if ruta.suffix.lower() == ".csv" \
             else pd.read_excel(ruta, dtype=str)
         cols = [str(c) for c in df.columns]
@@ -667,7 +679,11 @@ def main():
     a_consultar = [c for c in contratos if c not in fuera]
 
     usuario = os.getenv("SIE_USUARIO") or input("Usuario SIE: ").strip()
-    clave = os.getenv("SIE_CLAVE") or getpass.getpass("Clave SIE: ")
+    clave = os.getenv("SIE_CLAVE")
+    if not clave:
+        if not sys.stdin.isatty():
+            sys.exit("ERROR: falta SIE_CLAVE en bot/.env (modo servidor)")
+        clave = getpass.getpass("Clave SIE: ")
 
     log(f"{len(contratos)} contratos ({len(fuera)} fuera de vigencia, se consultan "
         f"{len(a_consultar)}) | meses: {', '.join(NOMBRE_MES[m] for m in meses) or 'todos'} "
@@ -741,6 +757,7 @@ def main():
     if not primera:
         print(f" NOVEDADES desde la última vez: {len(novedades)}")
     print(f" Excel: {ruta}")
+    print(f"@@EXCEL {ruta}", flush=True)
     print("=" * 60)
 
     if not a.no_publicar:
@@ -756,7 +773,8 @@ def main():
     if len(novedades) and not primera:
         aviso = f"{len(novedades)} radicaciones nuevas. " + aviso
     notificar("SIE · Radicación Cápita", aviso)
-    subprocess.run(["open", str(ruta)], check=False)
+    if sys.platform == "darwin" and sys.stdout.isatty():
+        subprocess.run(["open", str(ruta)], check=False)
 
 
 if __name__ == "__main__":

@@ -41,5 +41,6 @@ O haz doble clic en `bot/Radicacion.command`.
 |---|---|
 | [docs/USO.md](docs/USO.md) | Comandos, opciones y cómo leer el Excel y el dashboard |
 | [docs/VERCEL.md](docs/VERCEL.md) | Cómo conectar el repo a Vercel, Blob y variables |
+| [docs/SERVIDOR.md](docs/SERVIDOR.md) | Worker en el VPS: instalación, servicio, actualización |
 | [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) | Flujo, reglas de negocio, formato de datos |
 | [CHANGELOG.md](CHANGELOG.md) | Historial de versiones |
