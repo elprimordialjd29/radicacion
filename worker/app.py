@@ -306,12 +306,18 @@ def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "
     tipo = "application/json" if formato == "json" else "text/plain; charset=latin-1"
     if len(archivos) == 1:
         rec, reg, ruta = archivos[0]
-        return Response(contenido(ruta), media_type=tipo,
-                        headers={"Content-Disposition": f'attachment; filename="{nombre(rec, reg)}"'})
+        datos = contenido(ruta)
+        # Vercel no deja pasar respuestas > 4.5 MB: los archivos grandes van comprimidos en .zip
+        if len(datos) <= 4_000_000:
+            return Response(datos, media_type=tipo,
+                            headers={"Content-Disposition": f'attachment; filename="{nombre(rec, reg)}"'})
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         for rec, reg, ruta in archivos:
             z.writestr(nombre(rec, reg), contenido(ruta))
+    if buf.tell() > 4_400_000:
+        raise HTTPException(413, "El RIPS de ese periodo es demasiado grande para descargarlo en línea; "
+                                 "filtra por régimen o descarga cada radicación por separado.")
     sufijo = f"_{regimen.upper()}" if regimen else ""
     return Response(buf.getvalue(), media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{base}{sufijo}_{formato}.zip"'})
