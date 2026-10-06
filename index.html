@@ -73,7 +73,10 @@ input[type=search] { min-width: 260px; }
 .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
   height: 100%; cursor: default; position: relative; }
 .bar-col .val { font-size: 11.5px; color: var(--ink-2); margin-bottom: 3px; font-variant-numeric: tabular-nums; }
-.bar { width: 70%; max-width: 38px; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 0; }
+.bar { width: 70%; max-width: 38px; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 0;
+  transition: height .45s cubic-bezier(.2,.7,.2,1); }
+.bar-col .val { transition: opacity .3s; }
+.chart.cargando .val { opacity: 0; }
 .bar-col:hover .bar, .bar-col.sel .bar { filter: brightness(1.12); outline: 2px solid var(--surface); }
 .bar-col.empty .bar { background: var(--surface-2); }
 .xlab { display: flex; gap: 6px; }
@@ -178,7 +181,7 @@ tr:hover td { background: var(--surface-2); }
 
     <div class="grid2">
       <div class="card">
-        <h2>% de contratos vigentes con radicación, por mes de atención</h2>
+        <h2 id="chartTitulo">% de contratos vigentes con radicación, por mes de atención</h2>
         <div class="chart" id="chart"></div>
         <div class="xlab" id="xlab"></div>
       </div>
@@ -385,18 +388,31 @@ function renderKpis(lista, meses) {
   ].map(([l, v, d]) => `<div class="card kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
 }
 
+let chartPrev = {};   // altura anterior de cada mes, para animar desde ahí
 function renderChart(lista, meses) {
-  const datos = meses.map((m) => {
+  // la gráfica muestra solo los meses elegidos ("Todos" = todos los meses)
+  const visibles = selMeses(meses);
+  const datos = visibles.map((m) => {
     let vig = 0, ok = 0, valor = 0;
     for (const c of lista) { const e = estado(c, st.anio, m); if (e.k === 'na') continue; vig++; if (e.k === 'ok') { ok++; valor += e.valor; } }
     return { m, vig, ok, valor, pct: vig ? (ok / vig) * 100 : 0 };
   });
-  $('#chart').innerHTML = datos.map((d) =>
-    `<div class="bar-col ${d.ok ? '' : 'empty'} ${st.meses.includes(d.m) ? 'sel' : ''}" data-m="${d.m}"
+  const alto = (d) => Math.max(d.pct, d.vig ? 1.5 : 0) * 0.82;
+  $('#chartTitulo').textContent = `% de contratos vigentes con radicación · ${periodoTxt()}`;
+  const ch = $('#chart');
+  ch.classList.add('cargando');
+  ch.innerHTML = datos.map((d) =>
+    `<div class="bar-col ${d.ok ? '' : 'empty'}" data-m="${d.m}"
       data-tip="${MESES_L[d.m - 1]}: ${d.ok}/${d.vig} contratos radicados (${Math.round(d.pct)}%) · ${fmtCOP(d.valor)}">
       <span class="val">${d.vig ? Math.round(d.pct) + '%' : ''}</span>
-      <div class="bar" style="height:${Math.max(d.pct, d.vig ? 1.5 : 0) * 0.82}%"></div></div>`).join('');
+      <div class="bar" style="height:${chartPrev[d.m] ?? 0}%"></div></div>`).join('');
   $('#xlab').innerHTML = datos.map((d) => `<span>${MESES[d.m - 1]}</span>`).join('');
+  // siguiente frame: crecer/encoger hasta el valor nuevo (animación)
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    ch.querySelectorAll('.bar-col').forEach((col, i) => { col.querySelector('.bar').style.height = alto(datos[i]) + '%'; });
+    ch.classList.remove('cargando');
+  }));
+  chartPrev = Object.fromEntries(datos.map((d) => [d.m, alto(d)]));
 }
 
 function renderNovedades() {
@@ -495,7 +511,12 @@ function alternarMes(m) {
   sincronizarConsulta(); render();
 }
 $('#fMes').onclick = (e) => { const b = e.target.closest('[data-m]'); if (b) alternarMes(+b.dataset.m); };
-$('#chart').onclick = (e) => { const b = e.target.closest('[data-m]'); if (b) alternarMes(+b.dataset.m); };
+$('#chart').onclick = (e) => {
+  const b = e.target.closest('[data-m]'); if (!b) return;
+  const m = +b.dataset.m;
+  st.meses = st.meses.length === 1 && st.meses[0] === m ? [] : [m];   // clic = ver solo ese mes; otra vez = todos
+  sincronizarConsulta(); render();
+};
 function aplicarRango() {
   let d = +$('#fDesde').value, h = +$('#fHasta').value;
   if (d > h) [d, h] = [h, d];
