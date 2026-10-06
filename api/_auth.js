@@ -13,6 +13,6 @@ export async function worker(ruta, opciones = {}) {
   return fetch(base + ruta, {
     ...opciones,
     headers: { 'x-token': process.env.WORKER_TOKEN, 'Content-Type': 'application/json', ...(opciones.headers || {}) },
-    signal: AbortSignal.timeout(20000),
+    signal: opciones.signal || AbortSignal.timeout(20000),
   });
 }

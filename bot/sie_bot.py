@@ -33,6 +33,8 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+
+import rips_json
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
@@ -354,18 +356,9 @@ RE_FECHA = re.compile(r"\b(20\d{2})-(\d{2})-(\d{2})\b")
 
 def periodo_soporte(ruta):
     """Saca el periodo de atención de la sección ARCHIVO-CONSULTAS.
-    Si no hay consultas, usa las fechas de las demás secciones (no FACTURAS)."""
-    texto = leer_textos(ruta)
-    secciones, actual = {}, "INICIO"
-    for linea in texto.splitlines():
-        m = re.search(r"ARCHIVO-([A-Za-zÁÉÍÓÚÑáéíóúñ_]+)", linea)
-        if m:
-            actual = m.group(1).upper()
-            continue
-        if "*FACTURAS*" in linea.replace(" ", ""):
-            actual = "FACTURAS_ENCABEZADO"
-            continue
-        secciones.setdefault(actual, []).append(linea)
+    Si no hay consultas, usa las fechas de los demás servicios.
+    Nunca usa USUARIOS (fechas de nacimiento) ni FACTURAS."""
+    secciones = rips_json.leer_plano(leer_textos(ruta))
 
     def fechas_de(lineas):
         return [(int(a), int(m), int(d)) for l in lineas for a, m, d in RE_FECHA.findall(l)]
@@ -373,9 +366,9 @@ def periodo_soporte(ruta):
     fuente = "CONSULTAS"
     fechas = fechas_de(secciones.get("CONSULTAS", []))
     if not fechas:
-        fuente = "OTRAS SECCIONES"
+        fuente = "OTROS SERVICIOS"
         fechas = fechas_de([l for k, v in secciones.items()
-                            if k not in ("FACTURAS", "FACTURAS_ENCABEZADO", "INICIO") for l in v])
+                            if k not in ("FACTURAS", "USUARIOS", "CONSULTAS") for l in v])
     if not fechas:
         return {"Periodo Año": None, "Periodo Mes N": None, "Fecha atención mín": "",
                 "Fecha atención máx": "", "Nº registros con fecha": 0, "Fuente periodo": "SIN FECHAS"}
@@ -388,7 +381,7 @@ def periodo_soporte(ruta):
             "Fuente periodo": fuente + (" (varios meses)" if len(conteo) > 1 else "")}
 
 
-def buscar_contrato(page, contrato, con_soportes=True):
+def buscar_contrato(page, contrato, con_soportes=True, regimen=""):
     campo = campo_texto(page, "Número Contrato Prestador")
     campo.fill("")
     campo.fill(contrato)
@@ -440,6 +433,7 @@ def buscar_contrato(page, contrato, con_soportes=True):
     df = pd.DataFrame([(r + [""] * n)[:n] for r in filas], columns=nombres)
     df = df[[c for c in df.columns if not c.startswith("_c")]]
     df.insert(0, "Contrato Consultado", contrato)
+    df.insert(1, "Régimen", regimen)
     if con_soportes:
         df = pd.concat([df, pd.DataFrame(extras)], axis=1)
     return df
@@ -504,9 +498,16 @@ def abrir_db():
         if k not in existentes:
             con.execute(f"ALTER TABLE registros ADD COLUMN {k} {v.replace('PRIMARY KEY', '')}")
     # qué contrato + mes se consultó y cuándo (para distinguir "pendiente" de "no consultado")
+    cols = {r[1] for r in con.execute("PRAGMA table_info(consultas)")}
+    if cols and "regimen" not in cols:  # versión anterior sin régimen → se migra como RS
+        con.execute("ALTER TABLE consultas RENAME TO consultas_v1")
     con.execute("""CREATE TABLE IF NOT EXISTS consultas(
-        contrato TEXT, anio INTEGER, mes INTEGER, fecha TEXT, resultado TEXT,
-        PRIMARY KEY (contrato, anio, mes))""")
+        contrato TEXT, anio INTEGER, mes INTEGER, regimen TEXT, fecha TEXT, resultado TEXT,
+        PRIMARY KEY (contrato, anio, mes, regimen))""")
+    if cols and "regimen" not in cols:
+        con.execute("INSERT OR IGNORE INTO consultas SELECT contrato, anio, mes, 'RS', fecha, resultado "
+                    "FROM consultas_v1")
+        con.execute("DROP TABLE consultas_v1")
     con.execute("""CREATE TABLE IF NOT EXISTS corridas(
         fecha TEXT PRIMARY KEY, meses TEXT, contratos INTEGER, radicados INTEGER,
         pendientes INTEGER, errores INTEGER, novedades INTEGER)""")
@@ -536,7 +537,8 @@ def actualizar_historial(df, regimen):
                      radicacion=rad, valor=float(r.get("Valor (número)") or 0),
                      periodo_anio=anio, periodo_mes=mes,
                      fecha_min=g("Fecha atención mín") or "", fecha_max=g("Fecha atención máx") or "",
-                     fuente=g("Fuente periodo") or "", regimen=regimen, ultima_vez=ahora)
+                     fuente=g("Fuente periodo") or "", regimen=r.get("Régimen") or regimen,
+                     ultima_vez=ahora)
         if previo is None:
             nuevos.append(i)
             datos.update(clave=clave, primera_vez=ahora)
@@ -552,16 +554,24 @@ def actualizar_historial(df, regimen):
     return df.loc[nuevos], not hay_previos
 
 
-def registrar_consultas(resumen, meses, anio):
+def registrar_consultas(resumen, meses, anio, regimen, contratos=None, df=None):
+    # meses radicados por contrato y régimen (según el periodo de cada soporte)
+    res_reg = {}
+    if df is not None and not df.empty:
+        for _, r in df.iterrows():
+            m = MESES.get(str(r.get("Mes") or "").lower())
+            if m:
+                res_reg.setdefault(r["Contrato Consultado"], {}).setdefault(r.get("Régimen") or regimen, set()).add(m)
     con = abrir_db()
     ahora = datetime.now().isoformat(timespec="seconds")
     for _, f in resumen.iterrows():
+        if contratos is not None and f["Contrato"] not in contratos:
+            continue
         for m in meses:
-            n = f.get(f"{NOMBRE_MES[m]} - Radicados", 0)
-            res = f["Estado"] if f["Estado"] in ("FUERA DE VIGENCIA",) or \
-                str(f["Estado"]).startswith("ERROR") else ("RADICADO" if n else "SIN RADICAR")
-            con.execute("INSERT OR REPLACE INTO consultas VALUES (?,?,?,?,?)",
-                        (f["Contrato"], anio, m, ahora, res))
+            # los contratos con error en este régimen ya vienen excluidos (se registran aparte)
+            res = "RADICADO" if m in res_reg.get(f["Contrato"], {}).get(regimen, set()) else "SIN RADICAR"
+            con.execute("INSERT OR REPLACE INTO consultas VALUES (?,?,?,?,?,?)",
+                        (f["Contrato"], anio, m, regimen, ahora, res))
     con.commit()
     con.close()
 
@@ -584,7 +594,8 @@ def guardar_excel(df, contratos, meta, meses, anio, novedades, errores, fuera, s
             fila[f"{NOMBRE_MES[m]} - Radicados"] = len(sm)
             fila[f"{NOMBRE_MES[m]} - Valor"] = float(sm["Valor (número)"].sum()) if len(sm) else 0.0
         fila["Total radicados"] = len(sub)
-        fila["Estado"] = ("ERROR: " + errores[c]) if c in errores else \
+        err = next((v for k, v in errores.items() if k == c or k.startswith(c + " (")), None)
+        fila["Estado"] = ("ERROR: " + err) if err else \
             "FUERA DE VIGENCIA" if c in fuera else ("RADICADO" if len(sub) else "SIN RADICAR")
         filas.append(fila)
     resumen = pd.DataFrame(filas)
@@ -657,8 +668,8 @@ def main():
     ap.add_argument("meses", nargs="*", help="enero febrero … (o números 1-12)")
     ap.add_argument("--todos", action="store_true", help="no filtrar por mes")
     ap.add_argument("--anio", type=int, default=int(os.getenv("SIE_ANIO", datetime.now().year)))
-    ap.add_argument("--regimen", default=os.getenv("SIE_REGIMEN", "RS"),
-                    help="Tipo Régimen (RS, RC…). Vacío = no tocar")
+    ap.add_argument("--regimen", default=os.getenv("SIE_REGIMEN", "RS,RC"),
+                    help="Regímenes separados por coma: RS,RC (por defecto ambos)")
     ap.add_argument("--tipo", default=os.getenv("SIE_TIPO_CONTRATO", "Capita"))
     ap.add_argument("--estado", default="Radicado")
     ap.add_argument("--contratos", default=os.getenv("SIE_CONTRATOS", str(BASE / "contratos.xlsx")))
@@ -682,6 +693,7 @@ def main():
         contratos = [c for c in contratos if c in a.solo] or a.solo
     if not contratos:
         sys.exit("El listado de contratos está vacío.")
+    regimenes = [r.strip().upper() for r in (a.regimen or "").split(",") if r.strip()] or [""]
     fuera = set() if a.incluir_fuera_vigencia else \
         {c for c in contratos if not vigente_en(meta.get(c, {}), a.anio, meses)}
     a_consultar = [c for c in contratos if c not in fuera]
@@ -695,7 +707,7 @@ def main():
 
     log(f"{len(contratos)} contratos ({len(fuera)} fuera de vigencia, se consultan "
         f"{len(a_consultar)}) | meses: {', '.join(NOMBRE_MES[m] for m in meses) or 'todos'} "
-        f"{a.anio} | {a.regimen} · {a.tipo} · {a.estado}")
+        f"{a.anio} | régimen {', '.join(regimenes)} · {a.tipo} · {a.estado}")
 
     partes, errores = [], {}
     sin_periodo = pd.DataFrame()
@@ -708,22 +720,29 @@ def main():
             try:
                 iniciar_sesion(page, usuario, clave, a.anio)
                 abrir_consulta(page)
-                for n, contrato in enumerate(a_consultar, 1):
-                    for intento in (1, 2):
-                        try:
-                            configurar_filtros(page, a.regimen, a.tipo, a.estado, a.cantidad)
-                            df = buscar_contrato(page, contrato, not a.sin_soportes)
-                            log(f"[{n}/{len(a_consultar)}] {contrato}: {len(df)} registros")
-                            if not df.empty:
-                                partes.append(df)
-                            errores.pop(contrato, None)
-                            break
-                        except Exception as e:
-                            errores[contrato] = str(e).splitlines()[0][:150]
-                            log(f"[{n}/{len(a_consultar)}] {contrato}: error ({errores[contrato]})")
-                            evidencia(page, f"error_{re.sub(r'[^A-Za-z0-9-]', '_', contrato)}")
-                            if intento == 1:
-                                abrir_consulta(page)  # recargar la página y reintentar
+                total = len(a_consultar) * len(regimenes)
+                n = 0
+                for reg in regimenes:
+                    tipo = f"{a.tipo} {reg}" if reg else a.tipo   # "Capita RS" / "Capita RC"
+                    log(f"=== Régimen {reg or '(sin filtro)'} · {tipo} ===")
+                    for contrato in a_consultar:
+                        n += 1
+                        clave_err = f"{contrato} ({reg})" if len(regimenes) > 1 else contrato
+                        for intento in (1, 2):
+                            try:
+                                configurar_filtros(page, reg, tipo, a.estado, a.cantidad)
+                                df = buscar_contrato(page, contrato, not a.sin_soportes, reg)
+                                log(f"[{n}/{total}] {contrato} {reg}: {len(df)} registros")
+                                if not df.empty:
+                                    partes.append(df)
+                                errores.pop(clave_err, None)
+                                break
+                            except Exception as e:
+                                errores[clave_err] = str(e).splitlines()[0][:150]
+                                log(f"[{n}/{total}] {contrato} {reg}: error ({errores[clave_err]})")
+                                evidencia(page, f"error_{re.sub(r'[^A-Za-z0-9-]', '_', contrato)}_{reg}")
+                                if intento == 1:
+                                    abrir_consulta(page)  # recargar la página y reintentar
             finally:
                 browser.close()
 
@@ -733,7 +752,7 @@ def main():
     if not df.empty:
         df = preparar(df, not (a.por_recepcion or a.sin_soportes))
         sin_periodo = df[df["Mes"].isna()]
-        novedades, primera = actualizar_historial(df, a.regimen)  # todo lo hallado, todos los meses
+        novedades, primera = actualizar_historial(df, regimenes[0])  # todo lo hallado, todos los meses
         if meses:
             sel = (df["Año"] == a.anio) & (df["Mes"].isin([NOMBRE_MES[m] for m in meses]))
             df = df[sel]
@@ -742,7 +761,19 @@ def main():
     ruta, resumen = guardar_excel(df, contratos, meta, meses, a.anio, novedades, errores,
                                   fuera, sin_periodo)
     if meses:
-        registrar_consultas(resumen, meses, a.anio)
+        for reg in regimenes:
+            con_error = {k.split(" (")[0] for k in errores if k.endswith(f"({reg})") or "(" not in k}
+            registrar_consultas(resumen, meses, a.anio, reg,
+                                contratos=set(a_consultar) - con_error, df=df)
+            if con_error:  # los que fallaron en este régimen quedan como ERROR
+                c = abrir_db()
+                for ce in con_error:
+                    for m in meses:
+                        c.execute("INSERT OR REPLACE INTO consultas VALUES (?,?,?,?,?,?)",
+                                  (ce, a.anio, m, reg, datetime.now().isoformat(timespec="seconds"),
+                                   "ERROR: " + next((v for k, v in errores.items() if k.startswith(ce)), "")))
+                c.commit()
+                c.close()
 
     radicados = int((resumen["Estado"] == "RADICADO").sum())
     pendientes = int((resumen["Estado"] == "SIN RADICAR").sum())

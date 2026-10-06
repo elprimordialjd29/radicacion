@@ -92,6 +92,11 @@ tr:hover td { background: var(--surface-2); }
 .st.err { background: var(--warning-bg); } .st.err i { color: #b07800; }
 .st.na { background: var(--muted-bg); color: var(--ink-3); }
 .st.nc { background: transparent; color: var(--ink-3); border: 1px dashed var(--border); }
+.dl { display: inline-flex; gap: 3px; margin-left: 4px; vertical-align: middle; }
+.dl a { font-size: 10.5px; font-weight: 600; text-decoration: none; color: var(--ink-2); border: 1px solid var(--border);
+  border-radius: 5px; padding: 1px 5px; line-height: 1.5; background: var(--surface); }
+.dl a:hover { color: var(--accent); border-color: var(--accent); }
+.reg-tag { font-size: 10.5px; color: var(--ink-3); margin-left: 3px; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 10px; font-size: 12px; color: var(--ink-2); }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
 .tab { font: inherit; background: none; border: 0; padding: 8px 12px; cursor: pointer; color: var(--ink-2);
@@ -142,6 +147,7 @@ tr:hover td { background: var(--surface-2); }
 
   <div class="filters">
     <label>Año <select id="fAnio"></select></label>
+    <label>Régimen <select id="fReg"><option value="">Todos</option><option value="RS">Subsidiado (RS)</option><option value="RC">Contributivo (RC)</option></select></label>
     <label>Tipo <select id="fTipo"><option value="">Todos</option></select></label>
     <label>Municipio <select id="fMuni"><option value="">Todos</option></select></label>
     <div class="search">
@@ -175,6 +181,10 @@ tr:hover td { background: var(--surface-2); }
           <div class="fld"><span class="lbl">Contratos</span>
             <label class="chk"><input type="radio" name="cAlc" value="filtro" checked> <span id="cAlcFiltro">Los filtrados arriba</span></label>
             <label class="chk"><input type="radio" name="cAlc" value="todos"> <span id="cAlcTodos">Todos</span></label>
+          </div>
+          <div class="fld"><span class="lbl">Régimen</span>
+            <label class="chk"><input type="checkbox" class="cReg" value="RS" checked> Subsidiado (Capita RS)</label>
+            <label class="chk"><input type="checkbox" class="cReg" value="RC" checked> Contributivo (Capita RC)</label>
           </div>
           <label class="chk"><input type="checkbox" id="cRapido"> Rápido (sin descargar soportes RIPS; usa la fecha de recepción)</label>
           <div style="margin-top:8px"><button class="btn primary" id="btnConsultar">▶ Consultar en SIE</button></div>
@@ -216,7 +226,7 @@ const fmtN = (n) => (n || 0).toLocaleString('es-CO');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 let D = null;
-const st = { anio: null, mes: null, tipo: '', muni: '', texto: '', tab: 'matriz' };
+const st = { anio: null, mes: null, tipo: '', muni: '', texto: '', tab: 'matriz', reg: '' };
 try { const t = localStorage.getItem('rad-tema'); if (t) document.documentElement.dataset.theme = t; } catch {}
 
 $('#btnTema').onclick = () => {
@@ -245,11 +255,12 @@ function vacio(msg) {
 function preparar() {
   D.idx = {};                                     // contrato -> 'anio-mes' -> [registros]
   for (const r of D.registros) {
+    r.regimen = r.regimen || 'RS';
     if (!r.periodo_anio || !r.periodo_mes) continue;
     ((D.idx[r.contrato] ??= {})[r.periodo_anio + '-' + r.periodo_mes] ??= []).push(r);
   }
-  D.cons = {};
-  for (const c of D.consultas || []) D.cons[c.contrato + '|' + c.anio + '-' + c.mes] = c;
+  D.cons = {};                                    // contrato|anio-mes -> {RS: consulta, RC: consulta}
+  for (const c of D.consultas || []) (D.cons[c.contrato + '|' + c.anio + '-' + c.mes] ??= {})[c.regimen || 'RS'] = c;
   const anios = new Set(D.registros.map((r) => r.periodo_anio).filter(Boolean));
   (D.consultas || []).forEach((c) => anios.add(c.anio));
   if (D.ultima?.anio) anios.add(D.ultima.anio);
@@ -276,13 +287,20 @@ function vigente(c, anio, mes) {
   return (!ini || ini <= pFin) && (!fin || fin >= pIni);
 }
 function estado(c, anio, mes) {
-  const regs = D.idx[c.contrato]?.[anio + '-' + mes] || [];
-  if (regs.length) return { k: 'ok', regs, valor: regs.reduce((s, r) => s + (r.valor || 0), 0) };
+  const regs = (D.idx[c.contrato]?.[anio + '-' + mes] || []).filter((r) => !st.reg || r.regimen === st.reg);
+  if (regs.length) return { k: 'ok', regs, valor: regs.reduce((s, r) => s + (r.valor || 0), 0), c, anio, mes };
   if (!vigente(c, anio, mes)) return { k: 'na' };
-  const q = D.cons[c.contrato + '|' + anio + '-' + mes];
-  if (!q) return { k: 'nc' };
-  if (String(q.resultado).startsWith('ERROR')) return { k: 'err', q };
-  return { k: 'no', q };
+  const porReg = D.cons[c.contrato + '|' + anio + '-' + mes] || {};
+  const qs = st.reg ? [porReg[st.reg]].filter(Boolean) : Object.values(porReg);
+  if (!qs.length) return { k: 'nc' };
+  const ok = qs.find((q) => !String(q.resultado).startsWith('ERROR'));
+  if (!ok) return { k: 'err', q: qs[0] };
+  return { k: 'no', q: ok };
+}
+const ripsUrl = (contrato, anio, mes, formato) =>
+  `/api/rips?${new URLSearchParams({ contrato, anio, mes, regimen: st.reg, formato })}`;
+function botonesRips(contrato, anio, mes) {
+  return `<span class="dl"><a href="${ripsUrl(contrato, anio, mes, 'txt')}" title="Descargar RIPS original (TXT)">TXT</a><a href="${ripsUrl(contrato, anio, mes, 'json')}" title="Descargar RIPS en JSON (Res. 2275)">JSON</a></span>`;
 }
 function filtrados() {
   const t = st.texto.toLowerCase();
@@ -367,7 +385,10 @@ function renderNovedades() {
 }
 
 const CELDA = {
-  ok: (e) => `<span class="st ok"><i>✓</i> ${e.regs.length}</span>`,
+  ok: (e) => {
+    const regs = [...new Set(e.regs.map((r) => r.regimen))].join('/');
+    return `<span class="st ok"><i>✓</i> ${e.regs.length}</span>${!st.reg && regs ? `<span class="reg-tag">${regs}</span>` : ''}${botonesRips(e.c.contrato, e.anio, e.mes)}`;
+  },
   no: () => '<span class="st no"><i>✕</i> Pend.</span>',
   err: () => '<span class="st err"><i>!</i> Error</span>',
   nc: () => '<span class="st nc">?</span>',
@@ -409,13 +430,13 @@ function renderTabla(lista, meses) {
   } else if (st.tab === 'det') {
     const set = new Set(lista.map((c) => c.contrato));
     const ms = new Set(selMeses(meses));
-    const regs = D.registros.filter((r) => set.has(r.contrato) && r.periodo_anio == st.anio && ms.has(r.periodo_mes));
-    filasCsv = [['Contrato', 'Recepción RIPS', 'IPS', 'Fecha recepción', 'Periodo', 'Atención desde', 'Atención hasta', 'N° radicación', 'Valor', 'Fuente']];
+    const regs = D.registros.filter((r) => set.has(r.contrato) && r.periodo_anio == st.anio && ms.has(r.periodo_mes) && (!st.reg || r.regimen === st.reg));
+    filasCsv = [['Contrato', 'Régimen', 'Recepción RIPS', 'IPS', 'Fecha recepción', 'Periodo', 'Atención desde', 'Atención hasta', 'N° radicación', 'Valor', 'Fuente']];
     html = `<p class="sub" style="margin-top:0">${regs.length} radicaciones con periodo de atención en <b>${periodoTxt()}</b>.</p>
-      <table><thead><tr><th>Contrato</th><th>Recepción</th><th>IPS</th><th>Fecha recepción</th><th>Atención</th><th>N° radicación</th><th class="num">Valor AF</th><th>Fuente periodo</th></tr></thead><tbody>` +
+      <table><thead><tr><th>Contrato</th><th>Régimen</th><th>Recepción</th><th>IPS</th><th>Fecha recepción</th><th>Atención</th><th>N° radicación</th><th class="num">Valor AF</th><th>Fuente periodo</th><th>RIPS</th></tr></thead><tbody>` +
       regs.map((r) => {
-        filasCsv.push([r.contrato, r.recepcion, r.ips, r.fecha_recepcion, MESES_L[r.periodo_mes - 1] + ' ' + r.periodo_anio, r.fecha_min, r.fecha_max, r.radicacion, r.valor, r.fuente]);
-        return `<tr><td><b>${esc(r.contrato)}</b></td><td>${esc(r.recepcion)}</td><td class="wrap">${esc(r.ips)}</td><td>${esc(r.fecha_recepcion)}</td><td>${esc(r.fecha_min)} → ${esc(r.fecha_max)}</td><td>${esc(r.radicacion) || '<span class="muted">—</span>'}</td><td class="num">${fmtCOP(r.valor)}</td><td class="muted">${esc(r.fuente)}</td></tr>`;
+        filasCsv.push([r.contrato, r.regimen, r.recepcion, r.ips, r.fecha_recepcion, MESES_L[r.periodo_mes - 1] + ' ' + r.periodo_anio, r.fecha_min, r.fecha_max, r.radicacion, r.valor, r.fuente]);
+        return `<tr><td><b>${esc(r.contrato)}</b></td><td>${esc(r.regimen)}</td><td>${esc(r.recepcion)}</td><td class="wrap">${esc(r.ips)}</td><td>${esc(r.fecha_recepcion)}</td><td>${esc(r.fecha_min)} → ${esc(r.fecha_max)}</td><td>${esc(r.radicacion) || '<span class="muted">—</span>'}</td><td class="num">${fmtCOP(r.valor)}</td><td class="muted">${esc(r.fuente)}</td><td>${botonesRips(r.contrato, r.periodo_anio, r.periodo_mes)}</td></tr>`;
       }).join('') + '</tbody></table>';
   } else {
     filasCsv = [['Fecha', 'Meses', 'Contratos', 'Radicados', 'Pendientes', 'Errores', 'Novedades']];
@@ -435,6 +456,7 @@ $('#fMes').onclick = (e) => { const b = e.target.closest('[data-m]'); if (b) { s
 $('#chart').onclick = (e) => { const b = e.target.closest('[data-m]'); if (b) { st.mes = +b.dataset.m; render(); } };
 $('#fAnio').onchange = (e) => { st.anio = +e.target.value; st.mes = null; render(); };
 $('#fTipo').onchange = (e) => { st.tipo = e.target.value; render(); };
+$('#fReg').onchange = (e) => { st.reg = e.target.value; render(); };
 $('#fMuni').onchange = (e) => { st.muni = e.target.value; render(); };
 const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const fTexto = $('#fTexto'), sugs = $('#sugs');
@@ -567,7 +589,7 @@ async function cargarJobs() {
     return `<li class="job">
       <div class="job-h"><span><span class="st ${cls}"><i>${ico}</i> ${txt}</span> <b style="margin-left:6px">${j.anio} · ${esc(meses)}</b></span>
         <span class="muted" style="font-size:12px">${esc(j.usuario)} · ${fmtFecha(j.creada)}</span></div>
-      <div class="job-m">${j.n_contratos ? j.n_contratos + ' contrato(s)' : 'Todos los contratos'}${j.sin_soportes ? ' · rápido' : ''}
+      <div class="job-m">${j.n_contratos ? j.n_contratos + ' contrato(s)' : 'Todos los contratos'} · ${esc(j.regimenes || 'RS')}${j.sin_soportes ? ' · rápido' : ''}
         ${j.estado === 'corriendo' ? ` · ${j.hechos}/${j.total} · ${esc(j.actual || 'iniciando…')} · ${duracion(j.inicio)}` : ''}
         ${j.fin ? ' · duró ' + duracion(j.inicio, j.fin) : ''}</div>
       ${j.estado === 'corriendo' ? `<div class="prog"><div style="width:${pct}%"></div></div>` : ''}
@@ -602,17 +624,19 @@ $('#jobs').addEventListener('click', async (e) => {
 $('#btnConsultar').onclick = async () => {
   const meses = [...document.querySelectorAll('#cMeses input:checked')].map((x) => +x.value);
   if (!meses.length) return alert('Elige al menos un mes.');
+  const regimenes = [...document.querySelectorAll('.cReg:checked')].map((x) => x.value);
+  if (!regimenes.length) return alert('Elige al menos un régimen.');
   const alc = document.querySelector('input[name="cAlc"]:checked').value;
   const contratos = alc === 'todos' ? [] : filtrados().map((c) => c.contrato);
   if (alc !== 'todos' && !contratos.length) return alert('No hay contratos con el filtro actual.');
   const n = contratos.length || D.contratos.length;
-  if (!confirm(`Consultar en el SIE ${n} contrato(s) para ${meses.map((m) => MESES_L[m - 1]).join(', ')} ${st.anio}?`)) return;
+  if (!confirm(`Consultar en el SIE ${n} contrato(s), régimen ${regimenes.join(' y ')}, para ${meses.map((m) => MESES_L[m - 1]).join(', ')} ${st.anio}?`)) return;
   const b = $('#btnConsultar'); b.disabled = true; b.textContent = 'Enviando…';
   try {
     const catalogo = D.contratos.map(({ contrato, prestador, nit, municipio, inicio, fin, estado_contrato, valor_contrato }) =>
       ({ contrato, prestador, nit, municipio, inicio, fin, estado_contrato, valor_contrato }));
     const r = await fetch('/api/consultas', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ anio: st.anio, meses, contratos, catalogo, sin_soportes: $('#cRapido').checked }) });
+      body: JSON.stringify({ anio: st.anio, meses, contratos, catalogo, regimenes, sin_soportes: $('#cRapido').checked }) });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || j.error || r.status);
     $('#cAviso').textContent = j.duplicada ? 'Ya había una consulta igual en curso; se muestra abajo.' : 'Consulta enviada. Verás el avance abajo.';

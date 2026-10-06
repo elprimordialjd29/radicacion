@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 — 2026-10-06
+- **Descarga de RIPS por mes**: botones TXT (archivo plano original del SIE) y JSON
+  (estructura Res. 2275: factura → usuarios → servicios) en cada mes radicado y en
+  cada radicación. Si hay varias radicaciones, se entregan en un .zip.
+- `bot/rips_json.py`: convertidor plano → JSON 2275 (consultas, procedimientos,
+  urgencias, hospitalización, medicamentos y otros servicios), verificado contra
+  soportes reales.
+- **Régimen Subsidiado y Contributivo**: el bot consulta Capita RS y Capita RC en la
+  misma sesión; filtro de régimen en el dashboard y elección de régimen al consultar.
+- El periodo ya no puede tomar fechas de USUARIOS (fechas de nacimiento) como respaldo.
+
 ## 0.3.1 — 2026-10-06
 - Corrección: el bot hacía clic en el buscador general de la barra superior
   (`cmdGeneralSearch`) en lugar del Buscar del formulario (`#cmdBuscar`), y leía
