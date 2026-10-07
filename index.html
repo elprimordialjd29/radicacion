@@ -950,13 +950,17 @@ async function pintarDuplicados() {
   if (!DUP || DUP_CORTE !== D.generado) {
     try {
       const r = await fetch('/api/duplicados', { cache: 'no-store' });
-      const j = await r.json();
+      const txt = await r.text();
+      let j;
+      try { j = JSON.parse(txt); } catch { throw new Error(r.status === 504 ? 'el servidor tardó demasiado' : `respuesta inesperada (${r.status})`); }
       if (!r.ok) throw new Error(j.error || j.detail || r.status);
-      DUP = j; DUP_CORTE = D.generado;
+      DUP = j; DUP_CORTE = j.actualizando ? null : D.generado;
     } catch (e) {
-      caja.innerHTML = `<div class="rp-sec-h"><h2>Facturas duplicadas o sospechosas</h2></div><p class="u-msg err">No se pudo analizar: ${esc(e.message)}</p>`;
+      caja.innerHTML = `<div class="rp-sec-h"><h2>Facturas duplicadas o sospechosas</h2></div><p class="sub">No se pudo cargar el análisis (${esc(e.message)}). Se reintenta en unos segundos…</p>`;
+      clearTimeout(pintarDuplicados.t); pintarDuplicados.t = setTimeout(pintarDuplicados, 15000);
       return;
     }
+    if (DUP.actualizando) { clearTimeout(pintarDuplicados.t); pintarDuplicados.t = setTimeout(pintarDuplicados, 15000); }
   }
   const $caja = $('#rpDup'); if (!$caja) return;
   const visibles = new Set(filtrados().map((c) => c.contrato));
@@ -964,13 +968,14 @@ async function pintarDuplicados() {
   const prest = (k) => D.contratos.find((c) => c.contrato === k)?.prestador || '';
   const NIV = { 3: ['no', '⛔'], 2: ['err', '⚠'], 1: ['nc', '•'] };
   const barra = (pct, color) => `<span class="dup-barra"><span style="width:${Math.min(pct, 100)}%;background:${color}"></span></span>`;
-  const R = DUP.resumen;
+  const R = DUP.resumen || { criticos: 0, altos: 0, radicaciones: 0 };
+  if (!DUP.resumen) { $caja.innerHTML = '<div class="rp-sec-h"><h2>Facturas duplicadas o sospechosas</h2></div><p class="sub">⟳ Preparando el análisis de los soportes RIPS (menos de un minuto)…</p>'; return; }
   const corto = (v) => fmtM(v || 0);
   $caja.innerHTML = `<div class="rp-sec-h"><h2>Facturas duplicadas o sospechosas</h2>
       <span class="rv-ctl" style="margin:0">
         <span class="dup-chip ${R.criticos ? 'c3' : ''}">${R.criticos} crítica${R.criticos === 1 ? '' : 's'}</span>
         <span class="dup-chip ${R.altos ? 'c2' : ''}">${R.altos} alta${R.altos === 1 ? '' : 's'}</span>
-        <span class="sub">${fmtN(R.radicaciones)} radicaciones revisadas</span>
+        <span class="sub">${fmtN(R.radicaciones)} radicaciones revisadas${DUP.actualizando ? ' · ⟳ actualizando' : ''}</span>
         ${puede('descargar_rips') ? '<a class="btn sm" href="/api/duplicados?excel=1" title="Incluye el detalle de servicios repetidos (datos de pacientes)">⬇ Excel</a>' : ''}</span></div>
     ${pares.length ? `<div class="dup-lista">
       <div class="dup-fila dup-cab"><span>Prioridad</span><span>Contrato</span><span>Periodo</span><span>Facturas</span><span>Coincidencia</span><span class="num">En riesgo</span></div>
@@ -1010,7 +1015,7 @@ const ESTADO_MES = {
   ok: ['ok', '✓', 'Radicado'], est: ['ok', '≈', 'Radicado (periodo estimado)'], no: ['no', '✕', 'Sin radicar'],
   err: ['err', '!', 'Error al consultar'], nc: ['nc', '?', 'No consultado'], na: ['na', '—', 'Fuera de vigencia'],
   plazo: ['nc', '⏳', 'En plazo'],
-  ini: ['ok', '✓', 'Radicado · 1er mes (RIPS en cero)'],
+  ini: ['ok', '✓', 'Cápita inicial'],
 };
 const listaMeses = (fs) => fs.map((f) => MESES_L[f.m - 1]).join(', ');
 
@@ -1049,7 +1054,7 @@ function graficaMeses(A) {
 function explicacion(A) {
   const intro = `El contrato vale <b>${fmtCOP(A.valor)}</b> para <b>${A.mv} meses</b>, así que el <b>tope mensual es ${fmtCOP(A.tope)}</b> (RS + RC). ` +
     `Como la cápita se liquida por UPC × usuarios, se acepta una variación de <b>±${repMargen}%</b> (hasta ${fmtCOP(A.tope * (1 + repMargen / 100))}). ` +
-    `<span class="muted">Modelo vencido: la radicación de cada mes trae el RIPS de las atenciones del mes anterior; la cápita del primer mes va con el RIPS en cero.</span>`;
+    `<span class="muted">Modelo vencido: la radicación de cada mes trae el RIPS de las atenciones del mes anterior; la <b>cápita inicial</b> (primer mes) va con el RIPS en cero.</span>`;
   const items = [];
   if (A.sobre.length) {
     items.push(`<b class="desv-neg">Desviación: +${fmtCOP(A.exceso)}</b> — superó el tope + ${repMargen}% en <b>${listaMeses(A.sobre)}</b>:` +
@@ -1067,7 +1072,7 @@ function explicacion(A) {
   if (malas.length) items.push(`<b class="desv-neg">⚠ Validación factura vs RIPS</b>: ${malas.map(([f, r, v]) => `${MESES_L[f.m - 1]} (${esc(r.factura || r.recepcion)}): ${esc(v[2])}`).join(' · ')}.`);
   else if (A.filas.some((f) => f.regs.length)) items.push('✓ <b>Facturas y RIPS cuadran</b>: cada factura trae las atenciones del mes anterior a su cápita.');
   const ini = A.filas.filter((f) => f.k === 'ini');
-  if (ini.length) items.push(`${listaMeses(ini)}: <b>cápita del primer mes</b>, su RIPS va en cero (sin atenciones) por el modelo vencido.`);
+  if (ini.length) items.push(`${listaMeses(ini)}: <b>Cápita inicial</b> — primera factura del contrato, su RIPS va en cero por el modelo vencido.`);
   const est = A.filas.filter((f) => f.k === 'est');
   if (est.length) items.push(`${listaMeses(est)}: periodo <b>estimado (≈)</b> porque el soporte RIPS del SIE no trae atenciones; conviene verificarlo en el SIE.`);
   return `<div class="dt-expl">${intro}<ul>${items.map((x) => `<li>${x}</li>`).join('')}</ul></div>`;
@@ -1078,8 +1083,8 @@ const fechaCorta = (f) => f ? `${f.slice(8, 10)}/${f.slice(5, 7)}` : '';
 function validarFactura(r, m, A) {
   const enCero = !r.n_servicios && !r.fecha_min;
   const primerMes = A.c.inicio && +A.c.inicio.slice(5, 7) === m && +A.c.inicio.slice(0, 4) === st.anio;
-  if (enCero) return primerMes ? ['ok', '✓', 'RIPS en cero: cápita del primer mes']
-    : ['err', '⚠', 'RIPS en cero y no es el primer mes del contrato'];
+  if (enCero) return primerMes ? ['ok', '✓', 'Cápita inicial (RIPS en cero, primera factura)']
+    : ['err', '⚠', 'RIPS en cero y no es la cápita inicial del contrato'];
   if ((r.meses_rips || 0) > 1) return ['err', '⚠', 'El RIPS trae atenciones de varios meses'];
   const esperado = m === 1 ? 12 : m - 1;
   const mMin = +String(r.fecha_min).slice(5, 7), mMax = +String(r.fecha_max || r.fecha_min).slice(5, 7);
@@ -1099,7 +1104,7 @@ function tablaMeses(A) {
         const [vc, vi, vt] = validarFactura(r, f.m, A);
         return `<div class="fv"><span class="st ${vc}" title="${esc(vt)}"><i>${vi}</i></span>
           <span><b>${esc(r.factura || '—')}</b> <span class="muted">${esc(r.regimen)} · ${fmtCOP(r.valor)} · rad. ${esc(String(r.fecha_recepcion || '').slice(0, 10))}</span><br>
-          <span class="muted">RIPS: ${r.fecha_min ? `${fechaCorta(r.fecha_min)}–${fechaCorta(r.fecha_max)} · ${fmtN(r.n_usuarios)} usuarios · ${fmtN(r.n_servicios)} servicios` : 'en cero (sin atenciones)'}</span>
+          <span class="muted">RIPS: ${r.fecha_min ? `${fechaCorta(r.fecha_min)}–${fechaCorta(r.fecha_max)} · ${fmtN(r.n_usuarios)} usuarios · ${fmtN(r.n_servicios)} servicios` : '<b>Cápita inicial</b> (RIPS en cero)'}</span>
           ${vc !== 'ok' ? `<br><b class="desv-neg">${esc(vt)}</b>` : ''}</span></div>`;
       }).join('') || '—'}</td>
       <td class="num muted">${f.plazo ? '—' : fmtCOP(A.tope)}</td><td class="num">${f.rs ? fmtCOP(f.rs) : '—'}</td><td class="num">${f.rc ? fmtCOP(f.rc) : '—'}</td>
@@ -1154,7 +1159,7 @@ function abrirDetalle(tipo, clave) {
   mostrarModal(`<div class="dt-cab">${cab}
       ${puede('descargar_reportes') ? `<div class="rp-acciones"><button class="btn sm" id="dtExcel">⬇ Excel</button><button class="btn sm" id="dtPdf">🖨 Imprimir / PDF</button></div>` : ''}</div>
     ${cs.map((c) => bloqueContrato(c, mesesSel, tipo !== 'contrato')).join('')}
-    <p class="sub rp-nota">Fuente: SIE Dusakawi · Consulta Recepción (Valor AF, Estado Radicado, Capita RS/RC). Mes de cápita = mes de las atenciones del RIPS + 1 (modelo vencido; la cápita del primer mes va con RIPS en cero). Valor contrato: listado CONTRATOS_CAPITADOS_2026.</p>`);
+    <p class="sub rp-nota">Fuente: SIE Dusakawi · Consulta Recepción (Valor AF, Estado Radicado, Capita RS/RC). Mes de cápita = mes de las atenciones del RIPS + 1 (modelo vencido; la cápita inicial va con RIPS en cero). Valor contrato: listado CONTRATOS_CAPITADOS_2026.</p>`);
 }
 function mostrarModal(html) {
   $('#modalCuerpo').innerHTML = html;
@@ -1458,7 +1463,7 @@ function filasMensuales(As) {
     f.push([A.c.contrato, A.c.prestador, A.c.nit, A.c.municipio, MESES_L[x.m - 1], ESTADO_MES[x.k][2], x.plazo ? '' : r0(A.tope), r0(x.rs), r0(x.rc), r0(x.rad),
       x.rad ? +x.pct.toFixed(2) : '', r0(x.exceso), r0(x.saldo),
       [x.dup && 'Posible duplicado', x.atipico && 'Atípico', x.exceso > 0 && `Fuera de ±${repMargen}%`, x.dentro && 'Dentro del margen'].filter(Boolean).join(' · '),
-      x.regs.map((r) => `${r.factura || '—'} (rec ${r.recepcion}, ${r.regimen}) $${r0(r.valor)} · RIPS ${r.fecha_min ? r.fecha_min + ' a ' + r.fecha_max + ', ' + (r.n_usuarios || 0) + ' usuarios, ' + (r.n_servicios || 0) + ' servicios' : 'en cero'}`).join(' | '),
+      x.regs.map((r) => `${r.factura || '—'} (rec ${r.recepcion}, ${r.regimen}) $${r0(r.valor)} · RIPS ${r.fecha_min ? r.fecha_min + ' a ' + r.fecha_max + ', ' + (r.n_usuarios || 0) + ' usuarios, ' + (r.n_servicios || 0) + ' servicios' : 'Cápita inicial (RIPS en cero)'}`).join(' | '),
       x.regs.map((r) => validarFactura(r, x.m, A)[2]).join(' | ')]);
   }
   return f;

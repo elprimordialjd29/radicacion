@@ -200,6 +200,14 @@ if __name__ == "__main__":
     # uso desde el worker (proceso aparte, para no afectar su memoria):
     #   python duplicados.py --json salida.json
     #   python duplicados.py --excel salida.xlsx [catalogo.json]
+    if sys.argv[1] == "--excel-desde":
+        # python duplicados.py --excel-desde analisis.json salida.xlsx [catalogo.json]  (sin re-analizar)
+        datos = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+        prest = {}
+        if len(sys.argv) > 4 and Path(sys.argv[4]).exists():
+            prest = {c["contrato"]: c.get("prestador", "") for c in json.loads(Path(sys.argv[4]).read_text(encoding="utf-8"))}
+        a_excel(datos["resumen"], datos["pares"], sys.argv[3], prest)
+        sys.exit(0)
     resumen, pares = analizar()
     if sys.argv[1] == "--json":
         Path(sys.argv[2]).write_text(json.dumps({"resumen": resumen, "pares": pares}, ensure_ascii=False), encoding="utf-8")

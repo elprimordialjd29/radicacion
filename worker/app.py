@@ -131,7 +131,7 @@ def ejecutar(r):
                fin=datetime.now().isoformat(timespec="seconds"), excel=excel, resumen=resumen,
                log="\n".join(log[-400:]))
     try:   # deja listo el análisis de duplicados con los datos nuevos
-        _duplicados()
+        _duplicados(esperar=True)
     except Exception:
         pass
 
@@ -433,16 +433,38 @@ def _clave_datos():
     return f"{hist.stat().st_mtime if hist.exists() else 0}-{sop.stat().st_mtime if sop.exists() else 0}"
 
 
-def _duplicados():
+_dup_estado = {"calculando": False}
+
+
+def _recalcular_duplicados(clave):
+    try:
+        tmp = DUP_JSON.with_suffix(".tmp")
+        r = subprocess.run([PY, str(BOT / "duplicados.py"), "--json", str(tmp)], cwd=BOT,
+                           capture_output=True, text=True, timeout=900)
+        if r.returncode == 0 and tmp.exists():
+            tmp.replace(DUP_JSON)
+            (DATOS / "duplicados.clave").write_text(clave)
+    finally:
+        _dup_estado["calculando"] = False
+
+
+def _duplicados(esperar=False):
+    """Devuelve el último análisis guardado AL INSTANTE. Si los datos cambiaron, lo recalcula en
+    segundo plano (proceso aparte); la próxima consulta ya trae el resultado nuevo."""
     clave = _clave_datos()
     marca = DATOS / "duplicados.clave"
-    if not DUP_JSON.exists() or not marca.exists() or marca.read_text() != clave:
-        r = subprocess.run([PY, str(BOT / "duplicados.py"), "--json", str(DUP_JSON)], cwd=BOT,
-                           capture_output=True, text=True, timeout=600)
-        if r.returncode != 0:
-            raise HTTPException(500, "Error analizando duplicados: " + (r.stderr or "")[-400:])
-        marca.write_text(clave)
-    return json.loads(DUP_JSON.read_text(encoding="utf-8"))
+    vigente = DUP_JSON.exists() and marca.exists() and marca.read_text() == clave
+    if not vigente and not _dup_estado["calculando"]:
+        _dup_estado["calculando"] = True
+        if esperar:
+            _recalcular_duplicados(clave)
+        else:
+            threading.Thread(target=_recalcular_duplicados, args=(clave,), daemon=True).start()
+    if DUP_JSON.exists():
+        datos = json.loads(DUP_JSON.read_text(encoding="utf-8"))
+        datos["actualizando"] = _dup_estado["calculando"]
+        return datos
+    return {"resumen": None, "pares": [], "actualizando": True}
 
 
 @app.get("/duplicados")
@@ -454,9 +476,11 @@ def duplicados_json(x_token: str = Header("")):
 @app.get("/duplicados/excel")
 def duplicados_excel(x_token: str = Header("")):
     auth(x_token)
+    if not DUP_JSON.exists():
+        raise HTTPException(409, "El análisis de duplicados se está preparando; intenta en un minuto.")
     ruta = DATOS / f"Facturas_duplicadas_{datetime.now():%Y%m%d_%H%M}.xlsx"
-    r = subprocess.run([PY, str(BOT / "duplicados.py"), "--excel", str(ruta), str(CATALOGO)], cwd=BOT,
-                       capture_output=True, text=True, timeout=600)
+    r = subprocess.run([PY, str(BOT / "duplicados.py"), "--excel-desde", str(DUP_JSON), str(ruta), str(CATALOGO)],
+                       cwd=BOT, capture_output=True, text=True, timeout=120)
     if r.returncode != 0 or not ruta.exists():
         raise HTTPException(500, "Error generando el Excel: " + (r.stderr or "")[-400:])
     for viejo in sorted(DATOS.glob("Facturas_duplicadas_*.xlsx"))[:-3]:

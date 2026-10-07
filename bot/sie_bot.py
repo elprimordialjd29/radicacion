@@ -645,9 +645,9 @@ def estimar_periodos(meta=None):
                 p0 = min(ocupados)
                 previo = (p0[0] - 1, 12) if p0[1] == 1 else (p0[0], p0[1] - 1)
             if ini_t and ini_t not in ocupados and (not ocupados or ini_t < min(ocupados)):
-                (a, m), fuente = ini_t, "INICIAL (RIPS en cero · cápita del primer mes)"
+                (a, m), fuente = ini_t, "INICIAL · Cápita inicial (RIPS en cero)"
             elif previo and previo not in ocupados and (ini_t is None or previo >= ini_t):
-                (a, m), fuente = previo, "INICIAL (RIPS en cero · cápita del primer mes)"
+                (a, m), fuente = previo, "INICIAL · Cápita inicial (RIPS en cero)"
             elif ocupados:
                 a, m = max(ocupados)
                 while (a, m) in ocupados:
