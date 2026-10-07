@@ -908,6 +908,7 @@ function renderReporteVista(lista, mesesTodos) {
       <div class="rp-sec-h"><h2>Desviación por ${repAgrupar === 'contrato' ? 'contrato' : 'prestador'}</h2>
         <span class="rv-ctl" style="margin:0">
           <span class="seg" id="rvAgrupar"><button data-v="prestador" aria-pressed="${repAgrupar === 'prestador'}">Prestador</button><button data-v="contrato" aria-pressed="${repAgrupar === 'contrato'}">Contrato</button></span>
+          ${puede('descargar_reportes') ? '<button class="btn sm" id="rpRelacion" title="Descargar la relación de contratos con su desviación y el detalle mes a mes">⬇ Excel</button>' : ''}
           <select id="repOrden"><option value="exceso">Mayor desviación ($)</option><option value="pct">Mayor % sobre lo esperado</option><option value="esp">Mayor valor esperado</option></select>
         </span></div>
       ${filasEj.map((g) => `<div class="ej-row" data-det="${repAgrupar}" data-clave="${esc(g.nombre)}"
@@ -1207,6 +1208,7 @@ $('#vistaReporte').addEventListener('click', (e) => {
   const pz = e.target.closest('#rvPlazo [data-v]');
   if (pz) { repPlazo = +pz.dataset.v; try { localStorage.setItem('rad-plazo', repPlazo); } catch {} render(); return; }
   if (e.target.closest('#rpExcel')) { exportarReporteExcel(); return; }
+  if (e.target.closest('#rpRelacion')) { exportarRelacionContratos(); return; }
   if (e.target.closest('#rpPdf')) { imprimir('reporte'); return; }
   const mg = e.target.closest('#rvMargen [data-v]');
   if (mg) { repMargen = +mg.dataset.v; try { localStorage.setItem('rad-margen', repMargen); } catch {} render(); return; }
@@ -1517,6 +1519,38 @@ async function exportarDetalleExcel() {
     descargarLibro(X, wb, `Detalle_${d.clave.replace(/[^A-Za-z0-9-]+/g, '_')}_${st.anio}.xlsx`);
   } catch (e) { alert(e.message); }
 }
+// relación de contratos (siempre por contrato), en el orden elegido en pantalla
+async function exportarRelacionContratos() {
+  try {
+    const X = await libXlsx();
+    const As = filtrados().map((c) => analisisContrato(c, selMeses(mesesActivos()))).filter((A) => A.meses.length);
+    const orden = repOrden === 'pct' ? (a, b) => (b.esperado ? b.exceso / b.esperado : 0) - (a.esperado ? a.exceso / a.esperado : 0)
+      : repOrden === 'esp' ? (a, b) => b.esperado - a.esperado : (a, b) => b.exceso - a.exceso || b.esperado - a.esperado;
+    As.sort(orden);
+    const rel = [['#', 'Contrato', 'Prestador', 'NIT', 'Municipio', 'Vigencia', 'Meses vigencia', 'Valor contrato', 'Tope mensual',
+      `Tope + ${repMargen}%`, 'Meses exigibles', 'Esperado exigible', 'Radicado RS', 'Radicado RC', 'Total radicado', '% del esperado',
+      'Desviación', '% desviación', 'Meses fuera del margen', 'Meses dentro del margen', 'Saldo vencido', 'Periodos sin radicar',
+      'Meses en plazo', 'Alertas']];
+    As.forEach((A, i) => {
+      const rs = A.filas.reduce((s, f) => s + f.rs, 0), rc = A.filas.reduce((s, f) => s + f.rc, 0);
+      const alertas = [A.superaContrato && 'Supera el valor del contrato', A.atipicos.length && `Atípico en ${listaMeses(A.atipicos)}`,
+        A.duplicados.length && `Posible duplicado en ${listaMeses(A.duplicados)}`].filter(Boolean).join(' · ');
+      rel.push([i + 1, A.c.contrato, A.c.prestador, A.c.nit, A.c.municipio, `${A.c.inicio} a ${A.c.fin}`, A.mv, r0(A.valor), r0(A.tope),
+        r0(A.tope * (1 + repMargen / 100)), A.exigibles.length, r0(A.esperado), r0(rs), r0(rc), r0(A.radicado),
+        A.esperado ? +(A.radicado / A.esperado * 100).toFixed(2) : 0, r0(A.exceso), A.esperado ? +(A.exceso / A.esperado * 100).toFixed(2) : 0,
+        listaMeses(A.sobre), listaMeses(A.dentro), r0(A.saldo), listaMeses(A.pendientes), listaMeses(A.enPlazo), alertas]);
+    });
+    const tot = (k) => As.reduce((s, A) => s + A[k], 0);
+    rel.push([], ['', 'TOTAL', `${As.length} contratos`, '', '', '', '', r0(tot('valor')), '', '', '', r0(tot('esperado')), '', '', r0(tot('radicado')),
+      tot('esperado') ? +(tot('radicado') / tot('esperado') * 100).toFixed(2) : 0, r0(tot('exceso'))]);
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, hoja(X, [...cabecera('Relación de contratos — desviación (radicado por encima del tope mensual)'), ...rel],
+      [5, 22, 40, 12, 18, 24, 8, 17, 16, 16, 8, 17, 16, 16, 17, 10, 16, 10, 30, 30, 16, 24, 18, 40]), 'Relación de contratos');
+    X.utils.book_append_sheet(wb, hoja(X, filasMensuales(As), [22, 40, 12, 18, 12, 24, 16, 16, 16, 16, 10, 16, 16, 30, 70, 50]), 'Mes a mes');
+    descargarLibro(X, wb, `Relacion_contratos_desviacion_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}.xlsx`);
+  } catch (e) { alert(e.message); }
+}
+
 function imprimir(que) {
   document.body.dataset.imprimir = que;
   const fin = () => { delete document.body.dataset.imprimir; window.removeEventListener('afterprint', fin); };
