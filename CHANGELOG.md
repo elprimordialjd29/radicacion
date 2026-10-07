@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1 — 2026-10-07
+- **Validación factura (SIE) vs RIPS** en cada radicación: número de factura del RIPS, valor de
+  la factura, fechas de las atenciones, usuarios y servicios; ✓ si las atenciones son del mes
+  anterior a la cápita, ⚠ si son de otro mes, de varios meses o si el RIPS viene en cero fuera
+  del primer mes. También en el Excel (columnas «Facturas vs RIPS» y «Validación»).
+- `bot/completar_rips.py`: completa esos datos en el historial desde los soportes ya descargados.
+
 ## 0.8.0 — 2026-10-07
 - **Modelo de cápita vencido**: mes de cápita = mes de las atenciones del RIPS + 1; el soporte
   en cero es la cápita del primer mes de vigencia (`INICIAL`). Migración única del historial.

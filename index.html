@@ -273,6 +273,8 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
 .dup-barra { display: block; height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin-top: 3px; }
 .dup-barra > span { display: block; height: 100%; border-radius: 999px; }
 .dup-lect { margin: 10px 0 0; font-size: 13px; }
+.fv { display: flex; gap: 6px; align-items: flex-start; margin: 2px 0 6px; white-space: normal; min-width: 260px; }
+.fv .st { padding: 1px 6px; }
 .rep-ctl { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
 .rep-ctl select { min-width: 0; padding: 5px 8px; }
 .rep-sec { margin: 18px 0 8px; font-size: 14px; }
@@ -1015,6 +1017,9 @@ function explicacion(A) {
   if (A.pendientes.length) items.push(`Periodos <b>sin radicar</b> (no es desviación, es saldo pendiente): ${listaMeses(A.pendientes)} → ${fmtCOP(A.pendientes.length * A.tope)}.`);
   if (A.bajo.length) items.push(`Radicado <b>por debajo del tope</b> en ${listaMeses(A.bajo)} (dentro de lo permitido).`);
   if (A.enPlazo.length) items.push(`<b>En plazo</b> de radicación (no se cuentan): ${listaMeses(A.enPlazo)}.`);
+  const malas = A.filas.flatMap((f) => f.regs.map((r) => [f, r, validarFactura(r, f.m, A)])).filter(([, , v]) => v[0] !== 'ok');
+  if (malas.length) items.push(`<b class="desv-neg">⚠ Validación factura vs RIPS</b>: ${malas.map(([f, r, v]) => `${MESES_L[f.m - 1]} (${esc(r.factura || r.recepcion)}): ${esc(v[2])}`).join(' · ')}.`);
+  else if (A.filas.some((f) => f.regs.length)) items.push('✓ <b>Facturas y RIPS cuadran</b>: cada factura trae las atenciones del mes anterior a su cápita.');
   const ini = A.filas.filter((f) => f.k === 'ini');
   if (ini.length) items.push(`${listaMeses(ini)}: <b>cápita del primer mes</b>, su RIPS va en cero (sin atenciones) por el modelo vencido.`);
   const est = A.filas.filter((f) => f.k === 'est');
@@ -1022,19 +1027,39 @@ function explicacion(A) {
   return `<div class="dt-expl">${intro}<ul>${items.map((x) => `<li>${x}</li>`).join('')}</ul></div>`;
 }
 
+// validación factura (SIE, "afuera") vs RIPS ("adentro") de una radicación en su mes de cápita
+const fechaCorta = (f) => f ? `${f.slice(8, 10)}/${f.slice(5, 7)}` : '';
+function validarFactura(r, m, A) {
+  const enCero = !r.n_servicios && !r.fecha_min;
+  const primerMes = A.c.inicio && +A.c.inicio.slice(5, 7) === m && +A.c.inicio.slice(0, 4) === st.anio;
+  if (enCero) return primerMes ? ['ok', '✓', 'RIPS en cero: cápita del primer mes']
+    : ['err', '⚠', 'RIPS en cero y no es el primer mes del contrato'];
+  if ((r.meses_rips || 0) > 1) return ['err', '⚠', 'El RIPS trae atenciones de varios meses'];
+  const mAt = +String(r.fecha_min).slice(5, 7), esperado = m === 1 ? 12 : m - 1;
+  if (mAt !== esperado) return ['err', '⚠', `Atenciones de ${MESES_L[mAt - 1]}: no corresponden al mes anterior a la cápita`];
+  return ['ok', '✓', `Atenciones de ${MESES_L[mAt - 1]} (mes anterior) ✓`];
+}
+
 function tablaMeses(A) {
-  return `<div class="tbl-wrap"><table class="dt-tabla rp-tabla"><thead><tr><th>Mes</th><th>Estado</th><th class="num">Tope</th><th class="num">RS</th><th class="num">RC</th><th class="num">Total</th><th class="num">% tope</th><th class="num">Desviación</th><th class="num">Saldo</th><th>Recepciones</th></tr></thead><tbody>
+  return `<div class="tbl-wrap"><table class="dt-tabla rp-tabla"><thead><tr><th>Mes</th><th>Estado</th><th>Factura (SIE) vs RIPS</th><th class="num">Tope</th><th class="num">RS</th><th class="num">RC</th><th class="num">Total</th><th class="num">% tope</th><th class="num">Desviación</th><th class="num">Saldo</th></tr></thead><tbody>
   ${A.filas.map((f) => {
     const [cls, ico, txt] = ESTADO_MES[f.k];
     const nota = f.dup ? ' <small class="desv-neg">⚠ posible duplicado</small>' : f.exceso > 0 ? ` <small class="desv-neg">${f.atipico ? '⚠ atípico' : 'fuera del margen'}</small>` : f.dentro ? ' <small class="muted">dentro del margen</small>' : '';
     return `<tr><td><b>${MESES_L[f.m - 1]}</b></td><td><span class="st ${cls}"><i>${ico}</i> ${txt}</span>${nota}</td>
+      <td style="font-size:11.5px">${f.regs.map((r) => {
+        const [vc, vi, vt] = validarFactura(r, f.m, A);
+        return `<div class="fv"><span class="st ${vc}" title="${esc(vt)}"><i>${vi}</i></span>
+          <span><b>${esc(r.factura || '—')}</b> <span class="muted">${esc(r.regimen)} · ${fmtCOP(r.valor)} · rad. ${esc(String(r.fecha_recepcion || '').slice(0, 10))}</span><br>
+          <span class="muted">RIPS: ${r.fecha_min ? `${fechaCorta(r.fecha_min)}–${fechaCorta(r.fecha_max)} · ${fmtN(r.n_usuarios)} usuarios · ${fmtN(r.n_servicios)} servicios` : 'en cero (sin atenciones)'}</span>
+          ${vc !== 'ok' ? `<br><b class="desv-neg">${esc(vt)}</b>` : ''}</span></div>`;
+      }).join('') || '—'}</td>
       <td class="num muted">${f.plazo ? '—' : fmtCOP(A.tope)}</td><td class="num">${f.rs ? fmtCOP(f.rs) : '—'}</td><td class="num">${f.rc ? fmtCOP(f.rc) : '—'}</td>
       <td class="num"><b>${f.rad ? fmtCOP(f.rad) : '—'}</b></td><td class="num ${f.exceso > 0 ? 'desv-neg' : ''}">${f.rad ? f.pct.toFixed(1) + '%' : '—'}</td>
       <td class="num ${f.exceso > 0 ? 'desv-neg' : 'muted'}">${f.exceso > 0 ? '<b>+' + fmtCOP(f.exceso) + '</b>' : '—'}</td>
       <td class="num muted">${f.saldo > 0 ? fmtCOP(f.saldo) : '—'}</td>
-      <td class="muted" style="font-size:11.5px">${f.regs.map((r) => `${esc(r.recepcion)} <small>${esc(r.regimen)} · ${esc(String(r.fecha_recepcion || '').slice(0, 10))} · ${fmtCOP(r.valor)}${r.fecha_min ? ' · atenciones ' + esc(String(r.fecha_min).slice(0, 7)) : String(r.fuente || '').startsWith('INICIAL') ? ' · RIPS en cero' : ''}</small>`).join('<br>') || '—'}</td></tr>`;
+</tr>`;
   }).join('')}
-  <tr class="rp-total"><td>Total</td><td></td><td class="num">${fmtCOP(A.esperado)}</td><td class="num">${fmtCOP(A.filas.reduce((s, f) => s + f.rs, 0))}</td><td class="num">${fmtCOP(A.filas.reduce((s, f) => s + f.rc, 0))}</td><td class="num">${fmtCOP(A.radicado)}</td><td class="num">${A.esperado ? (A.radicado / A.esperado * 100).toFixed(1) + '%' : '—'}</td><td class="num ${A.exceso > 0 ? 'desv-neg' : ''}">${A.exceso > 0 ? '+' + fmtCOP(A.exceso) : '—'}</td><td class="num">${fmtCOP(A.saldo)}</td><td></td></tr>
+  <tr class="rp-total"><td>Total</td><td></td><td></td><td class="num">${fmtCOP(A.esperado)}</td><td class="num">${fmtCOP(A.filas.reduce((s, f) => s + f.rs, 0))}</td><td class="num">${fmtCOP(A.filas.reduce((s, f) => s + f.rc, 0))}</td><td class="num">${fmtCOP(A.radicado)}</td><td class="num">${A.esperado ? (A.radicado / A.esperado * 100).toFixed(1) + '%' : '—'}</td><td class="num ${A.exceso > 0 ? 'desv-neg' : ''}">${A.exceso > 0 ? '+' + fmtCOP(A.exceso) : '—'}</td><td class="num">${fmtCOP(A.saldo)}</td></tr>
   </tbody></table></div>`;
 }
 
@@ -1080,7 +1105,7 @@ function abrirDetalle(tipo, clave) {
   mostrarModal(`<div class="dt-cab">${cab}
       ${puede('descargar_reportes') ? `<div class="rp-acciones"><button class="btn sm" id="dtExcel">⬇ Excel</button><button class="btn sm" id="dtPdf">🖨 Imprimir / PDF</button></div>` : ''}</div>
     ${cs.map((c) => bloqueContrato(c, mesesSel, tipo !== 'contrato')).join('')}
-    <p class="sub rp-nota">Fuente: SIE Dusakawi · Consulta Recepción (Valor AF, Estado Radicado, Capita RS/RC). Periodo según fechas de ARCHIVO-CONSULTAS del soporte RIPS. Valor contrato: listado CONTRATOS_CAPITADOS_2026.</p>`);
+    <p class="sub rp-nota">Fuente: SIE Dusakawi · Consulta Recepción (Valor AF, Estado Radicado, Capita RS/RC). Mes de cápita = mes de las atenciones del RIPS + 1 (modelo vencido; la cápita del primer mes va con RIPS en cero). Valor contrato: listado CONTRATOS_CAPITADOS_2026.</p>`);
 }
 function mostrarModal(html) {
   $('#modalCuerpo').innerHTML = html;
@@ -1379,12 +1404,13 @@ function hoja(X, filas, anchos) {
 }
 const r0 = (v) => Math.round(v || 0);
 function filasMensuales(As) {
-  const f = [['Contrato', 'Prestador', 'NIT', 'Municipio', 'Mes', 'Estado', 'Tope mensual', 'Radicado RS', 'Radicado RC', 'Total radicado', '% del tope', 'Desviación', 'Saldo vencido', 'Alerta', 'Recepciones']];
+  const f = [['Contrato', 'Prestador', 'NIT', 'Municipio', 'Mes de cápita', 'Estado', 'Tope mensual', 'Radicado RS', 'Radicado RC', 'Total radicado', '% del tope', 'Desviación', 'Saldo vencido', 'Alerta', 'Facturas (SIE) vs RIPS', 'Validación']];
   for (const A of As) for (const x of A.filas) {
     f.push([A.c.contrato, A.c.prestador, A.c.nit, A.c.municipio, MESES_L[x.m - 1], ESTADO_MES[x.k][2], x.plazo ? '' : r0(A.tope), r0(x.rs), r0(x.rc), r0(x.rad),
       x.rad ? +x.pct.toFixed(2) : '', r0(x.exceso), r0(x.saldo),
       [x.dup && 'Posible duplicado', x.atipico && 'Atípico', x.exceso > 0 && `Fuera de ±${repMargen}%`, x.dentro && 'Dentro del margen'].filter(Boolean).join(' · '),
-      x.regs.map((r) => `${r.recepcion} ${r.regimen} ${String(r.fecha_recepcion || '').slice(0, 10)} $${r0(r.valor)}`).join(' | ')]);
+      x.regs.map((r) => `${r.factura || '—'} (rec ${r.recepcion}, ${r.regimen}) $${r0(r.valor)} · RIPS ${r.fecha_min ? r.fecha_min + ' a ' + r.fecha_max + ', ' + (r.n_usuarios || 0) + ' usuarios, ' + (r.n_servicios || 0) + ' servicios' : 'en cero'}`).join(' | '),
+      x.regs.map((r) => validarFactura(r, x.m, A)[2]).join(' | ')]);
   }
   return f;
 }
@@ -1413,7 +1439,7 @@ async function exportarReporteExcel() {
     };
     X.utils.book_append_sheet(wb, hoja(X, grupo(false), [42, 14, 10, 18, 18, 18, 18, 12, 30, 18, 12, 10, 12]), 'Por prestador');
     X.utils.book_append_sheet(wb, hoja(X, grupo(true), [22, 42, 10, 18, 18, 18, 18, 12, 30, 18, 12, 10, 12]), 'Por contrato');
-    X.utils.book_append_sheet(wb, hoja(X, filasMensuales(R.As), [22, 40, 12, 18, 12, 24, 16, 16, 16, 16, 10, 16, 16, 30, 60]), 'Detalle mensual');
+    X.utils.book_append_sheet(wb, hoja(X, filasMensuales(R.As), [22, 40, 12, 18, 12, 24, 16, 16, 16, 16, 10, 16, 16, 30, 70, 50]), 'Detalle mensual');
     X.utils.book_append_sheet(wb, hoja(X, [['Nivel', 'Tipo', 'Contrato', 'Prestador', 'Detalle', 'Monto'],
       ...R.alertas.map((a) => [a.nivel === 3 ? 'Crítica' : a.nivel === 2 ? 'Alta' : 'Media', a.tipo, a.contrato, a.prestador, a.det, r0(a.monto)])], [10, 34, 22, 40, 70, 16]), 'Alertas');
     if (DUP) X.utils.book_append_sheet(wb, hoja(X, [['Prioridad', 'Contrato', 'Prestador', 'Régimen', 'Periodo', 'Factura A', 'Recepción A', 'Valor A', 'Factura B', 'Recepción B', 'Valor B', '% usuarios en común', '% servicios idénticos', 'Diferencia valor %', 'Valor en riesgo', 'Lectura'],
@@ -1433,7 +1459,7 @@ async function exportarDetalleExcel() {
     X.utils.book_append_sheet(wb, hoja(X, [...cabecera(`Detalle ${d.tipo === 'contrato' ? 'del contrato' : 'del prestador'} ${d.clave}`),
       ['Contrato', 'Vigencia', 'Valor contrato', 'Tope mensual', 'Esperado exigible', 'Radicado', 'Desviación', 'Saldo vencido'],
       ...As.map((A) => [A.c.contrato, `${A.c.inicio} a ${A.c.fin}`, r0(A.valor), r0(A.tope), r0(A.esperado), r0(A.radicado), r0(A.exceso), r0(A.saldo)])], [24, 26, 18, 18, 18, 18, 18, 18]), 'Resumen');
-    X.utils.book_append_sheet(wb, hoja(X, filasMensuales(As), [22, 40, 12, 18, 12, 24, 16, 16, 16, 16, 10, 16, 16, 30, 60]), 'Detalle mensual');
+    X.utils.book_append_sheet(wb, hoja(X, filasMensuales(As), [22, 40, 12, 18, 12, 24, 16, 16, 16, 16, 10, 16, 16, 30, 70, 50]), 'Detalle mensual');
     descargarLibro(X, wb, `Detalle_${d.clave.replace(/[^A-Za-z0-9-]+/g, '_')}_${st.anio}.xlsx`);
   } catch (e) { alert(e.message); }
 }
