@@ -406,3 +406,41 @@ def monitor(x_token: str = Header("")):
                   "soportes_descargados": sum(1 for _ in (BOT / "descargas" / "soportes").rglob("*")) if (BOT / "descargas" / "soportes").exists() else 0},
         "ultimas_consultas": ult,
     }
+
+
+
+# ------------------------------------------------------------------ facturas duplicadas
+_dup_cache = {"clave": None, "datos": None}
+
+
+def _duplicados():
+    import duplicados
+    hist = BOT / "historial.db"
+    clave = (hist.stat().st_mtime if hist.exists() else 0,
+             (BOT / "descargas" / "soportes").stat().st_mtime if (BOT / "descargas" / "soportes").exists() else 0)
+    if _dup_cache["clave"] != clave:
+        _dup_cache.update(clave=clave, datos=duplicados.analizar(hist))
+    return _dup_cache["datos"]
+
+
+@app.get("/duplicados")
+def duplicados_json(x_token: str = Header("")):
+    auth(x_token)
+    resumen, pares = _duplicados()
+    return {"resumen": resumen, "pares": [{k: v for k, v in d.items() if not k.startswith("_")} for d in pares]}
+
+
+@app.get("/duplicados/excel")
+def duplicados_excel(x_token: str = Header("")):
+    auth(x_token)
+    import duplicados
+    resumen, pares = _duplicados()
+    prest = {}
+    if CATALOGO.exists():
+        prest = {c["contrato"]: c.get("prestador", "") for c in json.loads(CATALOGO.read_text(encoding="utf-8"))}
+    ruta = DATOS / f"Facturas_duplicadas_{datetime.now():%Y%m%d_%H%M}.xlsx"
+    duplicados.a_excel(resumen, pares, ruta, prest)
+    for viejo in sorted(DATOS.glob("Facturas_duplicadas_*.xlsx"))[:-3]:
+        viejo.unlink(missing_ok=True)
+    return FileResponse(ruta, filename=ruta.name,
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

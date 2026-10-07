@@ -255,6 +255,24 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
   details.rv-det { display: block; } details.rv-det > * { display: block; }
   .tbl-wrap { overflow: visible; }
 }
+.rp-dup { margin-bottom: 16px; }
+.dup-item { border: 1px solid var(--border); border-left: 4px solid var(--ink-3); border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
+.dup-n3 { border-left-color: var(--critical); } .dup-n2 { border-left-color: var(--warning); }
+.dup-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-bottom: 10px; }
+.dup-tag { font-size: 12px; background: var(--surface-2); border-radius: 999px; padding: 2px 9px; }
+.dup-riesgo { margin-left: auto; font-size: 12.5px; color: var(--ink-2); }
+.dup-cuerpo { display: grid; grid-template-columns: 1fr auto 1fr 1.1fr; gap: 12px; align-items: stretch; }
+@media (max-width: 900px) { .dup-cuerpo { grid-template-columns: 1fr; } .dup-vs { display: none; } }
+.dup-fac { background: var(--surface-2); border-radius: 8px; padding: 9px 11px; }
+.dup-fac small { display: block; color: var(--ink-2); font-size: 11.5px; } .dup-fac b { font-size: 15px; }
+.dup-l { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
+.dup-v { font-size: 17px; font-weight: 650; margin: 3px 0; font-variant-numeric: tabular-nums; }
+.dup-vs { align-self: center; color: var(--ink-3); font-weight: 700; font-size: 12px; }
+.dup-met { display: flex; flex-direction: column; gap: 7px; font-size: 13px; }
+.dup-met small { display: block; color: var(--ink-2); font-size: 11.5px; }
+.dup-barra { display: block; height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin-top: 3px; }
+.dup-barra > span { display: block; height: 100%; border-radius: 999px; }
+.dup-lect { margin: 10px 0 0; font-size: 13px; }
 .rep-ctl { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
 .rep-ctl select { min-width: 0; padding: 5px 8px; }
 .rep-sec { margin: 18px 0 8px; font-size: 14px; }
@@ -835,6 +853,8 @@ function renderReporteVista(lista, mesesTodos) {
     <div class="card rv-kpi"><div class="l">Saldo vencido por radicar</div><div class="v">${fmtCOP(T.saldo)}</div><div class="d">${fmtN(T.pend)} periodos vencidos sin radicar</div></div>
   </div>
 
+  <div class="card rp-dup" id="rpDup"><div class="rp-sec-h"><h2>Facturas duplicadas o sospechosas</h2><span class="sub">analizando soportes RIPS…</span></div></div>
+
   <div class="card rp-alertas">
     <div class="rp-sec-h"><h2>Alertas para revisar</h2><span class="sub">${R.alertas.length} en total · ${altas.length} prioritarias</span></div>
     ${R.alertas.length ? `<div class="tbl-wrap"><table class="rp-tabla"><thead><tr><th></th><th>Tipo</th><th>Contrato</th><th>Prestador</th><th>Detalle</th><th class="num">Monto</th></tr></thead><tbody>
@@ -881,8 +901,59 @@ function renderReporteVista(lista, mesesTodos) {
     </details>
   </div>`;
   $('#repOrden').value = repOrden;
+  pintarDuplicados();
 }
 let REP_ACTUAL = null;
+
+// ---- facturas duplicadas (análisis en el servidor sobre los soportes RIPS)
+let DUP = null, DUP_CORTE = null;
+async function pintarDuplicados() {
+  const caja = $('#rpDup'); if (!caja) return;
+  if (!DUP || DUP_CORTE !== D.generado) {
+    try {
+      const r = await fetch('/api/duplicados', { cache: 'no-store' });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || j.detail || r.status);
+      DUP = j; DUP_CORTE = D.generado;
+    } catch (e) {
+      caja.innerHTML = `<div class="rp-sec-h"><h2>Facturas duplicadas o sospechosas</h2></div><p class="u-msg err">No se pudo analizar: ${esc(e.message)}</p>`;
+      return;
+    }
+  }
+  const $caja = $('#rpDup'); if (!$caja) return;
+  const visibles = new Set(filtrados().map((c) => c.contrato));
+  const pares = DUP.pares.filter((d) => visibles.has(d.contrato) && (!st.reg || d.regimen === st.reg));
+  const prest = (k) => D.contratos.find((c) => c.contrato === k)?.prestador || '';
+  const NIV = { 3: ['no', '⛔'], 2: ['err', '⚠'], 1: ['nc', '•'] };
+  const barra = (pct, color) => `<span class="dup-barra"><span style="width:${Math.min(pct, 100)}%;background:${color}"></span></span>`;
+  const R = DUP.resumen;
+  $caja.innerHTML = `<div class="rp-sec-h"><h2>Facturas duplicadas o sospechosas</h2>
+      <span class="rv-ctl" style="margin:0"><span class="sub">${fmtN(R.radicaciones)} radicaciones analizadas · ${R.criticos} crítica(s) · ${R.altos} alta(s)</span>
+      ${puede('descargar_rips') ? '<a class="btn sm" href="/api/duplicados?excel=1">⬇ Excel con detalle</a>' : ''}</span></div>
+    <p class="sub rp-nota" style="margin-top:-4px">Compara cada radicación vigente: mismo número de factura, mismo contrato + régimen + periodo, y servicios idénticos (mismo paciente, código y fecha) en los soportes RIPS.</p>
+    ${pares.length ? pares.map((d) => {
+      const [a, b] = d.facturas;
+      const fact = (x, l) => `<div class="dup-fac"><div class="dup-l">Factura ${l}</div><b>${esc(x.factura || '—')}</b>
+        <small>Recepción ${esc(x.recepcion)} · Radicación ${esc(x.radicacion || '—')}</small>
+        <small>Recibida ${esc(String(x.fecha_recepcion).slice(0, 16))}</small>
+        <div class="dup-v">${fmtCOP(x.valor)}</div>
+        <small>${fmtN(x.usuarios)} usuarios · ${fmtN(x.servicios)} servicios · atención ${esc(x.fecha_min || '?')} a ${esc(x.fecha_max || '?')}</small>
+        ${puede('descargar_rips') && x.mes ? `<div style="margin-top:4px">${botonesRips(d.contrato, x.anio, x.mes, x.regimen)}</div>` : ''}</div>`;
+      return `<article class="dup-item dup-n${d.nivel}">
+        <header class="dup-h"><span class="st ${NIV[d.nivel][0]}"><i>${NIV[d.nivel][1]}</i> ${esc(d.prioridad)}</span>
+          <b class="lnk" data-det="contrato" data-clave="${esc(d.contrato)}">${esc(d.contrato)}</b><span class="muted">${esc(prest(d.contrato))}</span>
+          <span class="dup-tag">${esc(d.regimen)} · periodo ${esc(d.periodo)}</span>
+          <span class="dup-riesgo">Valor en riesgo <b class="desv-neg">${fmtCOP(d.valor_en_riesgo)}</b></span></header>
+        <div class="dup-cuerpo">${fact(a, 'A')}<div class="dup-vs">vs</div>${fact(b, 'B')}
+          <div class="dup-met">
+            <div><small>Usuarios en común</small><b>${d.pct_usuarios}%</b> <span class="muted">(${fmtN(d.usuarios_comun)})</span>${barra(d.pct_usuarios, 'var(--warning)')}</div>
+            <div><small>Servicios idénticos</small><b class="${d.pct_servicios >= 30 ? 'desv-neg' : ''}">${d.pct_servicios}%</b> <span class="muted">(${fmtN(d.servicios_identicos)})</span>${barra(d.pct_servicios, 'var(--critical)')}</div>
+            <div><small>Diferencia de valor</small><b>${d.dif_valor_pct < 0.01 ? '< 0,01' : d.dif_valor_pct.toFixed(2)}%</b> <span class="muted">(${fmtCOP(Math.abs(a.valor - b.valor))})</span></div>
+          </div></div>
+        <p class="dup-lect"><b>Lectura:</b> ${esc(d.lectura)} <span class="muted">Criterio: ${esc(d.criterios.join(' · '))}.</span></p>
+      </article>`;
+    }).join('') : '<p class="muted" style="margin:6px 0">✓ No se encontraron facturas duplicadas en la selección.</p>'}`;
+}
 
 // ---- detalle explicado (clic en un contrato o prestador)
 const ESTADO_MES = {
@@ -1334,6 +1405,10 @@ async function exportarReporteExcel() {
     X.utils.book_append_sheet(wb, hoja(X, filasMensuales(R.As), [22, 40, 12, 18, 12, 24, 16, 16, 16, 16, 10, 16, 16, 30, 60]), 'Detalle mensual');
     X.utils.book_append_sheet(wb, hoja(X, [['Nivel', 'Tipo', 'Contrato', 'Prestador', 'Detalle', 'Monto'],
       ...R.alertas.map((a) => [a.nivel === 3 ? 'Crítica' : a.nivel === 2 ? 'Alta' : 'Media', a.tipo, a.contrato, a.prestador, a.det, r0(a.monto)])], [10, 34, 22, 40, 70, 16]), 'Alertas');
+    if (DUP) X.utils.book_append_sheet(wb, hoja(X, [['Prioridad', 'Contrato', 'Prestador', 'Régimen', 'Periodo', 'Factura A', 'Recepción A', 'Valor A', 'Factura B', 'Recepción B', 'Valor B', '% usuarios en común', '% servicios idénticos', 'Diferencia valor %', 'Valor en riesgo', 'Lectura'],
+      ...DUP.pares.map((d) => [d.prioridad, d.contrato, D.contratos.find((c) => c.contrato === d.contrato)?.prestador || '', d.regimen, d.periodo,
+        d.facturas[0].factura, d.facturas[0].recepcion, r0(d.facturas[0].valor), d.facturas[1].factura, d.facturas[1].recepcion, r0(d.facturas[1].valor),
+        d.pct_usuarios, d.pct_servicios, d.dif_valor_pct, r0(d.valor_en_riesgo), d.lectura])], [10, 22, 36, 8, 10, 14, 12, 16, 14, 12, 16, 12, 12, 12, 16, 70]), 'Facturas duplicadas');
     X.utils.book_append_sheet(wb, hoja(X, [['Prestador', 'NIT', 'Periodos vencidos sin radicar', 'Saldo vencido', 'Meses'],
       ...R.porPrest.map((g) => [g.nombre, g.nit, g.pend, r0(g.saldo), mesesTxt(g.mesesPend)])], [42, 14, 14, 18, 40]), 'Sin radicar');
     descargarLibro(X, wb, `Reporte_radicacion_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}.xlsx`);
