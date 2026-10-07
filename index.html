@@ -1035,9 +1035,12 @@ function validarFactura(r, m, A) {
   if (enCero) return primerMes ? ['ok', '✓', 'RIPS en cero: cápita del primer mes']
     : ['err', '⚠', 'RIPS en cero y no es el primer mes del contrato'];
   if ((r.meses_rips || 0) > 1) return ['err', '⚠', 'El RIPS trae atenciones de varios meses'];
-  const mAt = +String(r.fecha_min).slice(5, 7), esperado = m === 1 ? 12 : m - 1;
-  if (mAt !== esperado) return ['err', '⚠', `Atenciones de ${MESES_L[mAt - 1]}: no corresponden al mes anterior a la cápita`];
-  return ['ok', '✓', `Atenciones de ${MESES_L[mAt - 1]} (mes anterior) ✓`];
+  const esperado = m === 1 ? 12 : m - 1;
+  const mMin = +String(r.fecha_min).slice(5, 7), mMax = +String(r.fecha_max || r.fecha_min).slice(5, 7);
+  const dentro = mMin <= mMax ? esperado >= mMin && esperado <= mMax : esperado >= mMin || esperado <= mMax;
+  if (!dentro) return ['err', '⚠', `Atenciones de ${MESES_L[mMin - 1]}${mMax !== mMin ? ' a ' + MESES_L[mMax - 1] : ''}: no incluyen el mes anterior a la cápita (${MESES_L[esperado - 1]})`];
+  if (mMin !== mMax) return ['ok', '✓', `Atenciones de ${MESES_L[esperado - 1]} ✓ (incluye algunas desde ${fechaCorta(r.fecha_min)})`];
+  return ['ok', '✓', `Atenciones de ${MESES_L[esperado - 1]} (mes anterior) ✓`];
 }
 
 function tablaMeses(A) {
