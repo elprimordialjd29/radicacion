@@ -7,8 +7,8 @@ export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
   if (!(await requiere(req, res, 'descargar_rips'))) return;
-  const { contrato = '', anio = '', mes = '', regimen = '', formato = 'txt' } = req.query;
-  const qs = new URLSearchParams({ contrato, anio, mes, regimen, formato });
+  const { contrato = '', anio = '', mes = '', regimen = '', formato = 'txt', por = 'capita' } = req.query;
+  const qs = new URLSearchParams({ contrato, anio, mes, regimen, formato, por });
   try {
     const r = await worker('/rips?' + qs.toString(), { signal: AbortSignal.timeout(55000) });
     if (!r.ok) {

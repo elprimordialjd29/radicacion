@@ -395,7 +395,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
 
     <div class="card">
       <div class="tabs" role="tablist">
-        <button class="tab" role="tab" aria-selected="true" data-tab="matriz">Contratos × mes</button>
+        <button class="tab" role="tab" aria-selected="true" data-tab="matriz">Atenciones por mes (RIPS)</button>
         <button class="tab" role="tab" aria-selected="false" data-tab="pend">Pendientes</button>
         <button class="tab" role="tab" aria-selected="false" data-tab="det">Radicaciones</button>
         <button class="tab" role="tab" aria-selected="false" data-tab="corr">Corridas</button>
@@ -464,6 +464,12 @@ function preparar() {
     if (!r.periodo_anio || !r.periodo_mes) continue;
     ((D.idx[r.contrato] ??= {})[r.periodo_anio + '-' + r.periodo_mes] ??= []).push(r);
   }
+  D.idxAt = {};                                   // contrato -> 'anio-mesAtención' -> [registros con atenciones]
+  for (const r of D.registros) {
+    if (!r.periodo_anio || !r.periodo_mes || !/^(CONSULTAS|OTROS)/.test(r.fuente || '')) continue;
+    const a = r.periodo_mes === 1 ? r.periodo_anio - 1 : r.periodo_anio, m = r.periodo_mes === 1 ? 12 : r.periodo_mes - 1;
+    ((D.idxAt[r.contrato] ??= {})[a + '-' + m] ??= []).push(r);
+  }
   D.cons = {};                                    // contrato|anio-mes -> {RS: consulta, RC: consulta}
   for (const c of D.consultas || []) (D.cons[c.contrato + '|' + c.anio + '-' + c.mes] ??= {})[c.regimen || 'RS'] = c;
   const anios = new Set(D.registros.map((r) => r.periodo_anio).filter(Boolean));
@@ -502,14 +508,16 @@ function estado(c, anio, mes) {
   if (!ok) return { k: 'err', q: qs[0] };
   return { k: 'no', q: ok };
 }
-const ripsUrl = (contrato, anio, mes, regimen, formato) =>
-  `/api/rips?${new URLSearchParams({ contrato, anio, mes, regimen, formato })}`;
-function botonesRips(contrato, anio, mes, regimen) {
+const ripsUrl = (contrato, anio, mes, regimen, formato, por = 'capita') =>
+  `/api/rips?${new URLSearchParams({ contrato, anio, mes, regimen, formato, por })}`;
+function botonesRips(contrato, anio, mes, regimen, por = 'capita') {
   if (!puede('descargar_rips')) return '';
   const r = regimen || st.reg;
-  const etq = r ? ` ${r}` : '';
-  return `<span class="dl"><a href="${ripsUrl(contrato, anio, mes, r, 'txt')}" title="Descargar RIPS${etq} original (TXT)">TXT</a><a href="${ripsUrl(contrato, anio, mes, r, 'json')}" title="Descargar RIPS${etq} en JSON (Res. 2275)">JSON</a></span>`;
+  const etq = (r ? ` ${r}` : '') + (por === 'atencion' ? ` · atenciones de ${MESES_L[mes - 1]}` : '');
+  return `<span class="dl"><a href="${ripsUrl(contrato, anio, mes, r, 'txt', por)}" title="Descargar RIPS${etq} original (TXT)">TXT</a><a href="${ripsUrl(contrato, anio, mes, r, 'json', por)}" title="Descargar RIPS${etq} en JSON (Res. 2275)">JSON</a></span>`;
 }
+// mes de ATENCIÓN m: su RIPS llega con la cápita de m+1; mientras esa cápita esté en plazo, no es faltante
+function atencionEnPlazo(m) { return m === 12 ? false : enPlazo(m + 1); }
 function filtrados() {
   const t = st.texto.toLowerCase();
   // si el texto es exactamente un prestador (elegido de las sugerencias) se filtra solo ese
@@ -642,17 +650,31 @@ let filasCsv = [];
 function renderTabla(lista, meses) {
   let html = '';
   if (st.tab === 'matriz') {
-    filasCsv = [['Contrato', 'Prestador', 'Municipio', ...meses.map((m) => MESES_L[m - 1])]];
-    html = `<table><thead><tr><th>Contrato</th><th>Prestador</th><th>Municipio</th>${meses.map((m) => `<th>${MESES[m - 1]}</th>`).join('')}<th class="num">Valor ${st.anio}</th></tr></thead><tbody>`;
+    // CONTRATOS × MES DE ATENCIÓN: lo que trae el RIPS por dentro (sin valores de factura)
+    filasCsv = [['Contrato', 'Prestador', 'Municipio', ...meses.map((m) => 'Atenciones ' + MESES_L[m - 1])]];
+    html = `<p class="sub" style="margin:0 0 8px">Meses de <b>atención</b> según el RIPS (la factura de abril trae las atenciones de marzo). Sin valores de factura: usuarios y servicios del RIPS.</p>
+      <table><thead><tr><th>Contrato</th><th>Prestador</th><th>Municipio</th>${meses.map((m) => `<th>${MESES[m - 1]}</th>`).join('')}</tr></thead><tbody>`;
     for (const c of lista) {
-      let total = 0; const fila = [c.contrato, c.prestador, c.municipio];
+      const fila = [c.contrato, c.prestador, c.municipio];
       const celdas = meses.map((m) => {
-        const e = estado(c, st.anio, m); if (e.k === 'ok') total += e.valor;
-        fila.push({ ok: 'Radicado (' + (e.regs?.length || 0) + ')', no: 'Sin radicar', err: 'Error', nc: 'No consultado', na: 'Fuera de vigencia' }[e.k]);
-        return `<td>${CELDA[e.k](e)}</td>`;
+        const regs = (D.idxAt[c.contrato]?.[st.anio + '-' + m] || []).filter((r) => !st.reg || r.regimen === st.reg);
+        if (regs.length) {
+          const porReg = {};
+          for (const r of regs) (porReg[r.regimen || 'RS'] ??= []).push(r);
+          const lineas = Object.keys(porReg).sort((a, b) => (a === 'RS' ? -1 : 1)).map((rg) => {
+            const l = porReg[rg], us = l.reduce((x, r) => x + (r.n_usuarios || 0), 0), sv = l.reduce((x, r) => x + (r.n_servicios || 0), 0);
+            const tip = `${rg} · atenciones de ${MESES_L[m - 1]}: ${fmtN(us)} usuarios, ${fmtN(sv)} servicios · RIPS de la factura ${l.map((r) => r.factura || r.recepcion).join(', ')} (radicada ${l.map((r) => String(r.fecha_recepcion || '').slice(0, 10)).join(', ')})`;
+            return `<span class="lin" data-tip="${esc(tip)}"><span class="st ok"><i>✓</i> ${fmtN(us)}</span><span class="rg">${rg}</span>${botonesRips(c.contrato, st.anio, m, rg, 'atencion')}</span>`;
+          });
+          fila.push(Object.entries(porReg).map(([rg, l]) => `${rg}: ${l.reduce((x, r) => x + (r.n_usuarios || 0), 0)} usuarios / ${l.reduce((x, r) => x + (r.n_servicios || 0), 0)} servicios`).join(' · '));
+          return `<td><div class="celda">${lineas.join('')}</div></td>`;
+        }
+        if (!vigente(c, st.anio, m)) { fila.push('Fuera de vigencia'); return '<td><span class="st na">—</span></td>'; }
+        if (atencionEnPlazo(m)) { fila.push('En plazo'); return `<td><span class="st nc" title="Su RIPS llega con la cápita de ${MESES_L[m % 12]}, aún en plazo">⏳</span></td>`; }
+        fila.push('Sin RIPS'); return `<td><span class="st no" title="No hay RIPS con atenciones de ${MESES_L[m - 1]}"><i>✕</i> Sin RIPS</span></td>`;
       }).join('');
       filasCsv.push(fila);
-      html += `<tr><td><b class="lnk" data-det="contrato" data-clave="${esc(c.contrato)}" title="Ver detalle explicado">${esc(c.contrato)}</b></td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.municipio)}</td>${celdas}<td class="num">${total ? fmtCOP(total) : '<span class="muted">—</span>'}</td></tr>`;
+      html += `<tr><td><b class="lnk" data-det="contrato" data-clave="${esc(c.contrato)}" title="Ver detalle explicado">${esc(c.contrato)}</b></td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.municipio)}</td>${celdas}</tr>`;
     }
     html += '</tbody></table>';
   } else if (st.tab === 'pend') {
@@ -708,6 +730,9 @@ function renderTabla(lista, meses) {
       }).join('') + '</tbody></table>';
   }
   $('#leyenda').style.display = st.tab === 'matriz' || st.tab === 'pend' ? '' : 'none';
+  $('#leyenda').innerHTML = st.tab === 'matriz'
+    ? `<span class="st ok"><i>✓</i> RIPS con atenciones (n.º = usuarios)</span><span class="st nc">⏳ Aún en plazo</span><span class="st no"><i>✕</i> Sin RIPS</span><span class="st na">— Fuera de vigencia</span>`
+    : `<span class="st ok"><i>✓</i> Radicado</span><span class="st ok"><i>≈</i> Periodo estimado</span><span class="st no"><i>✕</i> Sin radicar</span><span class="st err"><i>!</i> Error al consultar</span><span class="st nc">? No consultado</span><span class="st na">— Fuera de vigencia</span>`;
   $('#tabla').innerHTML = html;
 }
 

@@ -270,7 +270,7 @@ def _limpio(x):
 
 
 @app.get("/rips")
-def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "txt",
+def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "txt", por: str = "capita",
          x_token: str = Header("")):
     """Soporte(s) RIPS de un contrato para un periodo de atención (y régimen).
     Un archivo → se entrega directo; varios → .zip. formato = txt (original SIE) | json (Res. 2275)."""
@@ -282,8 +282,16 @@ def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "
     if not hist.exists():
         raise HTTPException(404, "Sin historial")
     con = sqlite3.connect(hist)
-    sql = "SELECT recepcion, regimen FROM registros WHERE contrato=? AND periodo_anio=? AND periodo_mes=?"
-    params = [contrato, anio, mes]
+    if por == "atencion":
+        # por MES DE LAS ATENCIONES del RIPS (modelo vencido: mes de cápita - 1); excluye los RIPS en cero
+        a_cap, m_cap = (anio + 1, 1) if mes == 12 else (anio, mes + 1)
+        sql = ("SELECT recepcion, regimen FROM registros WHERE contrato=? AND periodo_anio=? AND periodo_mes=? "
+               "AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%') AND estado NOT LIKE 'NO VIGENTE%'")
+        params = [contrato, a_cap, m_cap]
+    else:
+        sql = ("SELECT recepcion, regimen FROM registros WHERE contrato=? AND periodo_anio=? AND periodo_mes=? "
+               "AND estado NOT LIKE 'NO VIGENTE%'")
+        params = [contrato, anio, mes]
     if regimen:
         sql += " AND regimen=?"
         params.append(regimen.upper())
@@ -298,7 +306,7 @@ def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "
     if not archivos:
         raise HTTPException(404, "No hay soportes descargados para ese periodo")
 
-    base = f"RIPS_{_limpio(contrato)}_{anio}-{mes:02d}"
+    base = f"RIPS_{_limpio(contrato)}_{'atenciones_' if por == 'atencion' else ''}{anio}-{mes:02d}"
     def nombre(rec, reg):
         return f"{base}_{reg or 'NA'}_rec{_limpio(rec)}.{formato}"
 
