@@ -1,7 +1,9 @@
 // Descarga el Excel de una consulta desde el worker.
 import { worker } from './_auth.js';
+import { requiere } from './_usuarios.js';
 
 export default async function handler(req, res) {
+  if (!(await requiere(req, res, 'descargar_reportes'))) return;
   try {
     const r = await worker(`/consultas/${encodeURIComponent(req.query.id || '')}/excel`);
     if (!r.ok) return res.status(r.status).json({ error: 'Excel no disponible' });

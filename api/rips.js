@@ -1,10 +1,12 @@
 // Descarga del RIPS (TXT original del SIE o JSON Res. 2275) de un contrato/mes/régimen.
 // Contiene datos de pacientes: solo pasa por aquí, detrás de la clave del dashboard.
 import { worker } from './_auth.js';
+import { requiere } from './_usuarios.js';
 
 export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
+  if (!(await requiere(req, res, 'descargar_rips'))) return;
   const { contrato = '', anio = '', mes = '', regimen = '', formato = 'txt' } = req.query;
   const qs = new URLSearchParams({ contrato, anio, mes, regimen, formato });
   try {

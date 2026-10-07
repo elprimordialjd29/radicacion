@@ -1,35 +1,21 @@
-// Protege todo el dashboard con usuario/clave (Basic Auth).
-//  - DASHBOARD_USUARIOS="ana:clave1,luis:clave2"  → usuarios con nombre (recomendado)
-//  - DASHBOARD_CLAVE="..."                         → una clave compartida (cualquier usuario)
-// /api/subir queda fuera: el bot se autentica con su propio token (x-token).
+// Toda la app exige una sesión válida (cookie firmada). Sin sesión:
+//  - páginas → redirige a /login
+//  - /api/*  → 401 JSON
+// Quedan libres: /login, /api/login, /api/logout y /api/subir (el bot usa su propio token).
 import { next } from '@vercel/functions';
+import { verificar, leerCookie } from './api/_sesion.js';
 
-export const config = { matcher: ['/((?!api/subir).*)'] };
+export const config = { matcher: ['/((?!login|api/login|api/logout|api/subir|favicon).*)'] };
 
-function usuarios() {
-  const m = new Map();
-  for (const par of (process.env.DASHBOARD_USUARIOS || '').split(',')) {
-    const i = par.indexOf(':');
-    if (i > 0) m.set(par.slice(0, i).trim().toLowerCase(), par.slice(i + 1).trim());
+export default async function middleware(request) {
+  if (await verificar(leerCookie(request.headers.get('cookie')))) return next();
+  const url = new URL(request.url);
+  if (url.pathname.startsWith('/api/')) {
+    return new Response(JSON.stringify({ error: 'Sesión vencida. Vuelve a ingresar.' }), {
+      status: 401, headers: { 'Content-Type': 'application/json' },
+    });
   }
-  return m;
-}
-
-export default function middleware(request) {
-  const lista = usuarios();
-  const clave = process.env.DASHBOARD_CLAVE;
-  if (!lista.size && !clave) {
-    return new Response('Falta configurar DASHBOARD_USUARIOS o DASHBOARD_CLAVE en Vercel', { status: 503 });
-  }
-  const auth = request.headers.get('authorization') || '';
-  if (auth.startsWith('Basic ')) {
-    const txt = atob(auth.slice(6));
-    const i = txt.indexOf(':');
-    const u = txt.slice(0, i).trim().toLowerCase(), p = txt.slice(i + 1);
-    if ((lista.size && lista.get(u) === p) || (clave && p === clave)) return next();
-  }
-  return new Response('Acceso restringido', {
-    status: 401,
-    headers: { 'WWW-Authenticate': 'Basic realm="Radicacion Capita", charset="UTF-8"' },
-  });
+  const destino = new URL('/login', url);
+  if (url.pathname !== '/') destino.searchParams.set('next', url.pathname);
+  return Response.redirect(destino, 302);
 }

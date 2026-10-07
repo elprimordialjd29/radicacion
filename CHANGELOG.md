@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 — 2026-10-06
+- **Usuarios y roles**: pantalla de ingreso propia (sin la ventana del navegador), sesión
+  firmada en cookie HttpOnly por 12 h. Usuario inicial `admin` (se pide cambiar la clave).
+- Permisos por usuario: ver reporte, lanzar consultas al SIE, descargar RIPS, descargar
+  reportes (Excel/CSV) y administrar usuarios; roles base Administrador, Analista,
+  Auditor RIPS y Solo consulta. Se validan en el servidor (API) y se ocultan en la interfaz.
+- Usuarios en Vercel Blob privado con clave cifrada (scrypt). Cambiar mi clave, crear,
+  editar, desactivar, restablecer clave y eliminar usuarios.
+- Reporte: desviación = radicado por encima del tope + margen aceptable (±5–20 %).
+
 ## 0.5.0 — 2026-10-06
 - **Pestaña Reporte**:
   1. Prestadores con más periodos sin radicar (meses, contratos y valor esperado en riesgo).

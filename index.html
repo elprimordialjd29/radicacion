@@ -134,6 +134,27 @@ tr:hover td { background: var(--surface-2); }
 .job .acc { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .btn.sm { padding: 4px 10px; font-size: 12px; }
 .aviso { font-size: 12.5px; color: var(--ink-2); margin-top: 6px; }
+.usr { position: relative; }
+.usr-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 230px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.25); padding: 6px; }
+.usr-menu[hidden] { display: none; }
+.usr-menu button { display: block; width: 100%; text-align: left; font: inherit; font-size: 13.5px; background: none; border: 0;
+  color: var(--ink); padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.usr-menu button:hover { background: var(--surface-2); }
+.usr-info { padding: 8px 10px 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; font-size: 13px; }
+.usr-info small { display: block; color: var(--ink-2); }
+.aviso-clave { margin: 12px 0 0; padding: 8px 12px; border-radius: 10px; background: var(--warning-bg); font-size: 13.5px;
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.aviso-clave[hidden] { display: none; }
+.sin-permiso { color: var(--ink-2); font-size: 13px; padding: 10px; background: var(--surface-2); border-radius: 8px; }
+.u-tabla td, .u-tabla th { padding: 7px 8px; font-size: 13px; vertical-align: middle; }
+.u-tabla td:nth-child(3) { white-space: normal; min-width: 220px; max-width: 360px; }
+.u-perm { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); margin: 1px 2px; }
+.u-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; align-items: end; margin: 8px 0 6px; }
+.u-form label { font-size: 12px; color: var(--ink-2); display: flex; flex-direction: column; gap: 4px; }
+.u-form input, .u-form select { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; }
+.u-perms { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 10px; }
+.u-msg { font-size: 13px; margin: 6px 0; } .u-msg.err { color: var(--critical); } .u-msg.ok { color: var(--good); }
 .vistas { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; gap: 2px; }
 .vbtn { font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--ink-2); padding: 6px 12px; border-radius: 8px; cursor: pointer; }
 .vbtn[aria-selected="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
@@ -221,8 +242,18 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
       </div>
       <button class="btn" id="btnCsv" title="Descargar la tabla visible">⬇ CSV</button>
       <button class="btn" id="btnTema" title="Cambiar tema">◐</button>
+      <div class="usr">
+        <button class="btn" id="btnUsr" aria-haspopup="menu" aria-expanded="false">👤 <span id="usrNom">…</span> ▾</button>
+        <div class="usr-menu" id="usrMenu" role="menu" hidden>
+          <div class="usr-info" id="usrInfo"></div>
+          <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
+          <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
+          <button role="menuitem" data-acc="salir">↪ Salir</button>
+        </div>
+      </div>
     </div>
   </header>
+  <div class="aviso-clave" id="avisoClave" hidden>🔒 Estás usando una clave inicial. <button class="btn sm" data-acc="clave">Cámbiala ahora</button></div>
 
   <div class="filters">
     <label>Año <select id="fAnio"></select></label>
@@ -263,7 +294,8 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
     <div class="card" style="margin-bottom:16px">
       <h2>🔄 Consultar en el SIE</h2>
       <div class="consulta-grid">
-        <div>
+        <div class="sin-permiso" data-sin-perm="consultar_sie" hidden>Tu usuario puede ver las consultas, pero no lanzarlas. Pide el permiso "Lanzar consultas al SIE" al administrador.</div>
+        <div data-perm="consultar_sie">
           <div class="fld"><span class="lbl">Meses de atención a consultar</span><div class="mes-chk" id="cMeses"></div></div>
           <div class="fld"><span class="lbl">Contratos</span>
             <label class="chk"><input type="radio" name="cAlc" value="filtro" checked> <span id="cAlcFiltro">Los filtrados arriba</span></label>
@@ -395,6 +427,7 @@ function estado(c, anio, mes) {
 const ripsUrl = (contrato, anio, mes, regimen, formato) =>
   `/api/rips?${new URLSearchParams({ contrato, anio, mes, regimen, formato })}`;
 function botonesRips(contrato, anio, mes, regimen) {
+  if (!puede('descargar_rips')) return '';
   const r = regimen || st.reg;
   const etq = r ? ` ${r}` : '';
   return `<span class="dl"><a href="${ripsUrl(contrato, anio, mes, r, 'txt')}" title="Descargar RIPS${etq} original (TXT)">TXT</a><a href="${ripsUrl(contrato, anio, mes, r, 'json')}" title="Descargar RIPS${etq} en JSON (Res. 2275)">JSON</a></span>`;
@@ -834,6 +867,9 @@ function abrirDetalle(tipo, clave) {
         Abajo, el detalle de cada contrato (primero los de mayor desviación).</div>
       ${cs.map((c, i) => [c, As[i]]).sort((a, b) => b[1].exceso - a[1].exceso || b[1].pendientes.length - a[1].pendientes.length).map(([c]) => bloqueContrato(c, mesesSel, true)).join('')}`;
   }
+  mostrarModal(html);
+}
+function mostrarModal(html) {
   $('#modalCuerpo').innerHTML = html;
   $('#modal').hidden = false;
   document.body.style.overflow = 'hidden';
@@ -851,6 +887,7 @@ document.addEventListener('change', (e) => {
 let vista = location.hash === '#reporte' ? 'reporte' : 'tablero';
 function aplicarVista() {
   if (!$('#vistaTablero') || !$('#vistaReporte')) return;   // pantalla de "sin datos"
+  if (vista === 'reporte' && !puede('ver_reporte')) vista = 'tablero';
   document.querySelectorAll('.vbtn').forEach((b) => b.setAttribute('aria-selected', b.dataset.vista === vista));
   $('#vistaTablero').hidden = vista !== 'tablero';
   $('#vistaReporte').hidden = vista !== 'reporte';
@@ -1038,8 +1075,8 @@ async function cargarJobs() {
         ${j.fin ? ' · duró ' + duracion(j.inicio, j.fin) : ''}</div>
       ${j.estado === 'corriendo' ? `<div class="prog"><div style="width:${pct}%"></div></div>` : ''}
       <div class="acc">
-        ${j.tiene_excel ? `<a class="btn sm" href="/api/excel?id=${j.id}">⬇ Excel</a>` : ''}
-        ${activa ? `<button class="btn sm" data-cancel="${j.id}">Cancelar</button>` : ''}
+        ${j.tiene_excel && puede('descargar_reportes') ? `<a class="btn sm" href="/api/excel?id=${j.id}">⬇ Excel</a>` : ''}
+        ${activa && puede('consultar_sie') ? `<button class="btn sm" data-cancel="${j.id}">Cancelar</button>` : ''}
         <button class="btn sm" data-log="${j.id}">${abiertos.has(j.id) ? 'Ocultar detalle' : 'Ver detalle'}</button>
       </div>
       ${abiertos.has(j.id) && det[j.id] ? `<pre>${esc(det[j.id].log || det[j.id].resumen || 'Sin registro aún')}</pre>` : ''}
@@ -1096,8 +1133,154 @@ $('#btnConsultar').onclick = async () => {
 const _renderOrig = render;
 render = function () { _renderOrig(); if (D) { renderAlcance(); if (!$('#cMeses').dataset.anio || +$('#cMeses').dataset.anio !== st.anio || !$('#cMeses').children.length) { renderMesesConsulta(); $('#cMeses').dataset.anio = st.anio; } } };
 
-aplicarVista();
-cargar().then(() => { if (D) { renderMesesConsulta(); cargarJobs(); aplicarVista(); render(); } });
+// ---- sesión, permisos y usuarios
+let YO = null, CAT = { permisos: {}, roles: {} };
+const puede = (p) => !!YO && (YO.permisos || []).includes(p);
+async function cargarSesion() {
+  const r = await fetch('/api/sesion', { cache: 'no-store' });
+  if (r.status === 401) { location.replace('/login'); throw new Error('sin sesión'); }
+  const j = await r.json();
+  YO = j.usuario; CAT = { permisos: j.permisos, roles: j.roles };
+  $('#usrNom').textContent = YO.nombre || YO.usuario;
+  $('#usrInfo').innerHTML = `<b>${esc(YO.nombre || YO.usuario)}</b><small>${esc(YO.usuario)} · ${esc(CAT.roles[YO.rol]?.nombre || YO.rol)}</small>`;
+  $('#avisoClave').hidden = !YO.debeCambiar;
+  aplicarPermisos();
+}
+function aplicarPermisos() {
+  document.querySelectorAll('[data-perm]').forEach((el) => { el.hidden = !puede(el.dataset.perm); });
+  document.querySelectorAll('[data-sin-perm]').forEach((el) => { el.hidden = puede(el.dataset.sinPerm); });
+  $('#btnCsv').hidden = !puede('descargar_reportes');
+  document.querySelector('[data-vista="reporte"]').hidden = !puede('ver_reporte');
+}
+// si la sesión vence en medio del uso, cualquier llamada 401 lleva al login
+const _fetch = window.fetch.bind(window);
+window.fetch = async (...a) => {
+  const r = await _fetch(...a);
+  if (r.status === 401 && String(a[0]).startsWith('/api/') && !String(a[0]).startsWith('/api/login')) location.replace('/login');
+  return r;
+};
+
+$('#btnUsr').onclick = (e) => { e.stopPropagation(); const m = $('#usrMenu'); m.hidden = !m.hidden; $('#btnUsr').setAttribute('aria-expanded', !m.hidden); };
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.usr')) { $('#usrMenu').hidden = true; $('#btnUsr').setAttribute('aria-expanded', false); }
+  const a = e.target.closest('[data-acc]'); if (!a) return;
+  $('#usrMenu').hidden = true;
+  if (a.dataset.acc === 'salir') { _fetch('/api/logout', { method: 'POST' }).finally(() => location.replace('/login')); }
+  if (a.dataset.acc === 'clave') abrirCambioClave();
+  if (a.dataset.acc === 'usuarios') abrirUsuarios();
+});
+
+function abrirCambioClave() {
+  mostrarModal(`<h3 id="modalTitulo" style="margin:0 40px 12px 0">Cambiar mi clave</h3>
+    <form id="fClave" class="u-form" style="grid-template-columns:1fr">
+      <label>Clave actual <input type="password" name="actual" autocomplete="current-password" required></label>
+      <label>Nueva clave (mínimo 8 caracteres) <input type="password" name="nueva" autocomplete="new-password" minlength="8" required></label>
+      <label>Repite la nueva clave <input type="password" name="nueva2" autocomplete="new-password" minlength="8" required></label>
+      <div class="u-msg" id="cMsg"></div>
+      <button class="btn primary" type="submit">Guardar</button>
+    </form>`);
+  $('#fClave').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target, msg = $('#cMsg');
+    if (f.nueva.value !== f.nueva2.value) { msg.className = 'u-msg err'; msg.textContent = 'Las claves nuevas no coinciden.'; return; }
+    const r = await fetch('/api/clave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ actual: f.actual.value, nueva: f.nueva.value }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { msg.className = 'u-msg err'; msg.textContent = j.error || 'No se pudo cambiar.'; return; }
+    msg.className = 'u-msg ok'; msg.textContent = 'Clave actualizada ✔';
+    YO.debeCambiar = false; $('#avisoClave').hidden = true;
+    setTimeout(cerrarDetalle, 900);
+  };
+}
+
+const chkPermisos = (sel) => Object.entries(CAT.permisos).map(([k, v]) =>
+  `<label class="chk"><input type="checkbox" name="perm" value="${k}" ${sel.includes(k) ? 'checked' : ''}> ${esc(v)}</label>`).join('');
+const opcionesRol = (rol) => Object.entries(CAT.roles).map(([k, v]) => `<option value="${k}" ${k === rol ? 'selected' : ''}>${esc(v.nombre)}</option>`).join('');
+
+async function abrirUsuarios(mensaje) {
+  const r = await fetch('/api/usuarios', { cache: 'no-store' });
+  const lista = await r.json().catch(() => []);
+  if (!r.ok) return mostrarModal(`<p class="u-msg err">${esc(lista.error || 'No se pudo cargar')}</p>`);
+  mostrarModal(`<h3 id="modalTitulo" style="margin:0 40px 4px 0">Usuarios y permisos</h3>
+    <p class="sub" style="margin:0 0 10px">Ver el tablero lo pueden todos los usuarios activos. Marca lo demás según lo que cada persona necesite.</p>
+    ${mensaje ? `<div class="u-msg ok">${esc(mensaje)}</div>` : ''}
+    <div class="tbl-wrap"><table class="u-tabla"><thead><tr><th>Usuario</th><th>Rol</th><th>Permisos</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody>
+    ${lista.map((u) => `<tr>
+      <td><b>${esc(u.nombre)}</b><br><small class="muted">${esc(u.usuario)}${u.usuario === YO.usuario ? ' (tú)' : ''}</small></td>
+      <td>${esc(CAT.roles[u.rol]?.nombre || u.rol)}</td>
+      <td>${u.permisos.length ? u.permisos.map((p) => `<span class="u-perm">${esc(CAT.permisos[p] || p)}</span>`).join('') : '<small class="muted">Solo ver tablero</small>'}</td>
+      <td>${u.activo ? '<span class="st ok"><i>✓</i> Activo</span>' : '<span class="st na">Inactivo</span>'}${u.debeCambiar ? '<br><small class="muted">clave inicial</small>' : ''}</td>
+      <td class="muted" style="font-size:12px">${u.ultimoIngreso ? new Date(u.ultimoIngreso).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</td>
+      <td style="white-space:nowrap"><button class="btn sm" data-u-editar="${esc(u.usuario)}">Editar</button>
+        ${u.usuario !== YO.usuario ? `<button class="btn sm" data-u-borrar="${esc(u.usuario)}">Eliminar</button>` : ''}</td></tr>`).join('')}
+    </tbody></table></div>
+    <h4 style="margin:18px 0 4px">➕ Nuevo usuario</h4>
+    <form id="fNuevo">
+      <div class="u-form">
+        <label>Usuario <input name="usuario" required pattern="[A-Za-z0-9._-]+" placeholder="ej: jperez" autocomplete="off"></label>
+        <label>Nombre <input name="nombre" required placeholder="Nombre y apellido"></label>
+        <label>Clave inicial (mín. 8) <input name="clave" type="text" minlength="8" required autocomplete="off"></label>
+        <label>Rol <select name="rol">${opcionesRol('consulta')}</select></label>
+      </div>
+      <div class="u-perms" id="nPerms">${chkPermisos(CAT.roles.consulta.permisos)}</div>
+      <div class="u-msg" id="nMsg"></div>
+      <button class="btn primary" type="submit">Crear usuario</button>
+    </form>`);
+  const fN = $('#fNuevo');
+  fN.rol.onchange = () => { $('#nPerms').innerHTML = chkPermisos(CAT.roles[fN.rol.value].permisos); };
+  fN.onsubmit = async (e) => {
+    e.preventDefault();
+    const permisos = [...fN.querySelectorAll('[name=perm]:checked')].map((x) => x.value);
+    const r2 = await fetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario: fN.usuario.value, nombre: fN.nombre.value, clave: fN.clave.value, rol: fN.rol.value, permisos }) });
+    const j = await r2.json().catch(() => ({}));
+    if (!r2.ok) { $('#nMsg').className = 'u-msg err'; $('#nMsg').textContent = j.error || 'No se pudo crear.'; return; }
+    abrirUsuarios(`Usuario "${j.usuario}" creado. Compártele su clave inicial: el sistema le pedirá cambiarla.`);
+  };
+  $('#modalCuerpo').querySelectorAll('[data-u-editar]').forEach((b) => { b.onclick = () => editarUsuario(lista.find((u) => u.usuario === b.dataset.uEditar)); });
+  $('#modalCuerpo').querySelectorAll('[data-u-borrar]').forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm(`¿Eliminar el usuario "${b.dataset.uBorrar}"? Esta acción no se puede deshacer.`)) return;
+      const r3 = await fetch('/api/usuarios?usuario=' + encodeURIComponent(b.dataset.uBorrar), { method: 'DELETE' });
+      const j = await r3.json().catch(() => ({}));
+      if (!r3.ok) return alert(j.error || 'No se pudo eliminar.');
+      abrirUsuarios(`Usuario "${b.dataset.uBorrar}" eliminado.`);
+    };
+  });
+}
+
+function editarUsuario(u) {
+  mostrarModal(`<h3 id="modalTitulo" style="margin:0 40px 10px 0">Editar ${esc(u.usuario)}</h3>
+    <form id="fEditar">
+      <div class="u-form">
+        <label>Nombre <input name="nombre" value="${esc(u.nombre)}" required></label>
+        <label>Rol <select name="rol">${opcionesRol(u.rol)}</select></label>
+        <label>Estado <select name="activo"><option value="1" ${u.activo ? 'selected' : ''}>Activo</option><option value="0" ${!u.activo ? 'selected' : ''}>Inactivo (sin acceso)</option></select></label>
+        <label>Restablecer clave (opcional, mín. 8) <input name="clave" type="text" minlength="8" autocomplete="off" placeholder="dejar vacío = no cambiar"></label>
+      </div>
+      <div class="u-perms" id="ePerms">${chkPermisos(u.permisos)}</div>
+      <div class="u-msg" id="eMsg"></div>
+      <button class="btn primary" type="submit">Guardar cambios</button> <button class="btn" type="button" id="eVolver">Volver</button>
+    </form>`);
+  const f = $('#fEditar');
+  f.rol.onchange = () => { $('#ePerms').innerHTML = chkPermisos(CAT.roles[f.rol.value].permisos); };
+  $('#eVolver').onclick = () => abrirUsuarios();
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const body = { usuario: u.usuario, nombre: f.nombre.value, rol: f.rol.value, activo: f.activo.value === '1',
+      permisos: [...f.querySelectorAll('[name=perm]:checked')].map((x) => x.value) };
+    if (f.clave.value) body.clave = f.clave.value;
+    const r = await fetch('/api/usuarios', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { $('#eMsg').className = 'u-msg err'; $('#eMsg').textContent = j.error || 'No se pudo guardar.'; return; }
+    if (u.usuario === YO.usuario) await cargarSesion();
+    abrirUsuarios(`Cambios de "${u.usuario}" guardados.`);
+  };
+}
+
+cargarSesion().then(() => {
+  aplicarVista();
+  return cargar().then(() => { if (D) { renderMesesConsulta(); cargarJobs(); aplicarVista(); render(); } });
+}).catch(() => {});
 </script>
 </body>
 </html>

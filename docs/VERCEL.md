@@ -14,7 +14,7 @@ Proyecto → **Settings → Environment Variables** (Production):
 
 | Variable | Valor |
 |---|---|
-| `DASHBOARD_CLAVE` | La clave para entrar al dashboard (el usuario puede ser cualquiera) |
+| `SESSION_SECRET` | Texto aleatorio largo para firmar las sesiones (`openssl rand -hex 32`) |
 | `SUBIR_TOKEN` | Un texto largo y aleatorio. Es el mismo que va en `bot/.env` como `SIE_DASHBOARD_TOKEN` |
 
 Para generar un token: `openssl rand -hex 32`
@@ -32,7 +32,8 @@ Cada `git push` a `main` vuelve a desplegar el dashboard. Los **datos** no depen
 los deploys: viven en el Blob y se actualizan cada vez que corre el bot.
 
 ## Seguridad
-- `middleware.js` exige la clave en todas las rutas, excepto `/api/subir`.
+- `middleware.js` exige una sesión válida (cookie firmada) en todo, excepto `/login`, `/api/login`, `/api/logout` y `/api/subir`.
+- Usuarios y permisos en `radicacion/usuarios.json` (Blob privado, claves con scrypt). Primer ingreso: `admin` / `admin123` → cambiarla.
 - `/api/subir` solo acepta peticiones con el header `x-token` correcto.
 - El Blob es **privado**: solo se lee desde `/api/datos`, que está detrás de la clave.
 - `X-Robots-Tag: noindex` evita que los buscadores indexen el sitio.

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Ingresar · Radicación Cápita</title>
+<style>
+:root { --page: #f9f9f7; --surface: #fcfcfb; --surface-2: #f0efec; --border: #e2e1dc; --ink: #0b0b0b; --ink-2: #52514e;
+  --accent: #2a78d6; --critical: #d03b3b; --critical-bg: #fbe5e5; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --page: #0d0d0d; --surface: #1a1a19; --surface-2: #262624; --border: #383835;
+    --ink: #ffffff; --ink-2: #c3c2b7; --accent: #3987e5; --critical-bg: #3a1a1a; }
+}
+:root[data-theme="dark"] { --page: #0d0d0d; --surface: #1a1a19; --surface-2: #262624; --border: #383835;
+  --ink: #ffffff; --ink-2: #c3c2b7; --accent: #3987e5; --critical-bg: #3a1a1a; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--page); color: var(--ink);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.card { width: min(380px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px 24px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.12); }
+h1 { font-size: 20px; margin: 0 0 4px; } .sub { color: var(--ink-2); font-size: 13.5px; margin: 0 0 20px; }
+label { display: block; font-size: 13px; color: var(--ink-2); margin: 0 0 6px; }
+input { width: 100%; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 14px; }
+input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+button { width: 100%; font: inherit; font-weight: 600; color: #fff; background: var(--accent); border: 0; border-radius: 10px;
+  padding: 11px; cursor: pointer; margin-top: 4px; }
+button:disabled { opacity: .6; cursor: wait; }
+.error { background: var(--critical-bg); color: var(--ink); border-left: 3px solid var(--critical); border-radius: 8px;
+  padding: 8px 10px; font-size: 13.5px; margin-bottom: 14px; }
+.pie { color: var(--ink-2); font-size: 12px; text-align: center; margin-top: 16px; }
+</style>
+</head>
+<body>
+<form class="card" id="f" autocomplete="on">
+  <h1>Radicación de contratos cápita</h1>
+  <p class="sub">Ingresa con tu usuario para continuar.</p>
+  <div class="error" id="err" hidden></div>
+  <label for="u">Usuario</label>
+  <input id="u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+  <label for="c">Clave</label>
+  <input id="c" name="password" type="password" autocomplete="current-password" required>
+  <button id="b" type="submit">Ingresar</button>
+  <div class="pie">La sesión se mantiene abierta 12 horas en este navegador.</div>
+</form>
+<script>
+try { const t = localStorage.getItem('rad-tema'); if (t) document.documentElement.dataset.theme = t; } catch {}
+const f = document.getElementById('f'), err = document.getElementById('err'), b = document.getElementById('b');
+f.onsubmit = async (e) => {
+  e.preventDefault();
+  err.hidden = true; b.disabled = true; b.textContent = 'Ingresando…';
+  try {
+    const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario: f.u.value, clave: f.c.value }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'No se pudo ingresar');
+    const sig = new URLSearchParams(location.search).get('next');
+    location.replace(sig && sig.startsWith('/') && !sig.startsWith('//') ? sig : '/');
+  } catch (e2) {
+    err.textContent = e2.message; err.hidden = false; f.c.value = ''; f.c.focus();
+    b.disabled = false; b.textContent = 'Ingresar';
+  }
+};
+</script>
+</body>
+</html>
