@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0 — 2026-10-07
+- **Modelo de cápita vencido**: mes de cápita = mes de las atenciones del RIPS + 1; el soporte
+  en cero es la cápita del primer mes de vigencia (`INICIAL`). Migración única del historial.
+- Detalle: valores y % encima de cada barra, explicación mes a mes, sin columna RIPS
+  redundante; recepciones muestran el mes de las atenciones.
+
 ## 0.7.1 — 2026-10-07
 - **Facturas duplicadas**: análisis de radicaciones vigentes con los soportes RIPS (mismo
   número de factura, mismo contrato+régimen+periodo, servicios idénticos ≥80 %), con usuarios

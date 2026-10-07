@@ -20,7 +20,18 @@ cd bot
 | `--oculto` | Navegador sin ventana |
 | `--no-publicar` | No sube nada al dashboard |
 
-## Cómo se decide el periodo (mes)
+## Cómo se decide el periodo (mes de cápita) — modelo VENCIDO
+
+La cápita se radica vencida: **la radicación de cada mes trae el RIPS de las atenciones del
+mes anterior** (la de abril trae las de marzo) y **la cápita del primer mes va con el RIPS en
+cero**. Por eso:
+
+- Mes de cápita = mes de las atenciones del soporte (ARCHIVO-CONSULTAS) **+ 1**.
+- Soporte en cero (solo encabezado de factura) = **primer mes de vigencia** del contrato
+  (fuente `INICIAL`); si ese mes ya está ocupado, el mes anterior al primer periodo confirmado,
+  y si no, el siguiente libre (fuente `ESTIMADO`).
+
+### Detalle del cálculo de fechas
 
 Se usa el mismo procedimiento que se hace a mano:
 

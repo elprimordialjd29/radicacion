@@ -467,8 +467,13 @@ def preparar(df, por_soporte=True):
     """Año/Mes = periodo de atención sacado del soporte RIPS (ARCHIVO-CONSULTAS).
     Con --por-recepcion se usa la Fecha Recepción del SIE."""
     if por_soporte and "Periodo Mes N" in df.columns:
-        df["Año"] = pd.to_numeric(df["Periodo Año"], errors="coerce")
-        df["Mes"] = pd.to_numeric(df["Periodo Mes N"], errors="coerce").map(NOMBRE_MES)
+        # Modelo de cápita VENCIDO: la radicación de un mes trae el RIPS de las atenciones del
+        # mes ANTERIOR (la de abril trae las de marzo). Periodo de cápita = mes de atención + 1.
+        a_at = pd.to_numeric(df["Periodo Año"], errors="coerce")
+        m_at = pd.to_numeric(df["Periodo Mes N"], errors="coerce")
+        df["Mes atención"] = m_at.map(NOMBRE_MES)
+        df["Año"] = a_at + (m_at == 12).astype(float).where(m_at.notna())
+        df["Mes"] = (m_at % 12 + 1).where(m_at.notna()).map(NOMBRE_MES)
     else:
         c_fecha = col(df, "fecha", "recep")
         f = pd.to_datetime(df[c_fecha], errors="coerce", format="mixed") if c_fecha else pd.NaT
@@ -509,6 +514,16 @@ def abrir_db():
         con.execute("INSERT OR IGNORE INTO consultas SELECT contrato, anio, mes, 'RS', fecha, resultado "
                     "FROM consultas_v1")
         con.execute("DROP TABLE consultas_v1")
+    con.execute("CREATE TABLE IF NOT EXISTS migraciones(nombre TEXT PRIMARY KEY, fecha TEXT)")
+    if not con.execute("SELECT 1 FROM migraciones WHERE nombre='modelo_vencido'").fetchone():
+        # periodos calculados con el mes de atención → mes de cápita (+1); los estimados se recalculan
+        con.execute("""UPDATE registros SET
+              periodo_anio = periodo_anio + CASE WHEN periodo_mes = 12 THEN 1 ELSE 0 END,
+              periodo_mes = CASE WHEN periodo_mes = 12 THEN 1 ELSE periodo_mes + 1 END
+            WHERE periodo_mes IS NOT NULL AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%')""")
+        con.execute("""UPDATE registros SET periodo_anio = NULL, periodo_mes = NULL, fuente = 'SIN FECHAS'
+            WHERE fuente LIKE 'ESTIMADO%'""")
+        con.execute("INSERT INTO migraciones VALUES ('modelo_vencido', ?)", (datetime.now().isoformat(timespec="seconds"),))
     con.execute("""CREATE TABLE IF NOT EXISTS corridas(
         fecha TEXT PRIMARY KEY, meses TEXT, contratos INTEGER, radicados INTEGER,
         pendientes INTEGER, errores INTEGER, novedades INTEGER)""")
@@ -550,10 +565,10 @@ def actualizar_historial(df, regimen):
                 nuevos.append(i)
             # un periodo calculado desde el soporte RIPS no se reemplaza por uno "rápido"
             # (fecha de recepción) ni por un soporte que no se pudo leer
-            soporte_previo = (previo[2] or "").startswith(("CONSULTAS", "OTROS", "ESTIMADO"))
+            soporte_previo = (previo[2] or "").startswith(("CONSULTAS", "OTROS", "ESTIMADO", "INICIAL"))
             soporte_nuevo = str(datos["fuente"]).startswith(("CONSULTAS", "OTROS"))
             if soporte_previo and not soporte_nuevo and not (
-                    (previo[2] or "").startswith("ESTIMADO") and datos["fuente"] == "SIN FECHAS"):
+                    (previo[2] or "").startswith(("ESTIMADO", "INICIAL")) and datos["fuente"] == "SIN FECHAS"):
                 for k in ("periodo_anio", "periodo_mes", "fecha_min", "fecha_max", "fuente"):
                     datos.pop(k)
             con.execute(f"UPDATE registros SET {', '.join(k + '=?' for k in datos)} WHERE clave=?",
@@ -587,46 +602,50 @@ def marcar_no_vigentes(consultados, df):
     return n
 
 
-def estimar_periodos():
-    """Radicaciones cuyo soporte RIPS del SIE viene vacío (solo el encabezado de factura):
-    la cápita se radica mes a mes, así que se les asigna el mes siguiente al último
-    periodo confirmado del mismo contrato y régimen (en orden de fecha de recepción).
-    Quedan con fuente "ESTIMADO" y se reemplazan si luego llega un soporte con fechas."""
+def estimar_periodos(meta=None):
+    """Radicaciones cuyo soporte RIPS viene en cero (solo el encabezado de la factura).
+    Modelo vencido: la cápita del PRIMER mes no lleva atenciones (la de abril trae las de marzo),
+    así que el soporte en cero va al mes anterior al primer periodo confirmado del contrato y
+    régimen (fuente INICIAL). Si ese mes ya está ocupado o no hay periodos confirmados, se usa
+    el siguiente mes libre después del último confirmado (fuente ESTIMADO)."""
+    meta = meta or {}
     con = abrir_db()
     filas = con.execute("SELECT clave, contrato, regimen, fecha_recepcion, periodo_anio, periodo_mes, fuente "
                         "FROM registros WHERE estado NOT LIKE 'NO VIGENTE%'").fetchall()
     grupos = {}
     for f in filas:
         grupos.setdefault((f[1], f[2] or ""), []).append(f)
+    confirmada = lambda fu: str(fu or "").startswith(("CONSULTAS", "OTROS"))
     n = 0
-    for (_, _), regs in grupos.items():
-        def fecha(f):
-            return pd.to_datetime(f[3], errors="coerce", format="mixed")
+    for (contrato, _), regs in grupos.items():
+        fecha = lambda f: pd.to_datetime(f[3], errors="coerce", format="mixed")
         regs.sort(key=lambda f: (fecha(f) if pd.notna(fecha(f)) else pd.Timestamp.max))
-        ocupados = {(f[4], f[5]) for f in regs
-                    if f[4] and f[5] and str(f[6] or "").startswith(("CONSULTAS", "OTROS"))}
-        ultimo = None
-        for f in regs:
-            fuente = str(f[6] or "")
-            if fuente.startswith(("CONSULTAS", "OTROS")) and f[4] and f[5]:
-                if ultimo is None or (f[4], f[5]) > ultimo:
-                    ultimo = (f[4], f[5])
+        ocupados = {(f[4], f[5]) for f in regs if f[4] and f[5] and confirmada(f[6])}
+        sin = [f for f in regs if str(f[6] or "") == "SIN FECHAS" or str(f[6] or "").startswith(("ESTIMADO", "INICIAL"))]
+        ini = meta.get(contrato, {}).get("inicio", "")
+        ini_t = (int(ini[:4]), int(ini[5:7])) if len(ini) >= 7 else None
+        if not sin or not (ocupados or ini_t):
+            continue
+        for f in sin:
+            # 1) primer mes de vigencia del contrato (la cápita inicial va con RIPS en cero)
+            # 2) mes anterior al primer periodo confirmado  3) siguiente mes libre tras el último
+            previo = None
+            if ocupados:
+                p0 = min(ocupados)
+                previo = (p0[0] - 1, 12) if p0[1] == 1 else (p0[0], p0[1] - 1)
+            if ini_t and ini_t not in ocupados and (not ocupados or ini_t < min(ocupados)):
+                (a, m), fuente = ini_t, "INICIAL (RIPS en cero · cápita del primer mes)"
+            elif previo and previo not in ocupados and (ini_t is None or previo >= ini_t):
+                (a, m), fuente = previo, "INICIAL (RIPS en cero · cápita del primer mes)"
+            elif ocupados:
+                a, m = max(ocupados)
+                while (a, m) in ocupados:
+                    a, m = (a + 1, 1) if m == 12 else (a, m + 1)
+                fuente = "ESTIMADO (soporte sin atenciones)"
+            else:
                 continue
-            if fuente not in ("SIN FECHAS",) and not fuente.startswith("ESTIMADO"):
-                continue
-            if ultimo is None:  # sin un periodo confirmado previo no se adivina
-                continue
-            a, m = ultimo
-            while True:
-                m += 1
-                if m > 12:
-                    a, m = a + 1, 1
-                if (a, m) not in ocupados:
-                    break
-            con.execute("UPDATE registros SET periodo_anio=?, periodo_mes=?, fuente=? WHERE clave=?",
-                        (a, m, "ESTIMADO (soporte sin atenciones)", f[0]))
+            con.execute("UPDATE registros SET periodo_anio=?, periodo_mes=?, fuente=? WHERE clave=?", (a, m, fuente, f[0]))
             ocupados.add((a, m))
-            ultimo = (a, m)
             n += 1
     con.commit()
     con.close()
@@ -774,7 +793,7 @@ def main():
     meses = [] if a.todos else parsear_meses(a.meses)
     contratos, meta = cargar_contratos(a.contratos)
     if a.solo_publicar:
-        log(f"Periodos estimados: {estimar_periodos()}")
+        log(f"Periodos asignados a soportes en cero: {estimar_periodos(meta)}")
         publicar(armar_dashboard(meta, {"fecha": datetime.now().isoformat(timespec="seconds"),
                                         "anio": a.anio, "meses": meses, "errores": {}, "novedades": []}))
         return
@@ -849,7 +868,7 @@ def main():
         no_vig = marcar_no_vigentes(consultados_ok, df)
         if no_vig:
             log(f"Radicaciones que ya no figuran como Radicado (anuladas/devueltas): {no_vig}")
-        estimados = estimar_periodos()
+        estimados = estimar_periodos(meta)
         if estimados:
             log(f"Periodos estimados (soporte RIPS sin atenciones): {estimados}")
         if meses:
