@@ -359,6 +359,13 @@ def periodo_soporte(ruta):
     Si no hay consultas, usa las fechas de los demás servicios.
     Nunca usa USUARIOS (fechas de nacimiento) ni FACTURAS."""
     secciones = rips_json.leer_plano(leer_textos(ruta))
+    # lo que trae el RIPS "por dentro": n.º de factura, usuarios y servicios
+    fac = ""
+    if secciones.get("FACTURAS"):
+        c = rips_json._campos(secciones["FACTURAS"][0])
+        fac = c[1] if len(c) > 1 else ""
+    dentro = {"Factura RIPS": fac, "Usuarios RIPS": len(secciones.get("USUARIOS", [])),
+              "Servicios RIPS": sum(len(v) for k, v in secciones.items() if k not in ("USUARIOS", "FACTURAS"))}
 
     def fechas_de(lineas):
         return [(int(a), int(m), int(d)) for l in lineas for a, m, d in RE_FECHA.findall(l)]
@@ -371,14 +378,16 @@ def periodo_soporte(ruta):
                             if k not in ("FACTURAS", "USUARIOS", "CONSULTAS") for l in v])
     if not fechas:
         return {"Periodo Año": None, "Periodo Mes N": None, "Fecha atención mín": "",
-                "Fecha atención máx": "", "Nº registros con fecha": 0, "Fuente periodo": "SIN FECHAS"}
+                "Fecha atención máx": "", "Nº registros con fecha": 0, "Fuente periodo": "SIN FECHAS",
+                "Meses en RIPS": 0, **dentro}
     conteo = Counter((a, m) for a, m, _ in fechas)
     (anio, mes), _ = conteo.most_common(1)[0]
     fmt = lambda f: f"{f[0]:04d}-{f[1]:02d}-{f[2]:02d}"
     return {"Periodo Año": anio, "Periodo Mes N": mes,
             "Fecha atención mín": fmt(min(fechas)), "Fecha atención máx": fmt(max(fechas)),
             "Nº registros con fecha": len(fechas),
-            "Fuente periodo": fuente + (" (varios meses)" if len(conteo) > 1 else "")}
+            "Fuente periodo": fuente + (" (varios meses)" if len(conteo) > 1 else ""),
+            "Meses en RIPS": sum(1 for v in conteo.values() if v >= 0.1 * len(fechas)), **dentro}
 
 
 def buscar_contrato(page, contrato, con_soportes=True, regimen=""):
@@ -491,7 +500,7 @@ COLS_HIST = {
     "fecha_recepcion": "TEXT", "estado": "TEXT", "radicacion": "TEXT", "valor": "REAL",
     "primera_vez": "TEXT", "ultima_vez": "TEXT", "periodo_anio": "INTEGER",
     "periodo_mes": "INTEGER", "fecha_min": "TEXT", "fecha_max": "TEXT", "fuente": "TEXT",
-    "regimen": "TEXT",
+    "regimen": "TEXT", "factura": "TEXT", "n_usuarios": "INTEGER", "n_servicios": "INTEGER", "meses_rips": "INTEGER",
 }
 
 
@@ -554,6 +563,8 @@ def actualizar_historial(df, regimen):
                      periodo_anio=anio, periodo_mes=mes,
                      fecha_min=g("Fecha atención mín") or "", fecha_max=g("Fecha atención máx") or "",
                      fuente=g("Fuente periodo") or "", regimen=r.get("Régimen") or regimen,
+                     factura=g("Factura RIPS") or "", n_usuarios=int(g("Usuarios RIPS") or 0),
+                     n_servicios=int(g("Servicios RIPS") or 0), meses_rips=int(g("Meses en RIPS") or 0),
                      ultima_vez=ahora)
         if previo is None:
             nuevos.append(i)
@@ -723,7 +734,8 @@ def armar_dashboard(meta, ultima):
     con.row_factory = sqlite3.Row
     regs = [dict(r) for r in con.execute(
         "SELECT contrato, recepcion, ips, fecha_recepcion, estado, radicacion, valor, "
-        "periodo_anio, periodo_mes, fecha_min, fecha_max, fuente, regimen, primera_vez "
+        "periodo_anio, periodo_mes, fecha_min, fecha_max, fuente, regimen, primera_vez, "
+        "factura, n_usuarios, n_servicios, meses_rips "
         "FROM registros WHERE estado NOT LIKE 'NO VIGENTE%' ORDER BY contrato, periodo_anio, periodo_mes")]
     no_vig = [dict(r) for r in con.execute(
         "SELECT contrato, recepcion, regimen, valor, periodo_mes, fecha_recepcion, ultima_vez FROM registros "
