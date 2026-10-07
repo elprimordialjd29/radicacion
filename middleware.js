@@ -5,7 +5,7 @@
 import { next } from '@vercel/functions';
 import { verificar, leerCookie } from './api/_sesion.js';
 
-export const config = { matcher: ['/((?!login|api/login|api/logout|api/cuenta|api/subir|favicon).*)'] };
+export const config = { matcher: ['/((?!login|api/login|api/logout|api/cuenta|api/subir|api/evaluar|api/rips-ext|favicon).*)'] };
 // Nota: /api/cuenta?accion=login|logout se llega por las rutas de arriba (rewrites en vercel.json);
 // las acciones sesion y clave validan la sesión dentro de la función.
 
