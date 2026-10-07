@@ -130,6 +130,10 @@ def ejecutar(r):
     actualizar(cid, estado="cancelada" if cancelada else ("terminada" if code == 0 else "error"),
                fin=datetime.now().isoformat(timespec="seconds"), excel=excel, resumen=resumen,
                log="\n".join(log[-400:]))
+    try:   # deja listo el análisis de duplicados con los datos nuevos
+        _duplicados()
+    except Exception:
+        pass
 
 
 def bucle():

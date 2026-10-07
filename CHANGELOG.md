@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1 — 2026-10-07
+- **Facturas duplicadas**: análisis de radicaciones vigentes con los soportes RIPS (mismo
+  número de factura, mismo contrato+régimen+periodo, servicios idénticos ≥80 %), con usuarios
+  en común, servicios idénticos y diferencia de valor; sección en el Reporte y Excel con el
+  detalle de servicios repetidos. Corre en un proceso aparte (≈60 MB) y se precalcula al
+  terminar cada consulta.
+
 ## 0.7.0 — 2026-10-07
 - **Validación**: auditoría contra el SIE (todos los estados) — las facturas anuladas no se
   suman; si una radicación deja de figurar como Radicado se marca NO VIGENTE y se excluye.
