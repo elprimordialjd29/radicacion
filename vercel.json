@@ -1,6 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
+  "rewrites": [
+    { "source": "/api/login", "destination": "/api/cuenta?accion=login" },
+    { "source": "/api/logout", "destination": "/api/cuenta?accion=logout" },
+    { "source": "/api/sesion", "destination": "/api/cuenta?accion=sesion" },
+    { "source": "/api/clave", "destination": "/api/cuenta?accion=clave" }
+  ],
   "headers": [
     { "source": "/(.*)", "headers": [
       { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
