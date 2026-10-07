@@ -410,36 +410,43 @@ def monitor(x_token: str = Header("")):
 
 
 # ------------------------------------------------------------------ facturas duplicadas
-_dup_cache = {"clave": None, "datos": None}
+# El análisis corre en un PROCESO APARTE (lee cientos de soportes): si consume memoria,
+# no afecta al worker. El resultado se guarda en disco y se reutiliza mientras no cambien los datos.
+DUP_JSON = DATOS / "duplicados.json"
+
+
+def _clave_datos():
+    hist = BOT / "historial.db"
+    sop = BOT / "descargas" / "soportes"
+    return f"{hist.stat().st_mtime if hist.exists() else 0}-{sop.stat().st_mtime if sop.exists() else 0}"
 
 
 def _duplicados():
-    import duplicados
-    hist = BOT / "historial.db"
-    clave = (hist.stat().st_mtime if hist.exists() else 0,
-             (BOT / "descargas" / "soportes").stat().st_mtime if (BOT / "descargas" / "soportes").exists() else 0)
-    if _dup_cache["clave"] != clave:
-        _dup_cache.update(clave=clave, datos=duplicados.analizar(hist))
-    return _dup_cache["datos"]
+    clave = _clave_datos()
+    marca = DATOS / "duplicados.clave"
+    if not DUP_JSON.exists() or not marca.exists() or marca.read_text() != clave:
+        r = subprocess.run([PY, str(BOT / "duplicados.py"), "--json", str(DUP_JSON)], cwd=BOT,
+                           capture_output=True, text=True, timeout=600)
+        if r.returncode != 0:
+            raise HTTPException(500, "Error analizando duplicados: " + (r.stderr or "")[-400:])
+        marca.write_text(clave)
+    return json.loads(DUP_JSON.read_text(encoding="utf-8"))
 
 
 @app.get("/duplicados")
 def duplicados_json(x_token: str = Header("")):
     auth(x_token)
-    resumen, pares = _duplicados()
-    return {"resumen": resumen, "pares": [{k: v for k, v in d.items() if not k.startswith("_")} for d in pares]}
+    return _duplicados()
 
 
 @app.get("/duplicados/excel")
 def duplicados_excel(x_token: str = Header("")):
     auth(x_token)
-    import duplicados
-    resumen, pares = _duplicados()
-    prest = {}
-    if CATALOGO.exists():
-        prest = {c["contrato"]: c.get("prestador", "") for c in json.loads(CATALOGO.read_text(encoding="utf-8"))}
     ruta = DATOS / f"Facturas_duplicadas_{datetime.now():%Y%m%d_%H%M}.xlsx"
-    duplicados.a_excel(resumen, pares, ruta, prest)
+    r = subprocess.run([PY, str(BOT / "duplicados.py"), "--excel", str(ruta), str(CATALOGO)], cwd=BOT,
+                       capture_output=True, text=True, timeout=600)
+    if r.returncode != 0 or not ruta.exists():
+        raise HTTPException(500, "Error generando el Excel: " + (r.stderr or "")[-400:])
     for viejo in sorted(DATOS.glob("Facturas_duplicadas_*.xlsx"))[:-3]:
         viejo.unlink(missing_ok=True)
     return FileResponse(ruta, filename=ruta.name,
