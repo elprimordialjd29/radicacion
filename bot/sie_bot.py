@@ -563,6 +563,30 @@ def actualizar_historial(df, regimen):
     return df.loc[nuevos], not hay_previos
 
 
+def marcar_no_vigentes(consultados, df):
+    """Si una recepción que estaba 'Radicado' ya no sale en la última consulta exitosa de su
+    contrato y régimen (p. ej. se anuló, se devolvió o pasó a ajuste), deja de contarse."""
+    presentes = {}
+    if df is not None and not df.empty:
+        c_rec = col(df, "recepci", "rips") or col(df, "recepci")
+        for _, r in df.iterrows():
+            presentes.setdefault((r["Contrato Consultado"], r.get("Régimen") or ""), set()).add(str(r.get(c_rec, "")))
+    con = abrir_db()
+    ahora = datetime.now().isoformat(timespec="seconds")
+    n = 0
+    for contrato, reg in consultados:
+        vistos = presentes.get((contrato, reg), set())
+        for clave, rec in con.execute("SELECT clave, recepcion FROM registros WHERE contrato=? AND COALESCE(regimen,'')=? "
+                                      "AND estado NOT LIKE 'NO VIGENTE%'", (contrato, reg)).fetchall():
+            if str(rec) not in vistos:
+                con.execute("UPDATE registros SET estado=?, ultima_vez=? WHERE clave=?",
+                            ("NO VIGENTE (ya no figura como Radicado en el SIE)", ahora, clave))
+                n += 1
+    con.commit()
+    con.close()
+    return n
+
+
 def estimar_periodos():
     """Radicaciones cuyo soporte RIPS del SIE viene vacío (solo el encabezado de factura):
     la cápita se radica mes a mes, así que se les asigna el mes siguiente al último
@@ -570,7 +594,7 @@ def estimar_periodos():
     Quedan con fuente "ESTIMADO" y se reemplazan si luego llega un soporte con fechas."""
     con = abrir_db()
     filas = con.execute("SELECT clave, contrato, regimen, fecha_recepcion, periodo_anio, periodo_mes, fuente "
-                        "FROM registros").fetchall()
+                        "FROM registros WHERE estado NOT LIKE 'NO VIGENTE%'").fetchall()
     grupos = {}
     for f in filas:
         grupos.setdefault((f[1], f[2] or ""), []).append(f)
@@ -681,14 +705,17 @@ def armar_dashboard(meta, ultima):
     regs = [dict(r) for r in con.execute(
         "SELECT contrato, recepcion, ips, fecha_recepcion, estado, radicacion, valor, "
         "periodo_anio, periodo_mes, fecha_min, fecha_max, fuente, regimen, primera_vez "
-        "FROM registros ORDER BY contrato, periodo_anio, periodo_mes")]
+        "FROM registros WHERE estado NOT LIKE 'NO VIGENTE%' ORDER BY contrato, periodo_anio, periodo_mes")]
+    no_vig = [dict(r) for r in con.execute(
+        "SELECT contrato, recepcion, regimen, valor, periodo_mes, fecha_recepcion, ultima_vez FROM registros "
+        "WHERE estado LIKE 'NO VIGENTE%'")]
     cons = [dict(r) for r in con.execute("SELECT * FROM consultas")]
     corr = [dict(r) for r in con.execute("SELECT * FROM corridas ORDER BY fecha DESC LIMIT 30")]
     con.close()
     contratos = [{"contrato": k, **v} for k, v in meta.items()]
     return {"generado": datetime.now().isoformat(timespec="seconds"), "version": 1,
             "contratos": contratos, "registros": regs, "consultas": cons,
-            "corridas": corr, "ultima": ultima}
+            "corridas": corr, "ultima": ultima, "no_vigentes": no_vig}
 
 
 def publicar(datos):
@@ -772,6 +799,7 @@ def main():
         f"{a.anio} | régimen {', '.join(regimenes)} · {a.tipo} · {a.estado}")
 
     partes, errores = [], {}
+    consultados_ok = set()
     sin_periodo = pd.DataFrame()
     if a_consultar:
         with sync_playwright() as p:
@@ -797,6 +825,7 @@ def main():
                                 log(f"[{n}/{total}] {contrato} {reg}: {len(df)} registros")
                                 if not df.empty:
                                     partes.append(df)
+                                consultados_ok.add((contrato, reg))
                                 errores.pop(clave_err, None)
                                 break
                             except Exception as e:
@@ -811,10 +840,15 @@ def main():
     df = pd.concat(partes, ignore_index=True) if partes else pd.DataFrame(
         columns=["Contrato Consultado", "Mes", "Año", "Valor (número)"])
     novedades, primera = df.iloc[0:0], True
+    if df.empty and consultados_ok and not a.sin_soportes:
+        marcar_no_vigentes(consultados_ok, df)
     if not df.empty:
         df = preparar(df, not (a.por_recepcion or a.sin_soportes))
         sin_periodo = df[df["Mes"].isna()]
         novedades, primera = actualizar_historial(df, regimenes[0])  # todo lo hallado, todos los meses
+        no_vig = marcar_no_vigentes(consultados_ok, df)
+        if no_vig:
+            log(f"Radicaciones que ya no figuran como Radicado (anuladas/devueltas): {no_vig}")
         estimados = estimar_periodos()
         if estimados:
             log(f"Periodos estimados (soporte RIPS sin atenciones): {estimados}")

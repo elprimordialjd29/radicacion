@@ -321,3 +321,88 @@ def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "
     sufijo = f"_{regimen.upper()}" if regimen else ""
     return Response(buf.getvalue(), media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{base}{sufijo}_{formato}.zip"'})
+
+
+# ------------------------------------------------------------------ monitoreo (solo lectura)
+def _meminfo():
+    d = {}
+    for linea in Path("/proc/meminfo").read_text().splitlines():
+        k, v = linea.split(":", 1)
+        d[k] = int(v.strip().split()[0]) * 1024
+    return d
+
+
+def _cpu_pct(intervalo=0.4):
+    def leer():
+        p = [int(x) for x in Path("/proc/stat").read_text().splitlines()[0].split()[1:]]
+        return sum(p), p[3] + p[4]
+    import time as _t
+    t1, i1 = leer(); _t.sleep(intervalo); t2, i2 = leer()
+    return round(100 * (1 - (i2 - i1) / max(t2 - t1, 1)), 1)
+
+
+def _tam(ruta):
+    total = 0
+    for raiz, _, archivos in os.walk(ruta):
+        for a in archivos:
+            try:
+                total += os.path.getsize(os.path.join(raiz, a))
+            except OSError:
+                pass
+    return total
+
+
+def _servicio(nombre):
+    r = subprocess.run(["systemctl", "show", nombre, "-p", "ActiveState,SubState,ActiveEnterTimestamp,MemoryCurrent,NRestarts"],
+                       capture_output=True, text=True)
+    d = dict(l.split("=", 1) for l in r.stdout.splitlines() if "=" in l)
+    mem = d.get("MemoryCurrent", "")
+    return {"nombre": nombre, "estado": d.get("ActiveState", "?"), "sub": d.get("SubState", ""),
+            "desde": d.get("ActiveEnterTimestamp", ""), "reinicios": d.get("NRestarts", ""),
+            "memoria": int(mem) if mem.isdigit() else None}
+
+
+@app.get("/monitor")
+def monitor(x_token: str = Header("")):
+    auth(x_token)
+    import shutil
+    m = _meminfo()
+    disco = shutil.disk_usage("/")
+    carga = os.getloadavg()
+    uptime = float(Path("/proc/uptime").read_text().split()[0])
+    timer = subprocess.run(["systemctl", "show", "radicacion-programada.timer", "-p", "NextElapseUSecRealtime,LastTriggerUSec"],
+                           capture_output=True, text=True).stdout
+    tdat = dict(l.split("=", 1) for l in timer.splitlines() if "=" in l)
+    con = db()
+    estados = dict(con.execute("SELECT estado, COUNT(*) FROM consultas GROUP BY estado").fetchall())
+    ult = [fila(r) for r in con.execute("SELECT * FROM consultas WHERE fin IS NOT NULL ORDER BY creada DESC LIMIT 12").fetchall()]
+    hist = BOT / "historial.db"
+    registros = 0
+    if hist.exists():
+        h = sqlite3.connect(hist)
+        registros = h.execute("SELECT COUNT(*) FROM registros").fetchone()[0]
+        h.close()
+    procesos_chrome = 0
+    for p in Path("/proc").iterdir():
+        if p.name.isdigit():
+            try:
+                procesos_chrome += "chrom" in (p / "comm").read_text(errors="ignore")
+            except OSError:
+                pass
+    return {
+        "hora": datetime.now().isoformat(timespec="seconds"),
+        "sistema": {"cpus": os.cpu_count(), "cpu_pct": _cpu_pct(), "carga": [round(x, 2) for x in carga],
+                    "uptime_seg": int(uptime)},
+        "memoria": {"total": m["MemTotal"], "disponible": m["MemAvailable"], "usada": m["MemTotal"] - m["MemAvailable"],
+                    "swap_total": m.get("SwapTotal", 0), "swap_usada": m.get("SwapTotal", 0) - m.get("SwapFree", 0)},
+        "disco": {"total": disco.total, "usado": disco.used, "libre": disco.free},
+        "almacenamiento": {"soportes_rips": _tam(BOT / "descargas" / "soportes"), "excel": _tam(BOT / "descargas") - _tam(BOT / "descargas" / "soportes"),
+                            "historial_db": hist.stat().st_size if hist.exists() else 0, "logs": _tam(BOT / "logs"),
+                            "navegador": _tam(Path.home() / ".cache" / "ms-playwright")},
+        "servicios": [_servicio(s) for s in ("radicacion-worker", "nginx", "evaluador3280", "pocketbase")],
+        "programacion": {"proxima": tdat.get("NextElapseUSecRealtime", ""), "ultima": tdat.get("LastTriggerUSec", "")},
+        "cola": {"corriendo": _proceso["id"], "por_estado": estados, "chromium_procesos": procesos_chrome},
+        "datos": {"radicaciones_historial": registros,
+                  "soportes_descargados": sum(1 for _ in (BOT / "descargas" / "soportes").rglob("*")) if (BOT / "descargas" / "soportes").exists() else 0},
+        "ultimas_consultas": ult,
+    }

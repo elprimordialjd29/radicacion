@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.0 — 2026-10-07
+- **Validación**: auditoría contra el SIE (todos los estados) — las facturas anuladas no se
+  suman; si una radicación deja de figurar como Radicado se marca NO VIGENTE y se excluye.
+- Alertas: posible factura duplicada (mismo mes y régimen, valores ±0,5 %), cifra atípica,
+  fuera del margen y contratos que superan su valor total.
+- Meses **en plazo** de radicación (configurable 1–3 meses) no cuentan como pendientes ni
+  como esperado exigible.
+- Reporte rediseñado (cabecera, parámetros, alertas, tablas) y detalle con gráfica mensual
+  (RS/RC vs tope y franja del margen).
+- **Descargas**: Excel del reporte (Resumen, Por prestador, Por contrato, Detalle mensual,
+  Alertas, Sin radicar) y del detalle; impresión / PDF.
+- **Monitoreo del servidor** (solo administradores): memoria, disco, CPU, servicios,
+  cola de consultas, programación y almacenamiento de la app.
+
 ## 0.6.0 — 2026-10-06
 - **Usuarios y roles**: pantalla de ingreso propia (sin la ventana del navegador), sesión
   firmada en cookie HttpOnly por 12 h. Usuario inicial `admin` (se pide cambiar la clave).
