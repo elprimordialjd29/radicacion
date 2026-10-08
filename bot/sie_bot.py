@@ -532,7 +532,7 @@ def abrir_db():
             WHERE periodo_mes IS NOT NULL AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%')""")
         con.execute("""UPDATE registros SET periodo_anio = NULL, periodo_mes = NULL, fuente = 'SIN FECHAS'
             WHERE fuente LIKE 'ESTIMADO%'""")
-        con.execute("INSERT INTO migraciones VALUES ('modelo_vencido', ?)", (datetime.now().isoformat(timespec="seconds"),))
+        con.execute("INSERT INTO migraciones VALUES ('modelo_vencido', ?)", (datetime.now().astimezone().isoformat(timespec="seconds"),))
     con.execute("""CREATE TABLE IF NOT EXISTS corridas(
         fecha TEXT PRIMARY KEY, meses TEXT, contratos INTEGER, radicados INTEGER,
         pendientes INTEGER, errores INTEGER, novedades INTEGER)""")
@@ -542,7 +542,7 @@ def abrir_db():
 def actualizar_historial(df, regimen):
     """Guarda TODO lo encontrado (cualquier mes) y devuelve lo que es nuevo o cambió."""
     con = abrir_db()
-    ahora = datetime.now().isoformat(timespec="seconds")
+    ahora = datetime.now().astimezone().isoformat(timespec="seconds")
     c_rec = col(df, "recepci", "rips") or col(df, "recepci")
     c_ips, c_est = col(df, "ips"), col(df, "estado")
     c_rad = col(df, "radicaci")
@@ -598,7 +598,7 @@ def marcar_no_vigentes(consultados, df):
         for _, r in df.iterrows():
             presentes.setdefault((r["Contrato Consultado"], r.get("Régimen") or ""), set()).add(str(r.get(c_rec, "")))
     con = abrir_db()
-    ahora = datetime.now().isoformat(timespec="seconds")
+    ahora = datetime.now().astimezone().isoformat(timespec="seconds")
     n = 0
     for contrato, reg in consultados:
         vistos = presentes.get((contrato, reg), set())
@@ -672,7 +672,7 @@ def registrar_consultas(resumen, meses, anio, regimen, contratos=None, df=None):
             if m:
                 res_reg.setdefault(r["Contrato Consultado"], {}).setdefault(r.get("Régimen") or regimen, set()).add(m)
     con = abrir_db()
-    ahora = datetime.now().isoformat(timespec="seconds")
+    ahora = datetime.now().astimezone().isoformat(timespec="seconds")
     for _, f in resumen.iterrows():
         if contratos is not None and f["Contrato"] not in contratos:
             continue
@@ -744,7 +744,7 @@ def armar_dashboard(meta, ultima):
     corr = [dict(r) for r in con.execute("SELECT * FROM corridas ORDER BY fecha DESC LIMIT 30")]
     con.close()
     contratos = [{"contrato": k, **v} for k, v in meta.items()]
-    return {"generado": datetime.now().isoformat(timespec="seconds"), "version": 1,
+    return {"generado": datetime.now().astimezone().isoformat(timespec="seconds"), "version": 1,
             "contratos": contratos, "registros": regs, "consultas": cons,
             "corridas": corr, "ultima": ultima, "no_vigentes": no_vig}
 
@@ -806,7 +806,7 @@ def main():
     contratos, meta = cargar_contratos(a.contratos)
     if a.solo_publicar:
         log(f"Periodos asignados a soportes en cero: {estimar_periodos(meta)}")
-        publicar(armar_dashboard(meta, {"fecha": datetime.now().isoformat(timespec="seconds"),
+        publicar(armar_dashboard(meta, {"fecha": datetime.now().astimezone().isoformat(timespec="seconds"),
                                         "anio": a.anio, "meses": meses, "errores": {}, "novedades": []}))
         return
     if a.solo:
@@ -900,7 +900,7 @@ def main():
                 for ce in con_error:
                     for m in meses:
                         c.execute("INSERT OR REPLACE INTO consultas VALUES (?,?,?,?,?,?)",
-                                  (ce, a.anio, m, reg, datetime.now().isoformat(timespec="seconds"),
+                                  (ce, a.anio, m, reg, datetime.now().astimezone().isoformat(timespec="seconds"),
                                    "ERROR: " + next((v for k, v in errores.items() if k.startswith(ce)), "")))
                 c.commit()
                 c.close()
@@ -909,7 +909,7 @@ def main():
     pendientes = int((resumen["Estado"] == "SIN RADICAR").sum())
     con = abrir_db()
     con.execute("INSERT OR REPLACE INTO corridas VALUES (?,?,?,?,?,?,?)",
-                (datetime.now().isoformat(timespec="seconds"),
+                (datetime.now().astimezone().isoformat(timespec="seconds"),
                  ",".join(str(m) for m in meses) or "todos", len(contratos), radicados,
                  pendientes, len(errores), 0 if primera else len(novedades)))
     con.commit()
@@ -931,7 +931,7 @@ def main():
 
     if not a.no_publicar:
         publicar(armar_dashboard(meta, {
-            "fecha": datetime.now().isoformat(timespec="seconds"), "anio": a.anio,
+            "fecha": datetime.now().astimezone().isoformat(timespec="seconds"), "anio": a.anio,
             "meses": meses, "radicados": radicados, "pendientes": pendientes,
             "fuera_vigencia": len(fuera), "errores": errores,
             "novedades": [] if primera else

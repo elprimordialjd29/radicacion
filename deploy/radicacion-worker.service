@@ -7,6 +7,8 @@ Wants=network-online.target
 User=root
 WorkingDirectory=/opt/radicacion/worker
 ExecStart=/opt/radicacion/bot/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8092 --workers 1
+# horas del bot y del worker en hora de Colombia (el VPS sigue en su zona, que usan otras apps)
+Environment=TZ=America/Bogota
 Restart=always
 RestartSec=5
 # Chromium puede usar bastante memoria; el VPS tiene 4 GB compartidos con otras apps

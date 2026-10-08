@@ -23,6 +23,7 @@ import sys
 import threading
 import uuid
 from contextlib import closing, contextmanager
+from zoneinfo import ZoneInfo
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -89,8 +90,27 @@ def _iniciar_db():
 _iniciar_db()
 
 
+def ahora():
+    """Hora actual CON zona horaria (el navegador la convierte bien a la hora local)."""
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+_TZ_ANTIGUA = ZoneInfo("Europe/Berlin")   # las horas guardadas antes del 8-oct no traían zona (hora del VPS)
+
+
+def _con_zona(t):
+    if not t or not isinstance(t, str) or len(t) < 19 or t[19:20] in ("+", "-", "Z"):
+        return t
+    try:
+        return datetime.fromisoformat(t).replace(tzinfo=_TZ_ANTIGUA).isoformat(timespec="seconds")
+    except ValueError:
+        return t
+
+
 def fila(r, con_log=False):
     d = dict(r)
+    for k in ("creada", "inicio", "fin"):
+        d[k] = _con_zona(d.get(k))
     d["meses"] = json.loads(d["meses"] or "[]")
     d["contratos"] = json.loads(d["contratos"] or "[]")
     d["n_contratos"] = len(d["contratos"])
@@ -132,7 +152,7 @@ def ejecutar(r):
         args.append("--sin-soportes")
     args += ["--regimen", r["regimenes"] or "RS,RC"]
 
-    actualizar(cid, estado="corriendo", inicio=datetime.now().isoformat(timespec="seconds"))
+    actualizar(cid, estado="corriendo", inicio=ahora())
     log, excel = [], None
     p = subprocess.Popen(args, cwd=BOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                          text=True, bufsize=1, env={**os.environ, "PYTHONUNBUFFERED": "1"})
@@ -153,7 +173,7 @@ def ejecutar(r):
     resumen = "\n".join(l for l in log if l.startswith(" ") and ":" in l)[-2000:]
     cancelada = q1("SELECT estado FROM consultas WHERE id=?", (cid,))["estado"] == "cancelando"
     actualizar(cid, estado="cancelada" if cancelada else ("terminada" if code == 0 else "error"),
-               fin=datetime.now().isoformat(timespec="seconds"), excel=excel, resumen=resumen,
+               fin=ahora(), excel=excel, resumen=resumen,
                log="\n".join(log[-400:]))
     try:   # deja listo el análisis de duplicados con los datos nuevos
         _duplicados(esperar=True)
@@ -165,7 +185,7 @@ def bucle():
     # al arrancar, lo que quedó "corriendo" de un reinicio se marca como error
     with db() as con:
         con.execute("UPDATE consultas SET estado='error', fin=? WHERE estado IN ('corriendo','cancelando')",
-                    (datetime.now().isoformat(timespec="seconds"),))
+                    (ahora(),))
     while True:
         r = q1("SELECT * FROM consultas WHERE estado='en_cola' ORDER BY creada LIMIT 1")
         if not r:
@@ -175,7 +195,7 @@ def bucle():
         try:
             ejecutar(r)
         except Exception as e:  # nunca matar el bucle
-            actualizar(r["id"], estado="error", fin=datetime.now().isoformat(timespec="seconds"),
+            actualizar(r["id"], estado="error", fin=ahora(),
                        resumen=f"Error interno: {e}")
 
 
@@ -246,7 +266,7 @@ def crear(c: NuevaConsulta, x_token: str = Header("")):
     with _lock, db() as con:
         con.execute("INSERT INTO consultas (id, creada, usuario, anio, meses, contratos, sin_soportes, "
                     "estado, total, hechos, regimenes) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    (cid, datetime.now().isoformat(timespec="seconds"), c.usuario[:60], c.anio,
+                    (cid, ahora(), c.usuario[:60], c.anio,
                      json.dumps(sorted(c.meses)), json.dumps(sorted(c.contratos)), int(c.sin_soportes),
                      "en_cola", (len(c.contratos) or len(validos)) * len(regs), 0, ",".join(regs)))
     _hay_trabajo.set()
@@ -282,7 +302,7 @@ def cancelar(cid: str, x_token: str = Header("")):
     if not r:
         raise HTTPException(404, "No existe")
     if r["estado"] == "en_cola":
-        actualizar(cid, estado="cancelada", fin=datetime.now().isoformat(timespec="seconds"))
+        actualizar(cid, estado="cancelada", fin=ahora())
     elif r["estado"] == "corriendo" and _proceso["id"] == cid:
         actualizar(cid, estado="cancelando")
         _proceso["popen"].terminate()
@@ -424,7 +444,7 @@ def monitor(x_token: str = Header("")):
             except OSError:
                 pass
     return {
-        "hora": datetime.now().isoformat(timespec="seconds"),
+        "hora": ahora(),
         "sistema": {"cpus": os.cpu_count(), "cpu_pct": _cpu_pct(), "carga": [round(x, 2) for x in carga],
                     "uptime_seg": int(uptime)},
         "memoria": {"total": m["MemTotal"], "disponible": m["MemAvailable"], "usada": m["MemTotal"] - m["MemAvailable"],
