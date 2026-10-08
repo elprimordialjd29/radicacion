@@ -215,7 +215,7 @@ def salud(x_token: str = Header("")):
 @app.get("/consultas")
 def listar(limit: int = 20, x_token: str = Header("")):
     auth(x_token)
-    rs = q1("SELECT * FROM consultas ORDER BY creada DESC LIMIT ?", (min(limit, 100),)).fetchall()
+    rs = qall("SELECT * FROM consultas ORDER BY creada DESC LIMIT ?", (min(limit, 100),))
     return [fila(r) for r in rs]
 
 
@@ -236,7 +236,7 @@ def crear(c: NuevaConsulta, x_token: str = Header("")):
     desconocidos = [x for x in c.contratos if x not in validos]
     if desconocidos:
         raise HTTPException(400, f"Contratos que no están en el listado: {desconocidos[:5]}")
-    activa = qall("SELECT id FROM consultas WHERE estado IN ('en_cola','corriendo') AND anio=? "
+    activa = q1("SELECT id FROM consultas WHERE estado IN ('en_cola','corriendo') AND anio=? "
                           "AND meses=? AND contratos=? AND regimenes=?",
                           (c.anio, json.dumps(sorted(c.meses)), json.dumps(sorted(c.contratos)),
                            ",".join(regs)))
