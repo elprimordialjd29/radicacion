@@ -22,6 +22,7 @@ import subprocess
 import sys
 import threading
 import uuid
+from contextlib import closing, contextmanager
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -52,16 +53,40 @@ _proceso = {"id": None, "popen": None}
 
 
 # ------------------------------------------------------------------ base de datos
+# Cada operación abre su conexión y SIEMPRE la cierra (antes se acumulaban conexiones abiertas
+# hasta agotar el límite de 1024 archivos del proceso y el servicio dejaba de responder).
+@contextmanager
 def db():
     con = sqlite3.connect(DB, timeout=30)
     con.row_factory = sqlite3.Row
-    con.execute("""CREATE TABLE IF NOT EXISTS consultas(
-        id TEXT PRIMARY KEY, creada TEXT, usuario TEXT, anio INTEGER, meses TEXT,
-        contratos TEXT, sin_soportes INTEGER, estado TEXT, total INTEGER, hechos INTEGER,
-        actual TEXT, inicio TEXT, fin TEXT, excel TEXT, resumen TEXT, log TEXT)""")
-    if "regimenes" not in {r[1] for r in con.execute("PRAGMA table_info(consultas)")}:
-        con.execute("ALTER TABLE consultas ADD COLUMN regimenes TEXT DEFAULT 'RS'")
-    return con
+    try:
+        yield con
+        con.commit()
+    finally:
+        con.close()
+
+
+def q1(sql, params=()):
+    with db() as con:
+        return con.execute(sql, params).fetchone()
+
+
+def qall(sql, params=()):
+    with db() as con:
+        return con.execute(sql, params).fetchall()
+
+
+def _iniciar_db():
+    with db() as con:
+        con.execute("""CREATE TABLE IF NOT EXISTS consultas(
+            id TEXT PRIMARY KEY, creada TEXT, usuario TEXT, anio INTEGER, meses TEXT,
+            contratos TEXT, sin_soportes INTEGER, estado TEXT, total INTEGER, hechos INTEGER,
+            actual TEXT, inicio TEXT, fin TEXT, excel TEXT, resumen TEXT, log TEXT)""")
+        if "regimenes" not in {r[1] for r in con.execute("PRAGMA table_info(consultas)")}:
+            con.execute("ALTER TABLE consultas ADD COLUMN regimenes TEXT DEFAULT 'RS'")
+
+
+_iniciar_db()
 
 
 def fila(r, con_log=False):
@@ -126,7 +151,7 @@ def ejecutar(r):
     code = p.wait()
     _proceso.update(id=None, popen=None)
     resumen = "\n".join(l for l in log if l.startswith(" ") and ":" in l)[-2000:]
-    cancelada = db().execute("SELECT estado FROM consultas WHERE id=?", (cid,)).fetchone()["estado"] == "cancelando"
+    cancelada = q1("SELECT estado FROM consultas WHERE id=?", (cid,))["estado"] == "cancelando"
     actualizar(cid, estado="cancelada" if cancelada else ("terminada" if code == 0 else "error"),
                fin=datetime.now().isoformat(timespec="seconds"), excel=excel, resumen=resumen,
                log="\n".join(log[-400:]))
@@ -142,7 +167,7 @@ def bucle():
         con.execute("UPDATE consultas SET estado='error', fin=? WHERE estado IN ('corriendo','cancelando')",
                     (datetime.now().isoformat(timespec="seconds"),))
     while True:
-        r = db().execute("SELECT * FROM consultas WHERE estado='en_cola' ORDER BY creada LIMIT 1").fetchone()
+        r = q1("SELECT * FROM consultas WHERE estado='en_cola' ORDER BY creada LIMIT 1")
         if not r:
             _hay_trabajo.wait(30)
             _hay_trabajo.clear()
@@ -182,7 +207,7 @@ class NuevaConsulta(BaseModel):
 @app.get("/salud")
 def salud(x_token: str = Header("")):
     auth(x_token)
-    pendientes = db().execute("SELECT COUNT(*) FROM consultas WHERE estado='en_cola'").fetchone()[0]
+    pendientes = q1("SELECT COUNT(*) FROM consultas WHERE estado='en_cola'")[0]
     return {"ok": True, "corriendo": _proceso["id"], "en_cola": pendientes,
             "catalogo": CATALOGO.exists()}
 
@@ -190,7 +215,7 @@ def salud(x_token: str = Header("")):
 @app.get("/consultas")
 def listar(limit: int = 20, x_token: str = Header("")):
     auth(x_token)
-    rs = db().execute("SELECT * FROM consultas ORDER BY creada DESC LIMIT ?", (min(limit, 100),)).fetchall()
+    rs = q1("SELECT * FROM consultas ORDER BY creada DESC LIMIT ?", (min(limit, 100),)).fetchall()
     return [fila(r) for r in rs]
 
 
@@ -211,10 +236,10 @@ def crear(c: NuevaConsulta, x_token: str = Header("")):
     desconocidos = [x for x in c.contratos if x not in validos]
     if desconocidos:
         raise HTTPException(400, f"Contratos que no están en el listado: {desconocidos[:5]}")
-    activa = db().execute("SELECT id FROM consultas WHERE estado IN ('en_cola','corriendo') AND anio=? "
+    activa = qall("SELECT id FROM consultas WHERE estado IN ('en_cola','corriendo') AND anio=? "
                           "AND meses=? AND contratos=? AND regimenes=?",
                           (c.anio, json.dumps(sorted(c.meses)), json.dumps(sorted(c.contratos)),
-                           ",".join(regs))).fetchone()
+                           ",".join(regs)))
     if activa:
         return {"id": activa["id"], "duplicada": True}
     cid = uuid.uuid4().hex[:10]
@@ -231,7 +256,7 @@ def crear(c: NuevaConsulta, x_token: str = Header("")):
 @app.get("/consultas/{cid}")
 def detalle(cid: str, x_token: str = Header("")):
     auth(x_token)
-    r = db().execute("SELECT * FROM consultas WHERE id=?", (cid,)).fetchone()
+    r = q1("SELECT * FROM consultas WHERE id=?", (cid,))
     if not r:
         raise HTTPException(404, "No existe")
     return fila(r, con_log=True)
@@ -240,7 +265,7 @@ def detalle(cid: str, x_token: str = Header("")):
 @app.get("/consultas/{cid}/excel")
 def excel(cid: str, x_token: str = Header("")):
     auth(x_token)
-    r = db().execute("SELECT excel FROM consultas WHERE id=?", (cid,)).fetchone()
+    r = q1("SELECT excel FROM consultas WHERE id=?", (cid,))
     if not r or not r["excel"]:
         raise HTTPException(404, "Sin Excel")
     ruta = (BOT / r["excel"]).resolve() if not os.path.isabs(r["excel"]) else Path(r["excel"]).resolve()
@@ -253,7 +278,7 @@ def excel(cid: str, x_token: str = Header("")):
 @app.post("/consultas/{cid}/cancelar")
 def cancelar(cid: str, x_token: str = Header("")):
     auth(x_token)
-    r = db().execute("SELECT estado FROM consultas WHERE id=?", (cid,)).fetchone()
+    r = q1("SELECT estado FROM consultas WHERE id=?", (cid,))
     if not r:
         raise HTTPException(404, "No existe")
     if r["estado"] == "en_cola":
@@ -281,7 +306,6 @@ def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "
     hist = BOT / "historial.db"
     if not hist.exists():
         raise HTTPException(404, "Sin historial")
-    con = sqlite3.connect(hist)
     if por == "atencion":
         # por MES DE LAS ATENCIONES del RIPS (modelo vencido: mes de cápita - 1); excluye los RIPS en cero
         a_cap, m_cap = (anio + 1, 1) if mes == 12 else (anio, mes + 1)
@@ -295,8 +319,8 @@ def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "
     if regimen:
         sql += " AND regimen=?"
         params.append(regimen.upper())
-    filas = con.execute(sql + " ORDER BY recepcion", params).fetchall()
-    con.close()
+    with closing(sqlite3.connect(hist)) as con:
+        filas = con.execute(sql + " ORDER BY recepcion", params).fetchall()
     carpeta = BOT / "descargas" / "soportes" / _limpio(contrato)
     archivos = []
     for recepcion, reg in filas:
@@ -385,15 +409,13 @@ def monitor(x_token: str = Header("")):
     timer = subprocess.run(["systemctl", "show", "radicacion-programada.timer", "-p", "NextElapseUSecRealtime,LastTriggerUSec"],
                            capture_output=True, text=True).stdout
     tdat = dict(l.split("=", 1) for l in timer.splitlines() if "=" in l)
-    con = db()
-    estados = dict(con.execute("SELECT estado, COUNT(*) FROM consultas GROUP BY estado").fetchall())
-    ult = [fila(r) for r in con.execute("SELECT * FROM consultas WHERE fin IS NOT NULL ORDER BY creada DESC LIMIT 12").fetchall()]
+    estados = {r[0]: r[1] for r in qall("SELECT estado, COUNT(*) FROM consultas GROUP BY estado")}
+    ult = [fila(r) for r in qall("SELECT * FROM consultas WHERE fin IS NOT NULL ORDER BY creada DESC LIMIT 12")]
     hist = BOT / "historial.db"
     registros = 0
     if hist.exists():
-        h = sqlite3.connect(hist)
-        registros = h.execute("SELECT COUNT(*) FROM registros").fetchone()[0]
-        h.close()
+        with closing(sqlite3.connect(hist)) as h:
+            registros = h.execute("SELECT COUNT(*) FROM registros").fetchone()[0]
     procesos_chrome = 0
     for p in Path("/proc").iterdir():
         if p.name.isdigit():

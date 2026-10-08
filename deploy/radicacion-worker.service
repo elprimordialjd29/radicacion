@@ -11,6 +11,8 @@ Restart=always
 RestartSec=5
 # Chromium puede usar bastante memoria; el VPS tiene 4 GB compartidos con otras apps
 MemoryMax=2G
+# margen de archivos abiertos (soportes RIPS, base de datos, sockets)
+LimitNOFILE=8192
 
 [Install]
 WantedBy=multi-user.target
