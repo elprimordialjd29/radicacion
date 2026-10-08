@@ -80,6 +80,7 @@ input[type=search] { min-width: 260px; }
 .chart.cargando .val { opacity: 0; }
 .bar-col:hover .bar, .bar-col.sel .bar { filter: brightness(1.12); outline: 2px solid var(--surface); }
 .bar-col.empty .bar { background: var(--surface-2); }
+.bar-col.parcial .bar { background: var(--accent); opacity: .45; background-image: repeating-linear-gradient(135deg, transparent 0 5px, rgba(255,255,255,.25) 5px 7px); }
 .xlab { display: flex; gap: 6px; }
 .xlab span { flex: 1; text-align: center; font-size: 11.5px; color: var(--ink-3); padding-top: 4px; }
 .tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--page);
@@ -565,28 +566,31 @@ function periodoTxt() {
 
 function estadoAt(c, anio, m) {
   const regs = (D.idxAt[c.contrato]?.[anio + '-' + m] || []).filter((r) => !st.reg || r.regimen === st.reg);
-  if (regs.length) return { k: 'ok', regs, valor: regs.reduce((s, r) => s + (r.valor || 0), 0) };
+  const enPl = atencionEnPlazo(m);
+  if (regs.length) return { k: 'ok', regs, valor: regs.reduce((s, r) => s + (r.valor || 0), 0), enPlazo: enPl };
   if (!vigente(c, anio, m)) return { k: 'na' };
-  if (atencionEnPlazo(m)) return { k: 'plazo' };
+  if (enPl) return { k: 'plazo' };
   return { k: 'no' };
 }
 
 function renderKpis(lista, meses) {
   // Tablero = MES DE ATENCIÓN (igual que la tabla): ¿llegó el RIPS con las atenciones de ese mes?
-  let exig = 0, ok = 0, no = 0, plazo = 0, valor = 0, regs = 0;
+  let exig = 0, ok = 0, no = 0, plazo = 0, adelantados = 0, valor = 0, regs = 0;
   const conRad = new Set(), conPend = new Set();
   for (const c of lista) for (const m of selMeses(meses)) {
     const e = estadoAt(c, st.anio, m);
     if (e.k === 'na') continue;
     if (e.k === 'plazo') { plazo++; continue; }
+    if (e.k === 'ok') { valor += e.valor; regs += e.regs.length; conRad.add(c.contrato); }
+    if (e.enPlazo) { adelantados++; continue; }      // mes aún en plazo: no entra al % (ni a favor ni en contra)
     exig++;
-    if (e.k === 'ok') { ok++; valor += e.valor; regs += e.regs.length; conRad.add(c.contrato); }
+    if (e.k === 'ok') ok++;
     else { no++; conPend.add(c.contrato); }
   }
   const pct = exig ? Math.round((ok / exig) * 100) : 0;
   const todos = st.meses.length !== 1;
   $('#kpis').innerHTML = [
-    ['RIPS recibidos · atenciones de ' + periodoTxt(), pct + '%', `${ok} de ${exig} ${todos ? 'contrato-mes' : 'contratos'} con RIPS${plazo ? ` · ${plazo} aún en plazo` : ''}`],
+    ['RIPS recibidos · meses vencidos', exig ? pct + '%' : '—', `${ok} de ${exig} ${todos ? 'contrato-mes' : 'contratos'} con RIPS${plazo + adelantados ? ` · en plazo: ${adelantados} recibidos, ${plazo} por llegar` : ''}`],
     ['Contratos con RIPS', fmtN(conRad.size), fmtN(regs) + ' facturas con atenciones'],
     ['Sin RIPS (vencidos)', fmtN(todos ? no : conPend.size), todos ? `${conPend.size} contratos con algún mes sin RIPS` : 'contratos sin RIPS de ese mes'],
     ['Valor de esas facturas', fmtCOP(valor), 'Valor AF de las facturas que traen esas atenciones'],
@@ -602,19 +606,21 @@ function renderChart(lista, meses) {
     for (const c of lista) {
       const e = estadoAt(c, st.anio, m);
       if (e.k === 'na') continue;
-      if (e.k === 'plazo') { plazo++; continue; }
-      vig++; if (e.k === 'ok') { ok++; valor += e.valor; }
+      vig++;                                     // todos los vigentes cuentan en el total
+      if (e.k === 'plazo') plazo++;
+      if (e.k === 'ok') { ok++; valor += e.valor; }
     }
-    return { m, vig, ok, valor, plazo, pct: vig ? (ok / vig) * 100 : 0 };
+    const parcial = atencionEnPlazo(m);          // su RIPS aún se puede radicar
+    return { m, vig, ok, valor, plazo, parcial, pct: vig ? (ok / vig) * 100 : 0 };
   });
   const alto = (d) => Math.max(d.pct, d.vig ? 1.5 : 0) * 0.82;
   $('#chartTitulo').textContent = `% de contratos con RIPS de las atenciones del mes · ${periodoTxt()}`;
   const ch = $('#chart');
   ch.classList.add('cargando');
   ch.innerHTML = datos.map((d) =>
-    `<div class="bar-col ${d.ok ? '' : 'empty'}" data-m="${d.m}"
-      data-tip="${d.vig ? `Atenciones de ${MESES_L[d.m - 1]}: ${d.ok} de ${d.vig} contratos con RIPS (${Math.round(d.pct)}%)` : `Atenciones de ${MESES_L[d.m - 1]}: su RIPS aún está en plazo`}${d.plazo && d.vig ? ` · ${d.plazo} aún en plazo` : ''}">
-      <span class="val">${d.vig ? Math.round(d.pct) + '%' : d.plazo ? '⏳' : ''}</span>
+    `<div class="bar-col ${d.ok ? '' : 'empty'} ${d.parcial ? 'parcial' : ''}" data-m="${d.m}"
+      data-tip="Atenciones de ${MESES_L[d.m - 1]}: ${d.ok} de ${d.vig} contratos con RIPS (${Math.round(d.pct)}%)${d.parcial ? ` · mes aún en plazo: faltan ${d.plazo} por llegar (parcial)` : ''}">
+      <span class="val">${d.vig ? Math.round(d.pct) + '%' + (d.parcial ? ' ⏳' : '') : ''}</span>
       <div class="bar" style="height:${chartPrev[d.m] ?? 0}%"></div></div>`).join('');
   $('#xlab').innerHTML = datos.map((d) => `<span>${MESES[d.m - 1]}</span>`).join('');
   // siguiente frame: crecer/encoger hasta el valor nuevo (animación)
