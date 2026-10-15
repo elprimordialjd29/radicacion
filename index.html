@@ -763,7 +763,7 @@ function mesesVigencia(c) {
   const a = new Date(c.inicio + 'T00:00'), b = new Date(c.fin + 'T00:00');
   return Math.max(1, (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth() + 1);
 }
-let repAgrupar = 'prestador', repOrden = 'exceso';
+let repAgrupar = 'prestador', repOrden = 'exceso', repMinPct = 0;   // repMinPct: mostrar solo desviación ≥ X %
 // margen aceptable: la cápita se liquida por UPC × usuarios cada mes, siempre hay variación
 let repMargen = 10;
 try { repMargen = +(localStorage.getItem('rad-margen') || 10) || 10; } catch {}
@@ -828,6 +828,23 @@ function sumar(As, clave) {
   }
   return [...g.values()];
 }
+// orden de la lista de desviación: por $ o por %, de mayor a menor o de menor a mayor.
+// En "menor a mayor" los que no tienen desviación van al final (si no, taparían la lista).
+const ORDENES = {
+  exceso: ['Desviación $: mayor a menor', (x) => x.exceso, -1],
+  exceso_asc: ['Desviación $: menor a mayor', (x) => x.exceso, 1],
+  pct: ['Desviación %: mayor a menor', (x) => (x.esperado ? x.exceso / x.esperado : 0), -1],
+  pct_asc: ['Desviación %: menor a mayor', (x) => (x.esperado ? x.exceso / x.esperado : 0), 1],
+  ejec: ['Ejecución %: mayor a menor', (x) => (x.esperado ? x.radicado / x.esperado : 0), -1],
+  ejec_asc: ['Ejecución %: menor a mayor', (x) => (x.esperado ? x.radicado / x.esperado : 0), 1],
+  esp: ['Valor esperado: mayor a menor', (x) => x.esperado, -1],
+};
+function ordenar(lista) {
+  const [, val, dir] = ORDENES[repOrden] || ORDENES.exceso;
+  const sinDesv = (x) => (dir === 1 && (repOrden === 'exceso_asc' || repOrden === 'pct_asc') && !(x.exceso > 0)) ? 1 : 0;
+  return lista.sort((a, b) => sinDesv(a) - sinDesv(b) || dir * (val(a) - val(b)) || b.exceso - a.exceso);
+}
+
 function datosReporte(lista, mesesTodos) {
   const meses = selMeses(mesesTodos);
   const As = lista.map((c) => analisisContrato(c, meses)).filter((A) => A.meses.length);
@@ -842,8 +859,8 @@ function datosReporte(lista, mesesTodos) {
         nRad: A.filas.length - A.pendientes.length, mesesSobre: new Set(A.sobre.map((f) => f.m)), mesesPend: new Set(A.pendientes.map((f) => f.m)), superan: A.superaContrato ? 1 : 0 }))
     : sumar(As, prest);
   for (const g of grupos) { g.pctExc = g.esperado ? g.exceso / g.esperado * 100 : 0; g.ejec = g.esperado ? g.radicado / g.esperado * 100 : 0; }
-  grupos.sort(repOrden === 'pct' ? (a, b) => b.pctExc - a.pctExc || b.exceso - a.exceso
-    : repOrden === 'esp' ? (a, b) => b.esperado - a.esperado : (a, b) => b.exceso - a.exceso || b.esperado - a.esperado);
+  ordenar(grupos);
+  if (repMinPct > 0) for (let i = grupos.length - 1; i >= 0; i--) if (!(grupos[i].pctExc >= repMinPct)) grupos.splice(i, 1);
   const hoy = new Date();
   return { meses, As, T, porPrest, grupos, mesActual: hoy.getFullYear() === st.anio && meses.includes(hoy.getMonth() + 1) };
 }
@@ -929,7 +946,8 @@ function renderReporteVista(lista, mesesTodos) {
         <span class="rv-ctl" style="margin:0">
           <span class="seg" id="rvAgrupar"><button data-v="prestador" aria-pressed="${repAgrupar === 'prestador'}">Prestador</button><button data-v="contrato" aria-pressed="${repAgrupar === 'contrato'}">Contrato</button></span>
           ${puede('descargar_reportes') ? '<button class="btn sm" id="rpRelacion" title="Descargar la relación de contratos con su desviación y el detalle mes a mes">⬇ Excel</button>' : ''}
-          <select id="repOrden"><option value="exceso">Mayor desviación ($)</option><option value="pct">Mayor % sobre lo esperado</option><option value="esp">Mayor valor esperado</option></select>
+          <select id="repMinPct" title="Mostrar solo con desviación desde">${[0, 5, 10, 15, 20, 30].map((v) => `<option value="${v}" ${repMinPct === v ? 'selected' : ''}>${v ? 'Desviación ≥ ' + v + '%' : 'Toda desviación'}</option>`).join('')}</select>
+          <select id="repOrden" title="Ordenar la lista">${Object.entries(ORDENES).map(([k, [t]]) => `<option value="${k}">${t}</option>`).join('')}</select>
         </span></div>
       ${filasEj.map((g) => `<div class="ej-row" data-det="${repAgrupar}" data-clave="${esc(g.nombre)}"
           data-tip="${esc(`${g.nombre}: radicado ${fmtCOP(g.radicado)} · esperado ${fmtCOP(g.esperado)} · desviación ${fmtCOP(g.exceso)} en ${g.nSobre} mes(es) · clic para ver el detalle`)}">
@@ -1198,6 +1216,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#mod
 
 document.addEventListener('change', (e) => {
   if (e.target.id === 'repOrden') { repOrden = e.target.value; render(); }
+  if (e.target.id === 'repMinPct') { repMinPct = +e.target.value; render(); }
 });
 
 // ---- cambio de vista (Tablero / Reporte), recordado en la URL (#reporte)
@@ -1544,9 +1563,8 @@ async function exportarRelacionContratos() {
   try {
     const X = await libXlsx();
     const As = filtrados().map((c) => analisisContrato(c, selMeses(mesesActivos()))).filter((A) => A.meses.length);
-    const orden = repOrden === 'pct' ? (a, b) => (b.esperado ? b.exceso / b.esperado : 0) - (a.esperado ? a.exceso / a.esperado : 0)
-      : repOrden === 'esp' ? (a, b) => b.esperado - a.esperado : (a, b) => b.exceso - a.exceso || b.esperado - a.esperado;
-    As.sort(orden);
+    ordenar(As);
+    if (repMinPct > 0) for (let i = As.length - 1; i >= 0; i--) if (!(As[i].esperado && As[i].exceso / As[i].esperado * 100 >= repMinPct)) As.splice(i, 1);
     const rel = [['#', 'Contrato', 'Prestador', 'NIT', 'Municipio', 'Vigencia', 'Meses vigencia', 'Valor contrato', 'Tope mensual',
       `Tope + ${repMargen}%`, 'Meses exigibles', 'Esperado exigible', 'Radicado RS', 'Radicado RC', 'Total radicado', '% del esperado',
       'Desviación', '% desviación', 'Meses fuera del margen', 'Meses dentro del margen', 'Saldo vencido', 'Periodos sin radicar',
