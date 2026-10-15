@@ -763,7 +763,7 @@ function mesesVigencia(c) {
   const a = new Date(c.inicio + 'T00:00'), b = new Date(c.fin + 'T00:00');
   return Math.max(1, (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth() + 1);
 }
-let repAgrupar = 'prestador', repOrden = 'exceso', repMinPct = 0;   // repMinPct: mostrar solo desviación ≥ X %
+let repAgrupar = 'prestador', repOrden = 'pct', repMinPct = 0;   // repMinPct: mostrar solo desviación ≥ X %
 // margen aceptable: la cápita se liquida por UPC × usuarios cada mes, siempre hay variación
 let repMargen = 10;
 try { repMargen = +(localStorage.getItem('rad-margen') || 10) || 10; } catch {}
@@ -896,7 +896,10 @@ function renderReporteVista(lista, mesesTodos) {
   REP_ACTUAL = R;
   const { T } = R;
   const conExc = R.grupos.filter((g) => g.exceso > 0);
-  const maxExc = Math.max(1, ...R.grupos.map((g) => g.exceso));
+  // la barra sigue al criterio de orden: en $ mide el exceso en pesos; si no, el % de desviación
+  const barraPesos = repOrden.startsWith('exceso') || repOrden === 'esp';
+  const valBarra = (g) => (barraPesos ? g.exceso : g.pctExc);
+  const maxExc = Math.max(barraPesos ? 1 : 0.1, ...R.grupos.map(valBarra));
   const maxPend = Math.max(1, ...R.porPrest.map((g) => g.pend));
   const filasEj = rvVerTodos ? R.grupos : R.grupos.slice(0, 15);
   const ejec = T.esp ? T.rad / T.esp * 100 : 0;
@@ -952,7 +955,7 @@ function renderReporteVista(lista, mesesTodos) {
       ${filasEj.map((g) => `<div class="ej-row" data-det="${repAgrupar}" data-clave="${esc(g.nombre)}"
           data-tip="${esc(`${g.nombre}: radicado ${fmtCOP(g.radicado)} · esperado ${fmtCOP(g.esperado)} · desviación ${fmtCOP(g.exceso)} en ${g.nSobre} mes(es) · clic para ver el detalle`)}">
           <span class="nm">${g.nAtip || g.nDup ? '<span class="desv-neg">⚠ </span>' : ''}${esc(g.nombre)}<small>${repAgrupar === 'contrato' ? esc(g.sub) : g.contratos.length + ' contrato(s)'}${g.mesesSobre.size ? ` · fuera del margen: ${mesesTxt(g.mesesSobre)}` : ''}</small></span>
-          <span class="ej-bar"><span class="rad" style="width:calc(${g.exceso / maxExc * 100}% - 4px);background:var(--critical)"></span></span>
+          <span class="ej-bar"><span class="rad" style="width:calc(${Math.max(0, valBarra(g)) / maxExc * 100}% - 4px);background:var(--critical)"></span></span>
           <span class="pc ${g.exceso > 0 ? 'desv-neg' : 'muted'}">${g.exceso > 0 ? g.pctExc.toFixed(1) + '%' : '—'}</span>
           <span class="dv ${g.exceso > 0 ? 'desv-neg' : 'muted'}">${g.exceso > 0 ? '+' + fmtCOP(g.exceso) : 'sin desviación'}</span>
         </div>`).join('') || '<p class="muted">Sin contratos vigentes en la selección.</p>'}
