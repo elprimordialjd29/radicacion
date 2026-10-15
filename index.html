@@ -173,7 +173,7 @@ tr:hover td { background: var(--surface-2); }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .seg button { font: inherit; font-size: 12px; border: 0; background: var(--surface); color: var(--ink-2); padding: 4px 10px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
-.ej-row { display: grid; grid-template-columns: minmax(130px, 1.1fr) 2fr 52px 120px; gap: 10px; align-items: center;
+.ej-row { display: grid; grid-template-columns: minmax(130px, 1.1fr) 2fr 58px 120px 66px; gap: 10px; align-items: center;
   padding: 7px 4px; border-bottom: 1px solid var(--border); font-size: 13px; cursor: default; }
 .ej-row:hover { background: var(--surface-2); }
 .ej-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
@@ -182,8 +182,15 @@ tr:hover td { background: var(--surface-2); }
 .ej-bar .esp { position: absolute; top: 0; bottom: 0; left: 0; border: 1.5px dashed var(--ink-3); border-radius: 4px; }
 .ej-bar .rad { position: absolute; top: 2px; bottom: 2px; left: 2px; border-radius: 3px; transition: width .45s cubic-bezier(.2,.7,.2,1); }
 .ej-row .pc { text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
+.ej-row .ej { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.ej-row .ej-n { color: var(--ink-3); font-weight: 400; font-variant-numeric: tabular-nums; }
+.ej-row.ej-cab { cursor: default; font-size: 11.5px; color: var(--ink-3); padding-top: 2px; padding-bottom: 2px; border-bottom: 1px solid var(--border); }
+.ej-row.ej-cab:hover { background: none; }
+.ej-ord { all: unset; cursor: pointer; text-align: right; color: var(--ink-3); white-space: nowrap; }
+.ej-ord:hover, .ej-ord.act { color: var(--ink); font-weight: 650; }
+@media (max-width: 640px) { .ej-row { grid-template-columns: 1fr 52px 100px; } .ej-row .ej-bar, .ej-row .ej, .ej-row.ej-cab > span:nth-child(2), .ej-row.ej-cab > [data-ord="ejec"] { display: none; } .ej-row .nm { white-space: normal; } }
 .ej-row .dv { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; }
-.ej-escala { display: grid; grid-template-columns: minmax(130px, 1.1fr) 2fr 52px 120px; gap: 10px; font-size: 11px; color: var(--ink-3); padding: 0 4px 4px; }
+.ej-escala { display: grid; grid-template-columns: minmax(130px, 1.1fr) 2fr 58px 120px 66px; gap: 10px; font-size: 11px; color: var(--ink-3); padding: 0 4px 4px; }
 .ej-escala .ticks { display: flex; justify-content: space-between; }
 .pd-row { padding: 8px 4px; border-bottom: 1px solid var(--border); }
 .pd-top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
@@ -831,10 +838,10 @@ function sumar(As, clave) {
 // orden de la lista de desviación: por $ o por %, de mayor a menor o de menor a mayor.
 // En "menor a mayor" los que no tienen desviación van al final (si no, taparían la lista).
 const ORDENES = {
-  exceso: ['Desviación $: mayor a menor', (x) => x.exceso, -1],
-  exceso_asc: ['Desviación $: menor a mayor', (x) => x.exceso, 1],
   pct: ['Desviación %: mayor a menor', (x) => (x.esperado ? x.exceso / x.esperado : 0), -1],
   pct_asc: ['Desviación %: menor a mayor', (x) => (x.esperado ? x.exceso / x.esperado : 0), 1],
+  exceso: ['Desviación $: mayor a menor', (x) => x.exceso, -1],
+  exceso_asc: ['Desviación $: menor a mayor', (x) => x.exceso, 1],
   ejec: ['Ejecución %: mayor a menor', (x) => (x.esperado ? x.radicado / x.esperado : 0), -1],
   ejec_asc: ['Ejecución %: menor a mayor', (x) => (x.esperado ? x.radicado / x.esperado : 0), 1],
   esp: ['Valor esperado: mayor a menor', (x) => x.esperado, -1],
@@ -896,10 +903,11 @@ function renderReporteVista(lista, mesesTodos) {
   REP_ACTUAL = R;
   const { T } = R;
   const conExc = R.grupos.filter((g) => g.exceso > 0);
-  // la barra sigue al criterio de orden: en $ mide el exceso en pesos; si no, el % de desviación
-  const barraPesos = repOrden.startsWith('exceso') || repOrden === 'esp';
-  const valBarra = (g) => (barraPesos ? g.exceso : g.pctExc);
-  const maxExc = Math.max(barraPesos ? 1 : 0.1, ...R.grupos.map(valBarra));
+  // la barra mide siempre el % de desviación (la misma cifra de la columna %), para que barra y número no se contradigan
+  const maxExc = Math.max(0.1, ...R.grupos.map((g) => g.pctExc));
+  // encabezado ordenable: clic en la columna ordena de mayor a menor; otro clic, de menor a mayor
+  const cabOrd = (k, t, tip) => { const act = repOrden === k || repOrden === k + '_asc';
+    return `<button class="ej-ord${act ? ' act' : ''}" data-ord="${k}" title="${tip}">${t}${act ? (repOrden.endsWith('_asc') ? ' ▲' : ' ▼') : ''}</button>`; };
   const maxPend = Math.max(1, ...R.porPrest.map((g) => g.pend));
   const filasEj = rvVerTodos ? R.grupos : R.grupos.slice(0, 15);
   const ejec = T.esp ? T.rad / T.esp * 100 : 0;
@@ -952,15 +960,18 @@ function renderReporteVista(lista, mesesTodos) {
           <select id="repMinPct" title="Mostrar solo con desviación desde">${[0, 5, 10, 15, 20, 30].map((v) => `<option value="${v}" ${repMinPct === v ? 'selected' : ''}>${v ? 'Desviación ≥ ' + v + '%' : 'Toda desviación'}</option>`).join('')}</select>
           <select id="repOrden" title="Ordenar la lista">${Object.entries(ORDENES).map(([k, [t]]) => `<option value="${k}">${t}</option>`).join('')}</select>
         </span></div>
-      ${filasEj.map((g) => `<div class="ej-row" data-det="${repAgrupar}" data-clave="${esc(g.nombre)}"
+      ${filasEj.length ? `<div class="ej-row ej-cab"><span>${repAgrupar === 'contrato' ? 'Contrato' : 'Prestador'}</span><span></span>
+        ${cabOrd('pct', 'Desv. %', 'Desviación ÷ esperado exigible')}${cabOrd('exceso', 'Desviación $', 'Pesos radicados por encima del tope + margen')}${cabOrd('ejec', 'Ejecución', 'Radicado ÷ esperado exigible (incluye meses por debajo del tope)')}</div>` : ''}
+      ${filasEj.map((g, i) => `<div class="ej-row" data-det="${repAgrupar}" data-clave="${esc(g.nombre)}"
           data-tip="${esc(`${g.nombre}: radicado ${fmtCOP(g.radicado)} · esperado ${fmtCOP(g.esperado)} · desviación ${fmtCOP(g.exceso)} en ${g.nSobre} mes(es) · clic para ver el detalle`)}">
-          <span class="nm">${g.nAtip || g.nDup ? '<span class="desv-neg">⚠ </span>' : ''}${esc(g.nombre)}<small>${repAgrupar === 'contrato' ? esc(g.sub) : g.contratos.length + ' contrato(s)'}${g.mesesSobre.size ? ` · fuera del margen: ${mesesTxt(g.mesesSobre)}` : ''}</small></span>
-          <span class="ej-bar"><span class="rad" style="width:calc(${Math.max(0, valBarra(g)) / maxExc * 100}% - 4px);background:var(--critical)"></span></span>
+          <span class="nm"><span class="ej-n">${i + 1}.</span> ${g.nAtip || g.nDup ? '<span class="desv-neg">⚠ </span>' : ''}${esc(g.nombre)}<small>${repAgrupar === 'contrato' ? esc(g.sub) : g.contratos.length + ' contrato(s)'}${g.mesesSobre.size ? ` · fuera del margen: ${mesesTxt(g.mesesSobre)}` : ''}</small></span>
+          <span class="ej-bar"><span class="rad" style="width:calc(${Math.max(0, g.pctExc) / maxExc * 100}% - 4px);background:var(--critical)"></span></span>
           <span class="pc ${g.exceso > 0 ? 'desv-neg' : 'muted'}">${g.exceso > 0 ? g.pctExc.toFixed(1) + '%' : '—'}</span>
           <span class="dv ${g.exceso > 0 ? 'desv-neg' : 'muted'}">${g.exceso > 0 ? '+' + fmtCOP(g.exceso) : 'sin desviación'}</span>
+          <span class="ej muted">${g.ejec.toFixed(0)}%</span>
         </div>`).join('') || '<p class="muted">Sin contratos vigentes en la selección.</p>'}
       ${R.grupos.length > 15 ? `<div class="rp-mas"><button class="btn sm" id="rvMas">${rvVerTodos ? 'Ver solo 15' : `Ver los ${R.grupos.length}`}</button></div>` : ''}
-      <div class="sub rp-nota">% = desviación ÷ esperado exigible · ⚠ = cifra atípica o posible duplicado · clic en una fila para el detalle mes a mes.</div>
+      <div class="sub rp-nota">Desv. % = desviación ÷ esperado exigible · Ejecución = radicado ÷ esperado del periodo (puede quedar bajo 100 % aunque algún mes se pase del tope) · clic en el encabezado para ordenar · ⚠ = cifra atípica o posible duplicado · clic en una fila para el detalle mes a mes.</div>
     </div>
     <div class="card">
       <div class="rp-sec-h"><h2>Periodos vencidos sin radicar</h2></div>
@@ -1217,6 +1228,10 @@ $('#modal').addEventListener('click', (e) => {
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#modal').hidden) cerrarDetalle(); });
 
+document.addEventListener('click', (e) => {
+  const o = e.target.closest('[data-ord]'); if (!o) return;
+  const k = o.dataset.ord; repOrden = repOrden === k ? k + '_asc' : k; render();
+});
 document.addEventListener('change', (e) => {
   if (e.target.id === 'repOrden') { repOrden = e.target.value; render(); }
   if (e.target.id === 'repMinPct') { repMinPct = +e.target.value; render(); }
