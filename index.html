@@ -162,6 +162,13 @@ tr:hover td { background: var(--surface-2); }
 .vbtn[aria-selected="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
 .rv-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .rv-head h2 { font-size: 18px; margin: 0; }
+.rv-total { padding: 14px 16px; margin-bottom: 10px; }
+.rv-total-h { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 10px; }
+.rv-total-g { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 20px; }
+.rv-total .l { color: var(--ink-2); font-size: 12.5px; } .rv-total .d { color: var(--ink-3); font-size: 12px; margin-top: 2px; }
+.rv-total .v { font-size: 22px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.rv-total-bar { height: 6px; border-radius: 3px; background: var(--surface-2); margin-top: 8px; overflow: hidden; }
+.rv-total-bar span { display: block; height: 100%; background: var(--accent, #3b82f6); border-radius: 3px; }
 .rv-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 14px; }
 .rv-kpis .card { padding: 12px 14px; }
 .rv-kpi .v { font-size: 22px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
@@ -856,8 +863,8 @@ function datosReporte(lista, mesesTodos) {
   const meses = selMeses(mesesTodos);
   const As = lista.map((c) => analisisContrato(c, meses)).filter((A) => A.meses.length);
   const T = As.reduce((t, A) => { t.esp += A.esperado; t.rad += A.radicado; t.exc += A.exceso; t.saldo += A.saldo;
-    t.nSobre += A.sobre.length; t.nAtip += A.atipicos.length; t.nDup += A.duplicados.length; t.nPlazo += A.enPlazo.length; t.nDentro += A.dentro.length; t.pend += A.pendientes.length; t.superan += A.superaContrato ? 1 : 0; return t; },
-    { esp: 0, rad: 0, exc: 0, saldo: 0, nSobre: 0, nAtip: 0, nDentro: 0, nDup: 0, nPlazo: 0, pend: 0, superan: 0 });
+    t.nSobre += A.sobre.length; t.nAtip += A.atipicos.length; t.nDup += A.duplicados.length; t.nPlazo += A.enPlazo.length; t.nDentro += A.dentro.length; t.pend += A.pendientes.length; t.superan += A.superaContrato ? 1 : 0; t.valor += A.valor; t.radTotal += A.radAnio; return t; },
+    { valor: 0, radTotal: 0, esp: 0, rad: 0, exc: 0, saldo: 0, nSobre: 0, nAtip: 0, nDentro: 0, nDup: 0, nPlazo: 0, pend: 0, superan: 0 });
   const prest = (A) => A.c.prestador || '(sin prestador)';
   const porPrest = sumar(As, prest).filter((g) => g.pend).sort((a, b) => b.pend - a.pend || b.esperado - a.esperado);
   const grupos = repAgrupar === 'contrato'
@@ -930,6 +937,17 @@ function renderReporteVista(lista, mesesTodos) {
     <span class="rp-p"><b>Mes de cápita</b> = mes siguiente a las atenciones del RIPS (modelo vencido)</span>
     <span class="rp-p">Margen aceptable <span class="seg" id="rvMargen">${[5, 10, 15, 20].map((m) => `<button data-v="${m}" aria-pressed="${repMargen === m}">±${m}%</button>`).join('')}</span></span>
     <span class="rp-p">Plazo de radicación <span class="seg" id="rvPlazo">${[1, 2, 3].map((m) => `<button data-v="${m}" aria-pressed="${repPlazo === m}">${m} mes${m > 1 ? 'es' : ''}</button>`).join('')}</span></span>
+  </section>
+
+  <section class="card rv-total">
+    <div class="rv-total-h"><b>Valor contratado vs radicado ${st.anio}</b><span class="sub">acumulado al ${new Date().toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })} · ${fmtN(R.As.length)} contratos${st.reg ? ` · radicado solo ${st.reg} (el valor contrato incluye RS + RC)` : ''}</span></div>
+    <div class="rv-total-g">
+      <div><div class="l">Valor total de los contratos</div><div class="v">${fmtCOP(T.valor)}</div></div>
+      <div><div class="l">Radicado total a hoy</div><div class="v">${fmtCOP(T.radTotal)}</div></div>
+      <div><div class="l">Diferencia (valor − radicado)</div><div class="v ${T.radTotal > T.valor ? 'desv-neg' : ''}">${T.radTotal > T.valor ? '−' : ''}${fmtCOP(Math.abs(T.valor - T.radTotal))}</div><div class="d">${T.radTotal > T.valor ? 'radicado por encima del valor contratado' : 'por radicar del valor contratado'}</div></div>
+      <div><div class="l">Ejecutado</div><div class="v">${T.valor ? (T.radTotal / T.valor * 100).toFixed(1) : '0'}%</div>
+        <div class="rv-total-bar"><span style="width:${T.valor ? Math.min(100, T.radTotal / T.valor * 100) : 0}%"></span></div></div>
+    </div>
   </section>
 
   <div class="rv-kpis">
@@ -1540,7 +1558,7 @@ async function exportarReporteExcel() {
     const X = await libXlsx(), R = REP_ACTUAL; if (!R) return;
     const wb = X.utils.book_new(), T = R.T;
     X.utils.book_append_sheet(wb, hoja(X, [...cabecera('Reporte de radicación cápita — resumen'),
-      ['Indicador', 'Valor'], ['Contratos vigentes', R.As.length], ['Esperado exigible', r0(T.esp)], ['Radicado', r0(T.rad)],
+      ['Indicador', 'Valor'], ['Contratos vigentes', R.As.length], ['Valor total de los contratos', r0(T.valor)], ['Radicado total a hoy', r0(T.radTotal)], ['Diferencia (valor − radicado)', r0(T.valor - T.radTotal)], ['% ejecutado del valor contratado', T.valor ? +(T.radTotal / T.valor * 100).toFixed(2) : 0], ['Esperado exigible', r0(T.esp)], ['Radicado', r0(T.rad)],
       ['% ejecución', T.esp ? +(T.rad / T.esp * 100).toFixed(2) : 0], [`Desviación (fuera de ±${repMargen}%)`, r0(T.exc)],
       ['Contrato-mes fuera del margen', T.nSobre], ['Contrato-mes atípicos', T.nAtip], ['Posibles duplicados', T.nDup],
       ['Saldo vencido por radicar', r0(T.saldo)], ['Periodos vencidos sin radicar', T.pend], ['Contrato-mes en plazo (no contados)', T.nPlazo]], [38, 70]), 'Resumen');
