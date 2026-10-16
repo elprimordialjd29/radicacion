@@ -471,9 +471,26 @@ $('#btnTema').onclick = () => {
   try { localStorage.setItem('rad-tema', nxt); } catch {}
 };
 
+// fetch con reintentos: fallas pasajeras (red, 5xx, respuesta que no es JSON) se reintentan solas; 4xx no
+async function pedir(url, opciones = {}, intentos = 3) {
+  for (let i = 0; ; i++) {
+    try {
+      const r = await fetch(url, { cache: 'no-store', ...opciones });
+      if (r.status < 500 || i >= intentos - 1) return r;
+    } catch (e) { if (i >= intentos - 1) throw e; }
+    await new Promise((ok) => setTimeout(ok, 700 * 2 ** i));
+  }
+}
+async function pedirJSON(url, opciones, intentos) {
+  const r = await pedir(url, opciones, intentos);
+  const texto = await r.text();
+  let j; try { j = JSON.parse(texto); } catch { j = { error: r.ok ? 'Respuesta inesperada del servidor' : `Error ${r.status}` }; }
+  return { r, j };
+}
+
 async function cargar() {
   try {
-    const r = await fetch('/api/datos', { cache: 'no-store' });
+    const r = await pedir('/api/datos');
     if (r.status === 404) return vacio('Todavía no hay datos. Ejecuta el bot en tu equipo para publicar la primera radicación.');
     if (!r.ok) return vacio('No se pudieron cargar los datos (' + r.status + ').');
     D = await r.json();
@@ -1100,7 +1117,7 @@ async function pintarDuplicados() {
   const caja = $('#rpDup'); if (!caja) return;
   if (!DUP || DUP_CORTE !== D.generado) {
     try {
-      const r = await fetch('/api/duplicados', { cache: 'no-store' });
+      const r = await pedir('/api/duplicados');
       const txt = await r.text();
       let j;
       try { j = JSON.parse(txt); } catch { throw new Error(r.status === 504 ? 'el servidor tardó demasiado' : `respuesta inesperada (${r.status})`); }
@@ -1507,15 +1524,24 @@ function duracion(a, b) {
   return s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + (s % 60) + ' s';
 }
 
+let jobsFallos = 0;
 async function cargarJobs() {
   let lista;
   try {
-    const r = await fetch('/api/consultas', { cache: 'no-store' });
-    lista = await r.json();
-    if (!r.ok) throw new Error(lista.error || r.status);
+    const { r, j } = await pedirJSON('/api/consultas');
+    if (!r.ok) throw new Error(j.error || r.status);
+    lista = j;
+    jobsFallos = 0;
   } catch (e) {
-    $('#jobs').innerHTML = `<li class="muted">Servidor de consultas no disponible: ${esc(e.message)}</li>`;
-    $('#btnConsultar').disabled = true;
+    // falla pasajera: se reintenta sola; si ya había lista, se deja visible
+    jobsFallos++;
+    const aviso = `<li class="muted jobs-aviso">⏳ Reconectando con el servidor de consultas… (intento ${jobsFallos})${jobsFallos > 3 ? ' · ' + esc(e.message) : ''}</li>`;
+    const prev = $('#jobs').querySelector('.jobs-aviso');
+    if (Object.keys(jobsPrev).length) { if (prev) prev.outerHTML = aviso; else $('#jobs').insertAdjacentHTML('afterbegin', aviso); }
+    else $('#jobs').innerHTML = aviso;
+    $('#btnConsultar').disabled = jobsFallos > 3;
+    clearTimeout(jobsTimer);
+    jobsTimer = setTimeout(cargarJobs, Math.min(60000, 5000 * jobsFallos));
     return;
   }
   $('#btnConsultar').disabled = false;
@@ -1527,7 +1553,7 @@ async function cargarJobs() {
   if (recargar) { await recargarDatos(); }
   const det = {};
   await Promise.all([...abiertos].map(async (id) => {
-    try { det[id] = await (await fetch('/api/consultas?id=' + id, { cache: 'no-store' })).json(); } catch {}
+    try { det[id] = await (await pedir('/api/consultas?id=' + id)).json(); } catch {}
   }));
   $('#jobs').innerHTML = lista.length ? lista.map((j) => {
     const [cls, ico, txt] = ESTADO_JOB[j.estado] || ['nc', '?', j.estado];
@@ -1555,7 +1581,7 @@ async function cargarJobs() {
 
 async function recargarDatos() {
   try {
-    const r = await fetch('/api/datos', { cache: 'no-store' });
+    const r = await pedir('/api/datos');
     if (r.ok) { const nuevo = await r.json(); const keep = { ...st }; D = nuevo; preparar(); Object.assign(st, keep); render(); }
   } catch {}
 }
@@ -1730,7 +1756,7 @@ async function cargarMonitor() {
   if (vista !== 'servidor') return;
   let M;
   try {
-    const r = await fetch('/api/monitor', { cache: 'no-store' });
+    const r = await pedir('/api/monitor');
     M = await r.json();
     if (!r.ok) throw new Error(M.error || r.status);
   } catch (e) {
@@ -1792,7 +1818,7 @@ async function cargarMonitor() {
 let YO = null, CAT = { permisos: {}, roles: {} };
 const puede = (p) => !!YO && (YO.permisos || []).includes(p);
 async function cargarSesion() {
-  const r = await fetch('/api/sesion', { cache: 'no-store' });
+  const r = await pedir('/api/sesion');
   if (r.status === 401) { location.replace('/login'); throw new Error('sin sesión'); }
   const j = await r.json();
   YO = j.usuario; CAT = { permisos: j.permisos, roles: j.roles };
@@ -1852,7 +1878,7 @@ const chkPermisos = (sel) => Object.entries(CAT.permisos).map(([k, v]) =>
 const opcionesRol = (rol) => Object.entries(CAT.roles).map(([k, v]) => `<option value="${k}" ${k === rol ? 'selected' : ''}>${esc(v.nombre)}</option>`).join('');
 
 async function abrirUsuarios(mensaje) {
-  const r = await fetch('/api/usuarios', { cache: 'no-store' });
+  const r = await pedir('/api/usuarios');
   const lista = await r.json().catch(() => []);
   if (!r.ok) return mostrarModal(`<p class="u-msg err">${esc(lista.error || 'No se pudo cargar')}</p>`);
   mostrarModal(`<h3 id="modalTitulo" style="margin:0 40px 4px 0">Usuarios y permisos</h3>
