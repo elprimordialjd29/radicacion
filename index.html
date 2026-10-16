@@ -1019,20 +1019,6 @@ function renderReporteVista(lista, mesesTodos) {
       <span><i style="background:var(--warning)"></i>En plazo ${fmtCOP(B.plazo)} (${fmtN(B.nPlazo)})</span>
       <span><i style="background:var(--ink-3)"></i>No han llegado ${fmtCOP(B.futuro)} (${fmtN(B.nFut)})</span>
     </div>
-    <details class="rv-cuadre"><summary>¿Cómo cuadran las cifras?</summary>
-      ${(() => { const dif = B.rad - B.valRad; return `
-      <p>En los <b>${fmtN(B.mesesRad)} meses que ya tienen factura</b>, según el tope de cada contrato se debían cobrar <b>${fmtCOP(B.valRad)}</b> y se cobraron <b>${fmtCOP(B.rad)}</b>.
-        Es decir, <b>${dif >= 0 ? fmtCOP(dif) + ' más' : fmtCOP(-dif) + ' menos'}</b> de lo esperado. Esa diferencia sale de tres tipos de meses:</p>
-      <table>
-        <tr><td><span class="desv-neg">●</span> Meses que se pasaron <b>más del ${repMargen}%</b> del tope → <b>desviación</b> (punto 4)</td><td class="desv-neg">+${fmtCOP(T.exc)}</td></tr>
-        <tr><td><span style="color:var(--warning)">●</span> Meses que se pasaron <b>hasta el ${repMargen}%</b> → aceptable (variación UPC × usuarios)</td><td>+${fmtCOP(B.dentro)}</td></tr>
-        <tr><td><span style="color:var(--accent)">●</span> Meses que cobraron <b>menos</b> del tope</td><td>−${fmtCOP(B.debajo)}</td></tr>
-        <tr class="tot"><td>Diferencia total (cobrado − esperado)</td><td>${dif >= 0 ? '+' : '−'}${fmtCOP(Math.abs(dif))}</td></tr>
-      </table>
-      <p class="d">Ejemplo: tope $100 M al mes. Si un mes radica $125 M → +$25 M de desviación; otro mes $105 M → +$5 M aceptable; otro $90 M → −$10 M por debajo.
-        La desviación (punto 4) cuenta solo lo primero, porque lo de menos en un mes no compensa lo cobrado de más en otro.
-        Los meses sin factura (punto 3), en plazo o que no han llegado no entran en esta cuenta.</p>`; })()}
-    </details>
   </section>
 
   <div class="card rp-dup" id="rpDup"><div class="rp-sec-h"><h2>Facturas duplicadas o sospechosas</h2><span class="sub">analizando soportes RIPS…</span></div></div>
@@ -1636,7 +1622,7 @@ async function exportarReporteExcel() {
     const X = await libXlsx(), R = REP_ACTUAL; if (!R) return;
     const wb = X.utils.book_new(), T = R.T;
     X.utils.book_append_sheet(wb, hoja(X, [...cabecera('Reporte de radicación cápita — resumen'),
-      ['Indicador', 'Valor'], ['Contratos vigentes', R.As.length], ['Contratos con radicación', R.B.conRad], ['Contratos sin ninguna radicación', R.B.sinRad], ['Valor de los meses ya radicados', r0(R.B.valRad)], ['Radicado', r0(R.B.rad)], ['Radicado de más fuera del margen', r0(R.T.exc)], ['Radicado sobre el tope dentro del margen', r0(R.B.dentro)], ['Meses radicados por debajo del tope', r0(R.B.debajo)], ['Pendiente por radicar (meses vencidos)', r0(R.B.pend)], ['En plazo', r0(R.B.plazo)], ['Meses por venir', r0(R.B.futuro)], ['Valor contratado del año', r0(R.B.valor)], ['Esperado exigible', r0(T.esp)], ['Radicado', r0(T.rad)],
+      ['Indicador', 'Valor'], ['Contratos vigentes', R.As.length], ['Contratos con radicación', R.B.conRad], ['Contratos sin ninguna radicación', R.B.sinRad], ['Valor de los meses ya radicados', r0(R.B.valRad)], ['Radicado', r0(R.B.rad)], ['Radicado de más fuera del margen', r0(R.T.exc)], ['Pendiente por radicar (meses vencidos)', r0(R.B.pend)], ['En plazo', r0(R.B.plazo)], ['Meses por venir', r0(R.B.futuro)], ['Valor contratado del año', r0(R.B.valor)], ['Esperado exigible', r0(T.esp)], ['Radicado', r0(T.rad)],
       ['% ejecución', T.esp ? +(T.rad / T.esp * 100).toFixed(2) : 0], [`Desviación (fuera de ±${repMargen}%)`, r0(T.exc)], ['  Desviación RS subsidiado (proporcional)', r0(T.excRS)], ['  Desviación RC contributivo (proporcional)', r0(T.excRC)], ['Radicado RS subsidiado', r0(T.radRS)], ['Radicado RC contributivo', r0(T.radRC)],
       ['Meses fuera del margen', T.nSobre], ['Contratos con desviación', T.nContSobre], ['Facturas fuera del margen RS', T.facRS], ['Contratos con desviación RS', T.contRS], ['Facturas fuera del margen RC', T.facRC], ['Contratos con desviación RC', T.contRC], ['Meses atípicos', T.nAtip], ['Posibles duplicados', T.nDup],
       ['Saldo vencido por radicar', r0(T.saldo)], ['Periodos vencidos sin radicar', T.pend], ['Meses en plazo (no contados)', T.nPlazo]], [38, 70]), 'Resumen');
