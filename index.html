@@ -167,8 +167,10 @@ tr:hover td { background: var(--surface-2); }
 .rv-total-g { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 20px; }
 .rv-total .l { color: var(--ink-2); font-size: 12.5px; } .rv-total .d { color: var(--ink-3); font-size: 12px; margin-top: 2px; }
 .rv-total .v { font-size: 22px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.rv-total-bar { height: 6px; border-radius: 3px; background: var(--surface-2); margin-top: 8px; overflow: hidden; }
-.rv-total-bar span { display: block; height: 100%; background: var(--accent, #3b82f6); border-radius: 3px; }
+.rv-bal { display: flex; height: 10px; border-radius: 5px; background: var(--surface-2); margin-top: 14px; overflow: hidden; gap: 2px; }
+.rv-bal span { display: block; height: 100%; }
+.rv-bal-ley { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.rv-bal-ley i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .rv-reg { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .rv-reg b { display: inline-block; width: 26px; color: var(--ink); }
 .rv-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 14px; }
@@ -861,6 +863,29 @@ function ordenar(lista) {
   return lista.sort((a, b) => sinDesv(a) - sinDesv(b) || dir * (val(a) - val(b)) || b.exceso - a.exceso);
 }
 
+// balance del año: reparte el valor contratado de cada mes vigente en radicado / pendiente vencido / en plazo / meses por venir,
+// para que el "saldo" no parezca plata disponible (casi todo son meses que aún no llegan o que el prestador no ha radicado)
+function balanceAnual(As) {
+  const hoy = new Date(), B = { valor: 0, valRad: 0, rad: 0, pend: 0, nPend: 0, plazo: 0, nPlazo: 0, futuro: 0, nFut: 0, conRad: 0, sinRad: 0, valSinRad: 0, mesesRad: 0 };
+  for (const A of As) {
+    let algo = false, valC = 0;
+    for (let m = 1; m <= 12; m++) {
+      if (!vigente(A.c, st.anio, m)) continue;
+      valC += A.tope;
+      const e = estado(A.c, st.anio, m);
+      const idx = (st.anio - hoy.getFullYear()) * 12 + (m - 1) - hoy.getMonth();   // 0 = mes actual
+      if (e.k === 'ok') { algo = true; B.valRad += A.tope; B.rad += e.valor; B.mesesRad++; }
+      else if (idx > 0) { B.futuro += A.tope; B.nFut++; }
+      else if (enPlazo(m)) { B.plazo += A.tope; B.nPlazo++; }
+      else { B.pend += A.tope; B.nPend++; }
+    }
+    B.valor += valC;
+    if (algo) B.conRad++; else { B.sinRad++; B.valSinRad += valC; }
+  }
+  B.dif = B.rad - B.valRad;   // + radicaron más que el valor de esos meses; − radicaron menos
+  return B;
+}
+
 function datosReporte(lista, mesesTodos) {
   const meses = selMeses(mesesTodos);
   const As = lista.map((c) => analisisContrato(c, meses)).filter((A) => A.meses.length);
@@ -883,7 +908,7 @@ function datosReporte(lista, mesesTodos) {
   ordenar(grupos);
   if (repMinPct > 0) for (let i = grupos.length - 1; i >= 0; i--) if (!(grupos[i].pctExc >= repMinPct)) grupos.splice(i, 1);
   const hoy = new Date();
-  return { meses, As, T, porPrest, grupos, mesActual: hoy.getFullYear() === st.anio && meses.includes(hoy.getMonth() + 1) };
+  return { meses, As, T, B: balanceAnual(As), porPrest, grupos, mesActual: hoy.getFullYear() === st.anio && meses.includes(hoy.getMonth() + 1) };
 }
 const signo = (v) => (v < 0 ? '−' : '+') + fmtCOP(Math.abs(v));
 const mesesTxt = (set) => [...set].sort((a, b) => a - b).map((m) => MESES[m - 1]).join(', ');
@@ -915,7 +940,7 @@ function renderReporteVista(lista, mesesTodos) {
   csvReporte(R);
   R.alertas = alertasReporte(R);
   REP_ACTUAL = R;
-  const { T } = R;
+  const { T, B } = R;
   // la barra mide siempre el % de desviación (la misma cifra de la columna %), para que barra y número no se contradigan
   const maxExc = Math.max(0.1, ...R.grupos.map((g) => g.pctExc));
   // encabezado ordenable: clic en la columna ordena de mayor a menor; otro clic, de menor a mayor
@@ -946,14 +971,26 @@ function renderReporteVista(lista, mesesTodos) {
   </section>
 
   <section class="card rv-total">
-    <div class="rv-total-h"><b>Valor contratado vs radicado ${st.anio}</b><span class="sub">acumulado al ${new Date().toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })} · ${fmtN(R.As.length)} contratos${st.reg ? ` · radicado solo ${st.reg} (el valor contrato incluye RS + RC)` : ''}</span></div>
+    <div class="rv-total-h"><b>Valor contratado vs radicado ${st.anio}</b><span class="sub">al ${new Date().toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })} · ${fmtN(R.As.length)} contratos (${fmtN(B.conRad)} con radicación, ${fmtN(B.sinRad)} sin ninguna)${st.reg ? ` · radicado solo ${st.reg}; el valor por mes es RS + RC` : ''}</span></div>
     <div class="rv-total-g">
-      <div><div class="l">Valor total de los contratos</div><div class="v">${fmtCOP(T.valor)}</div></div>
-      <div><div class="l">Radicado total a hoy</div><div class="v">${fmtCOP(T.radTotal)}</div></div>
-      <div><div class="l">Diferencia (valor − radicado)</div><div class="v ${T.radTotal > T.valor ? 'desv-neg' : ''}">${T.radTotal > T.valor ? '−' : ''}${fmtCOP(Math.abs(T.valor - T.radTotal))}</div><div class="d">${T.radTotal > T.valor ? 'radicado por encima del valor contratado' : 'por radicar del valor contratado'}</div></div>
-      <div><div class="l">Ejecutado</div><div class="v">${T.valor ? (T.radTotal / T.valor * 100).toFixed(1) : '0'}%</div>
-        <div class="rv-total-bar"><span style="width:${T.valor ? Math.min(100, T.radTotal / T.valor * 100) : 0}%"></span></div></div>
+      <div><div class="l">Valor de los meses ya radicados</div><div class="v">${fmtCOP(B.valRad)}</div><div class="d">tope mensual × ${fmtN(B.mesesRad)} meses radicados</div></div>
+      <div><div class="l">Radicado</div><div class="v">${fmtCOP(B.rad)}</div><div class="d">${B.valRad ? (B.rad / B.valRad * 100).toFixed(1) : '0'}% del valor de esos meses</div></div>
+      <div><div class="l">Diferencia en lo radicado</div><div class="v ${B.dif > 0 ? 'desv-neg' : ''}">${B.dif > 0 ? '+' : B.dif < 0 ? '−' : ''}${fmtCOP(Math.abs(B.dif))}</div><div class="d">${B.dif > 0 ? 'radicaron por encima del valor de esos meses' : 'radicaron por debajo del valor de esos meses'}</div></div>
+      <div><div class="l">Pendiente por radicar (vencido)</div><div class="v">${fmtCOP(B.pend)}</div><div class="d">${fmtN(B.nPend)} meses ya vencidos sin factura</div></div>
     </div>
+    <div class="rv-bal" title="Cómo se reparte el valor contratado ${st.anio}">
+      ${[['rad', B.rad, 'var(--accent)'], ['pend', B.pend, 'var(--critical)'], ['plazo', B.plazo, 'var(--warning)'], ['fut', B.futuro, 'var(--ink-3)']]
+        .map(([k, v, col]) => `<span style="width:${Math.max(0, v) / Math.max(B.valor, B.rad + B.pend + B.plazo + B.futuro, 1) * 100}%;background:${col}"></span>`).join('')}
+    </div>
+    <div class="rv-bal-ley">
+      <span><b>Valor contratado ${st.anio}:</b> ${fmtCOP(B.valor)} =</span>
+      <span><i style="background:var(--accent)"></i>Radicado ${fmtCOP(B.rad)}</span>
+      <span><i style="background:var(--critical)"></i>Pendiente vencido ${fmtCOP(B.pend)}</span>
+      <span><i style="background:var(--warning)"></i>En plazo ${fmtCOP(B.plazo)} (${fmtN(B.nPlazo)} meses)</span>
+      <span><i style="background:var(--ink-3)"></i>Meses por venir ${fmtCOP(B.futuro)} (${fmtN(B.nFut)} meses)</span>
+      <span>${B.dif > 0 ? '− radicado de más ' : '+ radicado de menos '}${fmtCOP(Math.abs(B.dif))}</span>
+    </div>
+    ${B.sinRad ? `<div class="d" style="margin-top:6px">${fmtN(B.sinRad)} contratos no tienen ninguna radicación en ${st.anio} (valor ${fmtCOP(B.valSinRad)}); su valor está en «pendiente», «en plazo» o «por venir», no es dinero sobrante.</div>` : ''}
   </section>
 
   <div class="rv-kpis">
@@ -1566,7 +1603,7 @@ async function exportarReporteExcel() {
     const X = await libXlsx(), R = REP_ACTUAL; if (!R) return;
     const wb = X.utils.book_new(), T = R.T;
     X.utils.book_append_sheet(wb, hoja(X, [...cabecera('Reporte de radicación cápita — resumen'),
-      ['Indicador', 'Valor'], ['Contratos vigentes', R.As.length], ['Valor total de los contratos', r0(T.valor)], ['Radicado total a hoy', r0(T.radTotal)], ['Diferencia (valor − radicado)', r0(T.valor - T.radTotal)], ['% ejecutado del valor contratado', T.valor ? +(T.radTotal / T.valor * 100).toFixed(2) : 0], ['Esperado exigible', r0(T.esp)], ['Radicado', r0(T.rad)],
+      ['Indicador', 'Valor'], ['Contratos vigentes', R.As.length], ['Contratos con radicación', R.B.conRad], ['Contratos sin ninguna radicación', R.B.sinRad], ['Valor de los meses ya radicados', r0(R.B.valRad)], ['Radicado', r0(R.B.rad)], ['Diferencia en lo radicado (radicado − valor de esos meses)', r0(R.B.dif)], ['Pendiente por radicar (meses vencidos)', r0(R.B.pend)], ['En plazo', r0(R.B.plazo)], ['Meses por venir', r0(R.B.futuro)], ['Valor contratado del año', r0(R.B.valor)], ['Esperado exigible', r0(T.esp)], ['Radicado', r0(T.rad)],
       ['% ejecución', T.esp ? +(T.rad / T.esp * 100).toFixed(2) : 0], [`Desviación (fuera de ±${repMargen}%)`, r0(T.exc)], ['  Desviación RS subsidiado (proporcional)', r0(T.excRS)], ['  Desviación RC contributivo (proporcional)', r0(T.excRC)], ['Radicado RS subsidiado', r0(T.radRS)], ['Radicado RC contributivo', r0(T.radRC)],
       ['Meses fuera del margen', T.nSobre], ['Contratos con desviación', T.nContSobre], ['Facturas fuera del margen RS', T.facRS], ['Contratos con desviación RS', T.contRS], ['Facturas fuera del margen RC', T.facRC], ['Contratos con desviación RC', T.contRC], ['Meses atípicos', T.nAtip], ['Posibles duplicados', T.nDup],
       ['Saldo vencido por radicar', r0(T.saldo)], ['Periodos vencidos sin radicar', T.pend], ['Meses en plazo (no contados)', T.nPlazo]], [38, 70]), 'Resumen');
