@@ -864,12 +864,14 @@ function ordenar(lista) {
 function datosReporte(lista, mesesTodos) {
   const meses = selMeses(mesesTodos);
   const As = lista.map((c) => analisisContrato(c, meses)).filter((A) => A.meses.length);
+  const cRS = new Set(), cRC = new Set();   // contratos con facturas fuera del margen, por régimen
   const T = As.reduce((t, A) => { t.esp += A.esperado; t.rad += A.radicado; t.exc += A.exceso; t.saldo += A.saldo;
     t.nSobre += A.sobre.length; t.nAtip += A.atipicos.length; t.nDup += A.duplicados.length; t.nPlazo += A.enPlazo.length; t.nDentro += A.dentro.length; t.pend += A.pendientes.length; t.superan += A.superaContrato ? 1 : 0; t.valor += A.valor; t.radTotal += A.radAnio;
     // por régimen: la desviación se calcula con RS + RC juntos; se reparte en proporción a lo radicado en cada régimen ese mes
-    for (const f of A.filas) { t.radRS += f.rs; t.radRC += f.rc; if (f.exceso > 0 && f.rad) { t.excRS += f.exceso * f.rs / f.rad; t.excRC += f.exceso * f.rc / f.rad; if (f.rs) t.mesRS++; if (f.rc) t.mesRC++; } }
-    return t; },
-    { valor: 0, radTotal: 0, radRS: 0, radRC: 0, excRS: 0, excRC: 0, mesRS: 0, mesRC: 0, esp: 0, rad: 0, exc: 0, saldo: 0, nSobre: 0, nAtip: 0, nDentro: 0, nDup: 0, nPlazo: 0, pend: 0, superan: 0 });
+    for (const f of A.filas) { t.radRS += f.rs; t.radRC += f.rc; if (f.exceso > 0 && f.rad) { t.excRS += f.exceso * f.rs / f.rad; t.excRC += f.exceso * f.rc / f.rad; const fRS = f.regs.filter((r) => r.regimen === 'RS').length, fRC = f.regs.filter((r) => r.regimen === 'RC').length;
+      t.facRS += fRS; t.facRC += fRC; if (fRS) cRS.add(A.c.contrato); if (fRC) cRC.add(A.c.contrato); } }
+    if (A.sobre.length) t.nContSobre++; t.contRS = cRS.size; t.contRC = cRC.size; return t; },
+    { valor: 0, radTotal: 0, radRS: 0, radRC: 0, excRS: 0, excRC: 0, facRS: 0, facRC: 0, contRS: 0, contRC: 0, nContSobre: 0, esp: 0, rad: 0, exc: 0, saldo: 0, nSobre: 0, nAtip: 0, nDentro: 0, nDup: 0, nPlazo: 0, pend: 0, superan: 0 });
   const prest = (A) => A.c.prestador || '(sin prestador)';
   const porPrest = sumar(As, prest).filter((g) => g.pend).sort((a, b) => b.pend - a.pend || b.esperado - a.esperado);
   const grupos = repAgrupar === 'contrato'
@@ -955,8 +957,8 @@ function renderReporteVista(lista, mesesTodos) {
   </section>
 
   <div class="rv-kpis">
-    <div class="card rv-kpi rp-k-alerta"><div class="l">Desviación (fuera de ±${repMargen}%)</div><div class="v ${T.exc > 0 ? 'desv-neg' : 'desv-pos'}">${T.exc > 0 ? '+' + fmtCOP(T.exc) : '$0'}</div><div class="d" title="Cada mes de un contrato en que lo radicado (RS + RC) pasó el tope + margen cuenta como un mes">${fmtN(T.nSobre)} meses fuera del margen</div>
-      ${T.exc > 0 ? `<div class="rv-reg" title="El tope es por contrato (RS + RC juntos); la desviación de cada mes se reparte según lo radicado en cada régimen"><span title="Meses fuera del margen en que hubo radicación RS"><b>RS</b> subsidiado: ${fmtN(T.mesRS)} meses · +${fmtCOP(T.excRS)}</span><span title="Meses fuera del margen en que hubo radicación RC"><b>RC</b> contributivo: ${fmtN(T.mesRC)} meses · +${fmtCOP(T.excRC)}</span></div>` : ''}</div>
+    <div class="card rv-kpi rp-k-alerta"><div class="l">Desviación (fuera de ±${repMargen}%)</div><div class="v ${T.exc > 0 ? 'desv-neg' : 'desv-pos'}">${T.exc > 0 ? '+' + fmtCOP(T.exc) : '$0'}</div><div class="d" title="Facturas radicadas en los meses en que el contrato (RS + RC) pasó el tope + margen">${fmtN(T.facRS + T.facRC)} facturas fuera del margen · ${fmtN(T.nContSobre)} contratos</div>
+      ${T.exc > 0 ? `<div class="rv-reg" title="El tope es por contrato (RS + RC juntos); la desviación de cada mes se reparte según lo radicado en cada régimen"><span><b>RS</b> subsidiado: ${fmtN(T.facRS)} facturas · ${fmtN(T.contRS)} contratos · +${fmtCOP(T.excRS)}</span><span><b>RC</b> contributivo: ${fmtN(T.facRC)} facturas · ${fmtN(T.contRC)} contratos · +${fmtCOP(T.excRC)}</span></div>` : ''}</div>
     <div class="card rv-kpi"><div class="l">Esperado exigible</div><div class="v">${fmtCOP(T.esp)}</div><div class="d">${T.nPlazo ? fmtN(T.nPlazo) + ' meses aún en plazo (no se cuentan)' : 'meses ya exigibles'}</div></div>
     <div class="card rv-kpi"><div class="l">Radicado</div><div class="v">${fmtCOP(T.rad)}</div><div class="d">${ejec.toFixed(1)}% del esperado exigible</div>
       <div class="rv-reg"><span><b>RS</b> subsidiado ${fmtCOP(T.radRS)}</span><span><b>RC</b> contributivo ${fmtCOP(T.radRC)}</span></div></div>
@@ -1566,7 +1568,7 @@ async function exportarReporteExcel() {
     X.utils.book_append_sheet(wb, hoja(X, [...cabecera('Reporte de radicación cápita — resumen'),
       ['Indicador', 'Valor'], ['Contratos vigentes', R.As.length], ['Valor total de los contratos', r0(T.valor)], ['Radicado total a hoy', r0(T.radTotal)], ['Diferencia (valor − radicado)', r0(T.valor - T.radTotal)], ['% ejecutado del valor contratado', T.valor ? +(T.radTotal / T.valor * 100).toFixed(2) : 0], ['Esperado exigible', r0(T.esp)], ['Radicado', r0(T.rad)],
       ['% ejecución', T.esp ? +(T.rad / T.esp * 100).toFixed(2) : 0], [`Desviación (fuera de ±${repMargen}%)`, r0(T.exc)], ['  Desviación RS subsidiado (proporcional)', r0(T.excRS)], ['  Desviación RC contributivo (proporcional)', r0(T.excRC)], ['Radicado RS subsidiado', r0(T.radRS)], ['Radicado RC contributivo', r0(T.radRC)],
-      ['Meses fuera del margen', T.nSobre], ['  Meses fuera del margen con RS', T.mesRS], ['  Meses fuera del margen con RC', T.mesRC], ['Meses atípicos', T.nAtip], ['Posibles duplicados', T.nDup],
+      ['Meses fuera del margen', T.nSobre], ['Contratos con desviación', T.nContSobre], ['Facturas fuera del margen RS', T.facRS], ['Contratos con desviación RS', T.contRS], ['Facturas fuera del margen RC', T.facRC], ['Contratos con desviación RC', T.contRC], ['Meses atípicos', T.nAtip], ['Posibles duplicados', T.nDup],
       ['Saldo vencido por radicar', r0(T.saldo)], ['Periodos vencidos sin radicar', T.pend], ['Meses en plazo (no contados)', T.nPlazo]], [38, 70]), 'Resumen');
     const grupo = (porContrato) => {
       const tmp = repAgrupar; repAgrupar = porContrato ? 'contrato' : 'prestador';
