@@ -174,6 +174,7 @@ tr:hover td { background: var(--surface-2); }
 .rv-res .l { color: var(--ink-2); font-size: 12.5px; font-weight: 600; } .rv-res .d { color: var(--ink-3); font-size: 12px; margin-top: 3px; } .rv-res .d b { color: var(--ink-2); }
 .rv-res .v { font-size: 22px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 2px; }
 .rv-cuadre { margin-top: 10px; font-size: 12.5px; } .rv-cuadre summary { cursor: pointer; color: var(--accent); }
+.rv-cuadre p { margin: 8px 0; max-width: 900px; line-height: 1.5; }
 .rv-cuadre table { margin-top: 6px; border-collapse: collapse; min-width: min(560px, 100%); }
 .rv-cuadre td { padding: 3px 8px 3px 0; } .rv-cuadre td + td { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rv-cuadre tr.tot td { border-top: 1px solid var(--border); font-weight: 650; }
@@ -1019,14 +1020,18 @@ function renderReporteVista(lista, mesesTodos) {
       <span><i style="background:var(--ink-3)"></i>No han llegado ${fmtCOP(B.futuro)} (${fmtN(B.nFut)})</span>
     </div>
     <details class="rv-cuadre"><summary>¿Cómo cuadran las cifras?</summary>
+      ${(() => { const dif = B.rad - B.valRad; return `
+      <p>En los <b>${fmtN(B.mesesRad)} meses que ya tienen factura</b>, según el tope de cada contrato se debían cobrar <b>${fmtCOP(B.valRad)}</b> y se cobraron <b>${fmtCOP(B.rad)}</b>.
+        Es decir, <b>${dif >= 0 ? fmtCOP(dif) + ' más' : fmtCOP(-dif) + ' menos'}</b> de lo esperado. Esa diferencia sale de tres tipos de meses:</p>
       <table>
-        <tr><td>Valor de los ${fmtN(B.mesesRad)} meses ya radicados (tope mensual × meses)</td><td>${fmtCOP(B.valRad)}</td></tr>
-        <tr><td>+ Radicado de más, fuera del margen (punto 4)</td><td class="desv-neg">+${fmtCOP(T.exc)}</td></tr>
-        <tr><td>+ Radicado por encima del tope pero dentro del ±${repMargen}% (aceptable)</td><td>+${fmtCOP(B.dentro)}</td></tr>
-        <tr><td>− Meses radicados por debajo del tope</td><td>−${fmtCOP(B.debajo)}</td></tr>
-        <tr class="tot"><td>= Radicado (punto 2)</td><td>${fmtCOP(B.rad)}</td></tr>
+        <tr><td><span class="desv-neg">●</span> Meses que se pasaron <b>más del ${repMargen}%</b> del tope → <b>desviación</b> (punto 4)</td><td class="desv-neg">+${fmtCOP(T.exc)}</td></tr>
+        <tr><td><span style="color:var(--warning)">●</span> Meses que se pasaron <b>hasta el ${repMargen}%</b> → aceptable (variación UPC × usuarios)</td><td>+${fmtCOP(B.dentro)}</td></tr>
+        <tr><td><span style="color:var(--accent)">●</span> Meses que cobraron <b>menos</b> del tope</td><td>−${fmtCOP(B.debajo)}</td></tr>
+        <tr class="tot"><td>Diferencia total (cobrado − esperado)</td><td>${dif >= 0 ? '+' : '−'}${fmtCOP(Math.abs(dif))}</td></tr>
       </table>
-      <p class="d">Lo «sin radicar» (punto 3) son meses que no tienen factura: no se suma ni se resta aquí. Lo que está en plazo o aún no llega tampoco es dinero sobrante: son meses por cobrar.</p>
+      <p class="d">Ejemplo: tope $100 M al mes. Si un mes radica $125 M → +$25 M de desviación; otro mes $105 M → +$5 M aceptable; otro $90 M → −$10 M por debajo.
+        La desviación (punto 4) cuenta solo lo primero, porque lo de menos en un mes no compensa lo cobrado de más en otro.
+        Los meses sin factura (punto 3), en plazo o que no han llegado no entran en esta cuenta.</p>`; })()}
     </details>
   </section>
 
