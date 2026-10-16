@@ -148,8 +148,7 @@ def ejecutar(r):
     contratos = json.loads(r["contratos"])
     if contratos:
         args += ["--solo", *contratos]
-    if r["sin_soportes"]:
-        args.append("--sin-soportes")
+    # el modo rápido (sin soportes) se retiró del tablero: siempre se descargan los soportes
     args += ["--regimen", r["regimenes"] or "RS,RC"]
 
     actualizar(cid, estado="corriendo", inicio=ahora())
