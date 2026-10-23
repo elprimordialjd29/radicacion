@@ -722,13 +722,10 @@ function renderTabla(lista, meses) {
     const tiene = (c, m) => (D.idxAt[c.contrato]?.[st.anio + '-' + m] || []).some((r) => !st.reg || r.regimen === st.reg);
     // los contratos con RIPS van primero; los que no tienen nada en los meses elegidos, al final
     lista = [...lista].sort((a, b) => meses.filter((m) => tiene(b, m)).length - meses.filter((m) => tiene(a, m)).length);
-    // meses de atención cuyo RIPS aún no ha llegado (vencido): explicar en vez de mostrar una columna vacía
-    const avisos = meses.filter((m) => atencionEnPlazo(m)).map((m) => {
-      const vig = lista.filter((c) => vigente(c, st.anio, m)).length, con = lista.filter((c) => tiene(c, m)).length;
-      return `<div class="aviso-plazo">⏳ <b>Las atenciones de ${MESES_L[m - 1]}</b> llegan en el RIPS de la cápita de <b>${MESES_L[m % 12]}</b>, que los prestadores aún pueden radicar (plazo).
-        Por ahora llegaron <b>${fmtN(con)} de ${fmtN(vig)}</b> contratos.
-        ${m > 1 ? `<button class="btn sm" data-ir-mes="${m - 1}">Ver atenciones de ${MESES_L[m - 2]} (radicadas en ${MESES_L[m - 1]})</button>` : ''}</div>`;
-    }).join('');
+    // solo cuando se elige un mes puntual cuyo RIPS aún está en plazo y faltan contratos: una línea corta que explica la columna vacía
+    const enEspera = st.meses.length ? meses.filter((m) => atencionEnPlazo(m) && lista.some((c) => vigente(c, st.anio, m) && !tiene(c, m))) : [];
+    const avisos = enEspera.length ? `<div class="aviso-plazo">⏳ ${enEspera.map((m) => `Las atenciones de <b>${MESES_L[m - 1]}</b> llegan con la cápita de ${MESES_L[m % 12]} (aún en plazo): van ${fmtN(lista.filter((c) => tiene(c, m)).length)} de ${fmtN(lista.filter((c) => vigente(c, st.anio, m)).length)}.`).join(' ')}
+      ${enEspera.length === 1 && enEspera[0] > 1 ? `<button class="btn sm" data-ir-mes="${enEspera[0] - 1}">Ver ${MESES_L[enEspera[0] - 2]}</button>` : ''}</div>` : '';
     filasCsv = [['Contrato', 'Prestador', 'Municipio', ...meses.map((m) => 'Atenciones ' + MESES_L[m - 1])]];
     html = avisos + `<p class="sub" style="margin:0 0 8px">Meses de <b>atención</b> según el RIPS (la factura de abril trae las atenciones de marzo). Sin valores de factura: usuarios y servicios del RIPS.</p>
       <table><thead><tr><th>Contrato</th><th>Prestador</th><th>Municipio</th>${meses.map((m) => `<th>${MESES[m - 1]}</th>`).join('')}</tr></thead><tbody>`;
