@@ -18,6 +18,7 @@ export const ROLES = {
   admin: { nombre: 'Administrador', permisos: Object.keys(PERMISOS) },
   analista: { nombre: 'Analista', permisos: ['ver_reporte', 'consultar_sie', 'descargar_rips', 'descargar_reportes'] },
   auditor: { nombre: 'Auditor RIPS', permisos: ['ver_reporte', 'descargar_rips'] },
+  rips: { nombre: 'Descarga RIPS (solo tablero)', permisos: ['descargar_rips'] },
   consulta: { nombre: 'Solo consulta', permisos: [] },
 };
 
