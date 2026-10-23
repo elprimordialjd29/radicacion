@@ -167,6 +167,8 @@ tr:hover td { background: var(--surface-2); }
 .rv-total-g { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 20px; }
 .rv-total .l { color: var(--ink-2); font-size: 12.5px; } .rv-total .d { color: var(--ink-3); font-size: 12px; margin-top: 2px; }
 .rv-total .v { font-size: 22px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.aviso-plazo { background: var(--warning-bg); border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; font-size: 13px; line-height: 1.6; }
+.aviso-plazo .btn { margin-left: 6px; }
 .rv-res { padding: 14px 16px; margin-bottom: 14px; }
 .rv-pasos { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
 .rv-paso { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; }
@@ -717,8 +719,18 @@ function renderTabla(lista, meses) {
   if (st.tab === 'matriz') {
     // CONTRATOS × MES DE ATENCIÓN: lo que trae el RIPS por dentro (sin valores de factura); solo los meses elegidos arriba
     meses = selMeses(meses);
+    const tiene = (c, m) => (D.idxAt[c.contrato]?.[st.anio + '-' + m] || []).some((r) => !st.reg || r.regimen === st.reg);
+    // los contratos con RIPS van primero; los que no tienen nada en los meses elegidos, al final
+    lista = [...lista].sort((a, b) => meses.filter((m) => tiene(b, m)).length - meses.filter((m) => tiene(a, m)).length);
+    // meses de atención cuyo RIPS aún no ha llegado (vencido): explicar en vez de mostrar una columna vacía
+    const avisos = meses.filter((m) => atencionEnPlazo(m)).map((m) => {
+      const vig = lista.filter((c) => vigente(c, st.anio, m)).length, con = lista.filter((c) => tiene(c, m)).length;
+      return `<div class="aviso-plazo">⏳ <b>Las atenciones de ${MESES_L[m - 1]}</b> llegan en el RIPS de la cápita de <b>${MESES_L[m % 12]}</b>, que los prestadores aún pueden radicar (plazo).
+        Por ahora llegaron <b>${fmtN(con)} de ${fmtN(vig)}</b> contratos.
+        ${m > 1 ? `<button class="btn sm" data-ir-mes="${m - 1}">Ver atenciones de ${MESES_L[m - 2]} (radicadas en ${MESES_L[m - 1]})</button>` : ''}</div>`;
+    }).join('');
     filasCsv = [['Contrato', 'Prestador', 'Municipio', ...meses.map((m) => 'Atenciones ' + MESES_L[m - 1])]];
-    html = `<p class="sub" style="margin:0 0 8px">Meses de <b>atención</b> según el RIPS (la factura de abril trae las atenciones de marzo). Sin valores de factura: usuarios y servicios del RIPS.</p>
+    html = avisos + `<p class="sub" style="margin:0 0 8px">Meses de <b>atención</b> según el RIPS (la factura de abril trae las atenciones de marzo). Sin valores de factura: usuarios y servicios del RIPS.</p>
       <table><thead><tr><th>Contrato</th><th>Prestador</th><th>Municipio</th>${meses.map((m) => `<th>${MESES[m - 1]}</th>`).join('')}</tr></thead><tbody>`;
     for (const c of lista) {
       const fila = [c.contrato, c.prestador, c.municipio];
@@ -1588,6 +1600,7 @@ async function recargarDatos() {
 }
 
 $('#tabla').addEventListener('click', (e) => {
+  const ir = e.target.closest('[data-ir-mes]'); if (ir) { st.meses = [+ir.dataset.irMes]; render(); return; }
   const d = e.target.closest('[data-det]'); if (d) abrirDetalle(d.dataset.det, d.dataset.clave);
 });
 $('#jobs').addEventListener('click', async (e) => {
