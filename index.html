@@ -715,7 +715,8 @@ let filasCsv = [];
 function renderTabla(lista, meses) {
   let html = '';
   if (st.tab === 'matriz') {
-    // CONTRATOS × MES DE ATENCIÓN: lo que trae el RIPS por dentro (sin valores de factura)
+    // CONTRATOS × MES DE ATENCIÓN: lo que trae el RIPS por dentro (sin valores de factura); solo los meses elegidos arriba
+    meses = selMeses(meses);
     filasCsv = [['Contrato', 'Prestador', 'Municipio', ...meses.map((m) => 'Atenciones ' + MESES_L[m - 1])]];
     html = `<p class="sub" style="margin:0 0 8px">Meses de <b>atención</b> según el RIPS (la factura de abril trae las atenciones de marzo). Sin valores de factura: usuarios y servicios del RIPS.</p>
       <table><thead><tr><th>Contrato</th><th>Prestador</th><th>Municipio</th>${meses.map((m) => `<th>${MESES[m - 1]}</th>`).join('')}</tr></thead><tbody>`;
