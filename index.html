@@ -724,10 +724,10 @@ function renderTabla(lista, meses) {
     lista = [...lista].sort((a, b) => meses.filter((m) => tiene(b, m)).length - meses.filter((m) => tiene(a, m)).length);
     // solo cuando se elige un mes puntual cuyo RIPS aún está en plazo y faltan contratos: una línea corta que explica la columna vacía
     const enEspera = st.meses.length ? meses.filter((m) => atencionEnPlazo(m) && lista.some((c) => vigente(c, st.anio, m) && !tiene(c, m))) : [];
-    const avisos = enEspera.length ? `<div class="aviso-plazo">⏳ ${enEspera.map((m) => `Las atenciones de <b>${MESES_L[m - 1]}</b> llegan con la cápita de ${MESES_L[m % 12]} (aún en plazo): van ${fmtN(lista.filter((c) => tiene(c, m)).length)} de ${fmtN(lista.filter((c) => vigente(c, st.anio, m)).length)}.`).join(' ')}
+    const avisos = enEspera.length ? `<div class="aviso-plazo">⏳ ${enEspera.map((m) => `RIPS con fechas de atención de <b>${MESES_L[m - 1]}</b>: ${fmtN(lista.filter((c) => tiene(c, m)).length)} de ${fmtN(lista.filter((c) => vigente(c, st.anio, m)).length)} contratos; los demás normalmente llegan en la radicación de ${MESES_L[m % 12]} (aún en plazo).`).join(' ')}
       ${enEspera.length === 1 && enEspera[0] > 1 ? `<button class="btn sm" data-ir-mes="${enEspera[0] - 1}">Ver ${MESES_L[enEspera[0] - 2]}</button>` : ''}</div>` : '';
     filasCsv = [['Contrato', 'Prestador', 'Municipio', ...meses.map((m) => 'Atenciones ' + MESES_L[m - 1])]];
-    html = avisos + `<p class="sub" style="margin:0 0 8px">Meses de <b>atención</b> según el RIPS (la factura de abril trae las atenciones de marzo). Sin valores de factura: usuarios y servicios del RIPS.</p>
+    html = avisos + `<p class="sub" style="margin:0 0 8px">Mes = <b>fechas de atención dentro del RIPS / JSON</b> (no la fecha de la factura). Sin valores de factura: usuarios y servicios del RIPS.</p>
       <table><thead><tr><th>Contrato</th><th>Prestador</th><th>Municipio</th>${meses.map((m) => `<th>${MESES[m - 1]}</th>`).join('')}</tr></thead><tbody>`;
     for (const c of lista) {
       const fila = [c.contrato, c.prestador, c.municipio];
