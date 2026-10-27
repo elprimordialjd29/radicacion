@@ -25,7 +25,9 @@ export default async function handler(req, res) {
   const tok = req.headers['x-token'] || req.query.token || '';
   if (tok !== TOKEN) return res.status(401).json({ error: 'Token inválido' });
 
-  const { contrato = '', anio = '', mes = '', regimen = '', formato = 'txt', por = 'capita' } = req.query;
+  // por defecto el mes es el de las ATENCIONES dentro del RIPS (no el mes de la cápita): así "Marzo" trae las
+  // atenciones de marzo y no la cápita inicial de marzo, que va con RIPS en cero
+  const { contrato = '', anio = '', mes = '', regimen = '', formato = 'txt', por = 'atencion' } = req.query;
   const qs = new URLSearchParams({ contrato, anio, mes, regimen, formato, por });
   try {
     const r = await worker('/rips?' + qs.toString(), { signal: AbortSignal.timeout(55000) });
