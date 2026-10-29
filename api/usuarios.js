@@ -44,6 +44,8 @@ export default async function handler(req, res) {
       if (String(body.clave).length < 8) return res.status(400).json({ error: 'La clave debe tener al menos 8 caracteres.' });
       u.clave = hash(body.clave); u.debeCambiar = true;
     }
+    // clave restablecida, usuario desactivado o permisos cambiados → se cierran sus sesiones abiertas
+    if (body.clave || (antes.activo && !u.activo) || JSON.stringify(antes.permisos) !== JSON.stringify(u.permisos)) u.sv = (u.sv || 0) + 1;
     if (!admins(usuarios).length) { Object.assign(u, antes); return res.status(400).json({ error: 'Debe quedar al menos un administrador activo.' }); }
     await guardarUsuarios(usuarios);
     return res.status(200).json(publico(u));

@@ -1762,6 +1762,21 @@ function medidor(titulo, pct, detalle) {
   return `<div class="card mon-g"><div class="l">${titulo}</div><div class="mon-v" style="color:${color}">${pct.toFixed(1)}%</div>
     <div class="mon-barra"><div style="width:${Math.min(pct, 100)}%;background:${color}"></div></div><div class="d">${detalle}</div></div>`;
 }
+// intentos de ingreso sin permiso, tokens inválidos, bloqueos… (los registra el servidor y avisa por correo)
+function seccionSeguridad(S) {
+  if (!S) return '';
+  const NIV = { 1: ['na', '•'], 2: ['no', '⚠'], 3: ['no', '⛔'] };
+  return `<div class="card" style="margin-top:16px"><div class="rp-sec-h"><h2>Seguridad · intentos sin permiso</h2>
+      <span class="sub">${fmtN(S.ultimas_24h)} en 24 h · ${fmtN(S.ultimos_7d)} en 7 días · ${fmtN(S.ips_7d)} IP distintas</span></div>
+    <p class="sub" style="margin:0 0 8px">${S.correo_configurado ? '✉ Las alertas se envían por correo (máx. 1 por tipo e IP cada 30 min).'
+      : '<span class="desv-neg">✉ Correo de alertas sin configurar</span>: en el servidor ejecuta <code>python3 /opt/radicacion/deploy/configurar_alertas.py</code>.'}
+      Bloqueo automático: 5 claves erradas del mismo usuario o 10 desde la misma IP en 15 min.</p>
+    ${S.eventos.length ? `<div class="tbl-wrap"><table class="rp-tabla"><thead><tr><th></th><th>Fecha</th><th>Qué pasó</th><th>IP</th><th>Usuario</th><th>Detalle</th></tr></thead><tbody>
+      ${S.eventos.map((e) => `<tr><td><span class="st ${NIV[e.nivel]?.[0] || 'na'}"><i>${NIV[e.nivel]?.[1] || '•'}</i></span></td><td class="muted">${fmtFecha(e.fecha)}</td>
+        <td><b>${esc(S.titulos[e.tipo] || e.tipo)}</b><br><small class="muted">${esc(e.ruta || '')}</small></td><td>${esc(e.ip || '—')}</td><td>${esc(e.usuario || '—')}</td>
+        <td class="wrap muted" title="${esc(e.agente || '')}">${esc(e.detalle || '')}</td></tr>`).join('')}
+      </tbody></table></div>` : '<p class="muted">✓ Sin intentos sospechosos registrados.</p>'}</div>`;
+}
 async function cargarMonitor() {
   clearTimeout(monTimer);
   if (vista !== 'servidor') return;
@@ -1820,7 +1835,8 @@ async function cargarMonitor() {
       ${M.ultimas_consultas.map((j) => `<tr><td>${esc(j.usuario)}<br><small class="muted">${fmtFecha(j.creada)}</small></td><td><span class="st ${j.estado === 'terminada' ? 'ok' : j.estado === 'error' ? 'no' : 'na'}">${esc(j.estado)}</span></td>
         <td>${j.meses.length ? j.meses.map((m) => MESES[m - 1]).join(', ') : 'todos'}</td><td class="num">${j.n_contratos || 'todos'}</td><td>${duracion(j.inicio, j.fin)}</td></tr>`).join('')}
       </tbody></table></div></div>
-  </div>`;
+  </div>
+  ${seccionSeguridad(M.seguridad)}`;
   $('#monRefrescar').onclick = cargarMonitor;
   monTimer = setTimeout(cargarMonitor, 15000);
 }

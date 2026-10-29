@@ -1,6 +1,7 @@
 // Descarga de RIPS para el evaluador externo (sin sesión, con token compartido).
 // Misma lógica que /api/rips pero protegida por token en vez de sesión.
 import { worker } from './_auth.js';
+import { evento } from './_seguridad.js';
 
 export const config = { maxDuration: 60 };
 
@@ -23,7 +24,10 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Solo GET' });
 
   const tok = req.headers['x-token'] || req.query.token || '';
-  if (tok !== TOKEN) return res.status(401).json({ error: 'Token inválido' });
+  if (tok !== TOKEN) {
+    await evento(req, 'token_invalido', { detalle: tok ? 'token errado' : 'sin token' });
+    return res.status(401).json({ error: 'Token inválido' });
+  }
 
   // por defecto el mes es el de las ATENCIONES dentro del RIPS (no el mes de la cápita): así "Marzo" trae las
   // atenciones de marzo y no la cápita inicial de marzo, que va con RIPS en cero

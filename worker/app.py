@@ -45,10 +45,33 @@ load_dotenv(BOT / ".env")
 TOKEN = os.getenv("WORKER_TOKEN", "")
 sys.path.insert(0, str(BOT))
 import rips_json  # noqa: E402  (convertidor plano → JSON Res. 2275)
+from seguridad import Seguridad, enviar_correo  # noqa: E402
 PY = str(BOT / ".venv" / "bin" / "python")
 
 app = FastAPI(title="Radicación worker", docs_url=None, redoc_url=None)
 _lock = threading.Lock()
+SEG = Seguridad(DATOS / "seguridad.db")
+
+
+def _ip(request):
+    return (request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            or (request.client.host if request.client else ""))
+
+
+@app.middleware("http")
+async def _vigilar(request: Request, call_next):
+    # Vercel siempre llama con el token correcto: cualquier 401 aquí es alguien de afuera probando el servidor
+    resp = await call_next(request)
+    if resp.status_code == 401:
+        try:
+            SEG.registrar("token_invalido_servidor", ip=_ip(request), ruta=request.url.path,
+                          detalle=f"{request.method} directo al servidor (puerto 8443)",
+                          agente=request.headers.get("user-agent", ""))
+        except Exception:
+            pass
+    return resp
+
+
 _hay_trabajo = threading.Event()
 _proceso = {"id": None, "popen": None}
 
@@ -259,6 +282,46 @@ async def usuarios_guardar(request: Request, x_token: str = Header("")):
     os.chmod(tmp, 0o600)
     tmp.replace(USUARIOS)   # escritura atómica
     return {"ok": True, "usuarios": len(u)}
+
+
+class EventoSeg(BaseModel):
+    tipo: str = Field(max_length=40)
+    ip: str = Field("", max_length=64)
+    usuario: str = Field("", max_length=60)
+    ruta: str = Field("", max_length=200)
+    detalle: str = Field("", max_length=500)
+    agente: str = Field("", max_length=300)
+    es_admin: bool = False
+
+
+@app.post("/seguridad/evento")
+def seguridad_evento(e: EventoSeg, x_token: str = Header("")):
+    auth(x_token)
+    if e.tipo == "login_ok":
+        SEG.ingreso_ok(e.ip, e.usuario, e.es_admin)
+        return {"bloqueado": False, "minutos": 0}
+    return SEG.registrar(e.tipo, e.ip, e.usuario, e.ruta, e.detalle, e.agente)
+
+
+@app.get("/seguridad/estado")
+def seguridad_estado(ip: str = "", usuario: str = "", x_token: str = Header("")):
+    auth(x_token)
+    b, m = SEG.estado(ip, usuario)
+    return {"bloqueado": b, "minutos": m}
+
+
+@app.get("/seguridad")
+def seguridad_listar(limite: int = 100, x_token: str = Header("")):
+    auth(x_token)
+    return SEG.listar(min(500, max(1, limite)))
+
+
+@app.post("/seguridad/prueba")
+def seguridad_prueba(x_token: str = Header("")):
+    auth(x_token)
+    ok, msg = enviar_correo("✅ Radicación cápita: prueba de alertas",
+                            "Este es un correo de prueba. Las alertas de seguridad llegarán a esta dirección.")
+    return {"ok": ok, "mensaje": msg}
 
 
 @app.get("/salud")
@@ -496,6 +559,7 @@ def monitor(x_token: str = Header("")):
         "datos": {"radicaciones_historial": registros,
                   "soportes_descargados": sum(1 for _ in (BOT / "descargas" / "soportes").rglob("*")) if (BOT / "descargas" / "soportes").exists() else 0},
         "ultimas_consultas": ult,
+        "seguridad": SEG.listar(60),
     }
 
 

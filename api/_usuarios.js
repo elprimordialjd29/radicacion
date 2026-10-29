@@ -3,6 +3,7 @@
 import { leerServidor, guardarServidor } from './_blob.js';
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { verificar, leerCookie } from './_sesion.js';
+import { evento } from './_seguridad.js';
 
 const RUTA = 'radicacion/usuarios.json';
 
@@ -64,7 +65,10 @@ export async function requiere(req, res, permiso) {
   const usuarios = await cargarUsuarios();
   const yo = usuarios[s.u];
   if (!yo || !yo.activo) { res.status(401).json({ error: 'Usuario inactivo.' }); return null; }
+  // la sesión se invalida si cambió la clave o el admin la restableció/desactivó (versión de sesión)
+  if ((s.v || 0) !== (yo.sv || 0)) { res.status(401).json({ error: 'Tu sesión se cerró. Vuelve a ingresar.' }); return null; }
   if (permiso && !(yo.permisos || []).includes(permiso)) {
+    await evento(req, 'permiso_denegado', { usuario: yo.usuario, detalle: `sin permiso «${PERMISOS[permiso] || permiso}»` });
     res.status(403).json({ error: `No tienes permiso: ${PERMISOS[permiso] || permiso}.` });
     return null;
   }
