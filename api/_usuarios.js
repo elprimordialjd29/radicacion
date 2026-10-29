@@ -1,7 +1,6 @@
-// Usuarios, roles y permisos. Se guardan en Vercel Blob PRIVADO (radicacion/usuarios.json)
+// Usuarios, roles y permisos. Se guardan en el servidor (worker: bot/worker_datos/usuarios.json)
 // con la clave cifrada (scrypt). Si no hay usuarios, se crea admin / admin123.
-import { put } from '@vercel/blob';
-import { leerBlob } from './_blob.js';
+import { leerServidor, guardarServidor } from './_blob.js';
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { verificar, leerCookie } from './_sesion.js';
 
@@ -35,13 +34,11 @@ export function verificarClave(clave, guardado) {
 }
 
 export async function guardarUsuarios(usuarios) {
-  await put(RUTA, JSON.stringify(usuarios), {
-    access: 'private', allowOverwrite: true, addRandomSuffix: false, contentType: 'application/json',
-  });
+  await guardarServidor('/usuarios', JSON.stringify(usuarios));
 }
 export async function cargarUsuarios() {
-  // si Blob falla (no "no existe"), leerBlob lanza error y NO se recrea el archivo de usuarios
-  const texto = await leerBlob(RUTA);
+  // si el servidor falla (no "no existe"), leerServidor lanza error y NO se recrea el archivo de usuarios
+  const texto = await leerServidor('/usuarios', { cacheMs: 15000 });
   if (texto) return JSON.parse(texto);
   const inicial = {
     admin: {

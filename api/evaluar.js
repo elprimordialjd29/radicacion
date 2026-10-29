@@ -1,6 +1,6 @@
 // Endpoint para el evaluador de cápita asistencial.
 // Sirve datos.json con autenticación por token (sin sesión) y cabeceras CORS.
-import { get } from '@vercel/blob';
+import { leerServidor } from './_blob.js';
 
 const TOKEN = process.env.EVALUAR_TOKEN || 'DUSAKAWI-RIPS-2026';
 const ORIGIN = 'https://evaluacion-rips-2026.vercel.app';
@@ -24,14 +24,12 @@ export default async function handler(req, res) {
   if (tok !== TOKEN) return res.status(401).json({ error: 'Token inválido' });
 
   try {
-    const r = await get('radicacion/datos.json', { access: 'private', useCache: false });
-    if (!r || r.statusCode !== 200) return res.status(404).json({ error: 'Sin datos todavía' });
-    const texto = await new Response(r.stream).text();
+    const texto = await leerServidor('/datos', { cacheMs: 60000 });
+    if (!texto) return res.status(404).json({ error: 'Sin datos todavía' });
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.status(200).send(texto);
   } catch (e) {
-    if (e && e.name === 'BlobNotFoundError') return res.status(404).json({ error: 'Sin datos todavía' });
     return res.status(500).json({ error: String(e?.message || e) });
   }
 }

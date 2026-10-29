@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
@@ -221,6 +221,44 @@ class NuevaConsulta(BaseModel):
     usuario: str = "desconocido"
     sin_soportes: bool = False
     regimenes: List[str] = ["RS", "RC"]
+
+
+# Datos del tablero y usuarios: viven en el servidor (antes en Vercel Blob, que en plan Hobby
+# se suspendió por exceder la cuota de operaciones). El bot ya deja la copia en descargas/dashboard.json.
+TABLERO = BOT / "descargas" / "dashboard.json"
+USUARIOS = DATOS / "usuarios.json"
+
+
+@app.get("/datos")
+def datos_tablero(x_token: str = Header("")):
+    auth(x_token)
+    if not TABLERO.exists():
+        raise HTTPException(404, "Aún no hay datos")
+    return FileResponse(TABLERO, media_type="application/json")
+
+
+@app.get("/usuarios")
+def usuarios_leer(x_token: str = Header("")):
+    auth(x_token)
+    if not USUARIOS.exists():
+        raise HTTPException(404, "Sin usuarios")
+    return FileResponse(USUARIOS, media_type="application/json")
+
+
+@app.put("/usuarios")
+async def usuarios_guardar(request: Request, x_token: str = Header("")):
+    auth(x_token)
+    cuerpo = await request.body()
+    try:
+        u = json.loads(cuerpo)
+        assert isinstance(u, dict) and u
+    except Exception:
+        raise HTTPException(400, "JSON de usuarios inválido")
+    tmp = USUARIOS.with_suffix(".tmp")
+    tmp.write_text(json.dumps(u, ensure_ascii=False), encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    tmp.replace(USUARIOS)   # escritura atómica
+    return {"ok": True, "usuarios": len(u)}
 
 
 @app.get("/salud")
