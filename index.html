@@ -53,6 +53,7 @@ input[type=search] { min-width: 260px; }
 .sug:last-child { border-bottom: 0; }
 .sug:hover, .sug.act { background: var(--surface-2); }
 .sug b { font-weight: 600; } .sug small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 1px; }
+.sug-c { text-decoration: underline dotted; cursor: pointer; } .sug-c:hover { color: var(--accent); }
 .sug mark { background: var(--accent-soft); color: inherit; border-radius: 3px; padding: 0 1px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .mes-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
@@ -106,6 +107,7 @@ tr:hover td { background: var(--surface-2); }
   border-radius: 5px; padding: 1px 5px; line-height: 1.5; background: var(--surface); }
 .dl a:hover { color: var(--accent); border-color: var(--accent); }
 .reg-tag { font-size: 10.5px; color: var(--ink-3); margin-left: 3px; }
+.mes-cel { font-size: 11px; font-weight: 650; letter-spacing: .02em; text-transform: uppercase; color: var(--ink-3); }
 .celda { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
 .celda .lin { display: flex; align-items: center; gap: 4px; }
 .celda .rg { font-size: 10.5px; font-weight: 700; color: var(--ink-2); min-width: 20px; }
@@ -568,6 +570,10 @@ function botonesRips(contrato, anio, mes, regimen, por = 'capita') {
 function atencionEnPlazo(m) { return m === 12 ? false : enPlazo(m + 1); }
 function filtrados() {
   const t = st.texto.toLowerCase();
+  // si el texto es exactamente un número de contrato, solo ese contrato
+  if (t && D.contratos.some((c) => c.contrato.toLowerCase() === t)) {
+    return D.contratos.filter((c) => c.contrato.toLowerCase() === t && (!st.tipo || tipoDe(c.contrato) === st.tipo) && (!st.muni || c.municipio === st.muni));
+  }
   // si el texto es exactamente un prestador (elegido de las sugerencias) se filtra solo ese
   const exacto = t && D.contratos.some((c) => (c.prestador || '').toLowerCase() === t);
   return D.contratos.filter((c) =>
@@ -732,6 +738,7 @@ function renderTabla(lista, meses) {
     for (const c of lista) {
       const fila = [c.contrato, c.prestador, c.municipio];
       const celdas = meses.map((m) => {
+        const mesCel = `<span class="mes-cel">${MESES[m - 1]}</span>`;   // el mes en cada celda, para no perderse al desplazar
         const regs = (D.idxAt[c.contrato]?.[st.anio + '-' + m] || []).filter((r) => !st.reg || r.regimen === st.reg);
         if (regs.length) {
           const porReg = {};
@@ -742,11 +749,11 @@ function renderTabla(lista, meses) {
             return `<span class="lin" data-tip="${esc(tip)}"><span class="st ok"><i>✓</i> ${fmtN(us)}</span><span class="rg">${rg}</span>${botonesRips(c.contrato, st.anio, m, rg, 'atencion')}</span>`;
           });
           fila.push(Object.entries(porReg).map(([rg, l]) => `${rg}: ${l.reduce((x, r) => x + (r.n_usuarios || 0), 0)} usuarios / ${l.reduce((x, r) => x + (r.n_servicios || 0), 0)} servicios`).join(' · '));
-          return `<td><div class="celda">${lineas.join('')}</div></td>`;
+          return `<td><div class="celda">${mesCel}${lineas.join('')}</div></td>`;
         }
-        if (!vigente(c, st.anio, m)) { fila.push('Fuera de vigencia'); return '<td><span class="st na">—</span></td>'; }
-        if (atencionEnPlazo(m)) { fila.push('En plazo'); return `<td><span class="st nc" title="Su RIPS llega con la cápita de ${MESES_L[m % 12]}, aún en plazo">⏳</span></td>`; }
-        fila.push('Sin RIPS'); return `<td><span class="st no" title="No hay RIPS con atenciones de ${MESES_L[m - 1]}"><i>✕</i> Sin RIPS</span></td>`;
+        if (!vigente(c, st.anio, m)) { fila.push('Fuera de vigencia'); return `<td><div class="celda">${mesCel}<span class="st na">—</span></div></td>`; }
+        if (atencionEnPlazo(m)) { fila.push('En plazo'); return `<td><div class="celda">${mesCel}<span class="st nc" title="Su RIPS llega con la cápita de ${MESES_L[m % 12]}, aún en plazo">⏳</span></div></td>`; }
+        fila.push('Sin RIPS'); return `<td><div class="celda">${mesCel}<span class="st no" title="No hay RIPS con atenciones de ${MESES_L[m - 1]}"><i>✕</i> Sin RIPS</span></div></td>`;
       }).join('');
       filasCsv.push(fila);
       html += `<tr><td><b class="lnk" data-det="contrato" data-clave="${esc(c.contrato)}" title="Ver detalle explicado">${esc(c.contrato)}</b></td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.municipio)}</td>${celdas}</tr>`;
@@ -1467,7 +1474,7 @@ function sugerir() {
   sugs.innerHTML = lista.slice(0, 30).map(([nombre, cs]) => {
     const munis = [...new Set(cs.map((c) => c.municipio).filter(Boolean))].join(', ');
     return `<div class="sug" role="option" data-v="${esc(nombre)}"><b>${resaltar(nombre, q)}</b>
-      <small>${cs.length} contrato${cs.length > 1 ? 's' : ''}: ${cs.map((c) => resaltar(c.contrato, q)).join(' · ')}${munis ? ' — ' + esc(munis) : ''}</small></div>`;
+      <small>${cs.length} contrato${cs.length > 1 ? 's' : ''}: ${cs.map((c) => `<span class="sug-c" data-v="${esc(c.contrato)}" title="Ver solo este contrato">${resaltar(c.contrato, q)}</span>`).join(' · ')}${munis ? ' — ' + esc(munis) : ''}</small></div>`;
   }).join('');
   sugs.classList.add('open');
 }
@@ -1485,7 +1492,7 @@ fTexto.addEventListener('keydown', (e) => {
     buscar(sugAct >= 0 && items[sugAct] ? items[sugAct].dataset.v : undefined);
   } else if (e.key === 'Escape') sugs.classList.remove('open');
 });
-sugs.addEventListener('mousedown', (e) => { const it = e.target.closest('.sug[data-v]'); if (it) { e.preventDefault(); buscar(it.dataset.v); } });
+sugs.addEventListener('mousedown', (e) => { const it = e.target.closest('.sug-c[data-v]') || e.target.closest('.sug[data-v]'); if (it) { e.preventDefault(); buscar(it.dataset.v); } });
 fTexto.addEventListener('blur', () => setTimeout(() => sugs.classList.remove('open'), 150));
 $('#btnBuscar').onclick = () => buscar();
 document.querySelector('.tabs').onclick = (e) => {
