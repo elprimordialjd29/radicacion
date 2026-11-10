@@ -25,7 +25,7 @@ import uuid
 from contextlib import closing, contextmanager
 from zoneinfo import ZoneInfo
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
@@ -106,8 +106,13 @@ def _iniciar_db():
             id TEXT PRIMARY KEY, creada TEXT, usuario TEXT, anio INTEGER, meses TEXT,
             contratos TEXT, sin_soportes INTEGER, estado TEXT, total INTEGER, hechos INTEGER,
             actual TEXT, inicio TEXT, fin TEXT, excel TEXT, resumen TEXT, log TEXT)""")
-        if "regimenes" not in {r[1] for r in con.execute("PRAGMA table_info(consultas)")}:
+        cols = {r[1] for r in con.execute("PRAGMA table_info(consultas)")}
+        if "regimenes" not in cols:
             con.execute("ALTER TABLE consultas ADD COLUMN regimenes TEXT DEFAULT 'RS'")
+        # reintentos automáticos: n.º de intento, consulta original y hora mínima para correr
+        for col, tipo in (("intento", "INTEGER DEFAULT 1"), ("reintento_de", "TEXT"), ("no_antes", "TEXT")):
+            if col not in cols:
+                con.execute(f"ALTER TABLE consultas ADD COLUMN {col} {tipo}")
 
 
 _iniciar_db()
@@ -197,10 +202,65 @@ def ejecutar(r):
     actualizar(cid, estado="cancelada" if cancelada else ("terminada" if code == 0 else "error"),
                fin=ahora(), excel=excel, resumen=resumen,
                log="\n".join(log[-400:]))
+    if not cancelada and code != 0:
+        programar_reintento(cid, log)
     try:   # deja listo el análisis de duplicados con los datos nuevos
         _duplicados(esperar=True)
     except Exception:
         pass
+
+
+# Si una consulta falla (SIE caído, lento, usuario inactivo un rato…) se vuelve a poner en cola sola,
+# esperando cada vez más: 5, 10, 20, 30 min y luego cada hora, hasta MAX_INTENTOS.
+MAX_INTENTOS = 10
+ESPERAS_MIN = [5, 10, 20, 30, 60, 60, 60, 60, 60]
+
+
+def _motivo(log):
+    for l in reversed(log):
+        if "SIE dice:" in l or "No se pudo iniciar sesión" in l:
+            return l.strip()[:300]
+    for l in reversed(log):
+        if "Error" in l or "Timeout" in l:
+            return l.strip()[:300]
+    return (log[-1] if log else "sin detalle")[:300]
+
+
+def programar_reintento(cid, log):
+    r = q1("SELECT * FROM consultas WHERE id=?", (cid,))
+    intento = (r["intento"] or 1)
+    motivo = _motivo(log)
+    login = "iniciar sesión" in motivo or "inactivo" in motivo.lower()
+    if intento >= MAX_INTENTOS:
+        actualizar(cid, resumen=f"Falló {intento} veces seguidas; no se reintenta más. Último error: {motivo}")
+        threading.Thread(target=enviar_correo, daemon=True, args=(
+            "⚠ Radicación cápita: la consulta al SIE sigue fallando",
+            f"La consulta {r['reintento_de'] or cid} falló {intento} veces seguidas y ya no se reintenta.\n\n"
+            f"Último error: {motivo}\n\nRevisa en radicacion.vercel.app → Consultas recientes → Ver detalle.")).start()
+        return
+    espera = ESPERAS_MIN[min(intento - 1, len(ESPERAS_MIN) - 1)]
+    if login:
+        espera = max(espera, 30)   # usuario inactivo / clave: dar tiempo a que lo reactiven
+    cuando = datetime.now().astimezone() + timedelta(minutes=espera)
+    nuevo = uuid.uuid4().hex[:10]
+    with _lock, db() as con:
+        con.execute("INSERT INTO consultas (id, creada, usuario, anio, meses, contratos, sin_soportes, estado, total, "
+                    "hechos, regimenes, intento, reintento_de, no_antes) VALUES (?,?,?,?,?,?,0,'en_cola',0,0,?,?,?,?)",
+                    (nuevo, ahora(), r["usuario"], r["anio"], r["meses"], r["contratos"], r["regimenes"],
+                     intento + 1, r["reintento_de"] or cid, cuando.isoformat(timespec="seconds")))
+    actualizar(cid, resumen=f"Reintento automático #{intento + 1} programado para las "
+                            f"{cuando.strftime('%I:%M %p')}. Error: {motivo}")
+    if login and intento == 1:   # el usuario del SIE necesita atención de una persona: avisar una vez
+        threading.Thread(target=enviar_correo, daemon=True, args=(
+            "⚠ Radicación cápita: el SIE no dejó iniciar sesión",
+            f"{motivo}\n\nSe reintentará automáticamente cada vez con más espera. Si el usuario del SIE está "
+            "inactivo o cambió la clave, actívalo o actualiza la clave con deploy/guardar_clave.py.")).start()
+
+
+def _hay_exito_posterior(r):
+    # si después de la falla otra consulta igual ya terminó bien (p. ej. la programada), el reintento sobra
+    return q1("SELECT 1 FROM consultas WHERE estado='terminada' AND anio=? AND meses=? AND contratos=? "
+              "AND regimenes=? AND creada>?", (r["anio"], r["meses"], r["contratos"], r["regimenes"], r["creada"]))
 
 
 def bucle():
@@ -209,10 +269,14 @@ def bucle():
         con.execute("UPDATE consultas SET estado='error', fin=? WHERE estado IN ('corriendo','cancelando')",
                     (ahora(),))
     while True:
-        r = q1("SELECT * FROM consultas WHERE estado='en_cola' ORDER BY creada LIMIT 1")
+        r = q1("SELECT * FROM consultas WHERE estado='en_cola' AND (no_antes IS NULL OR no_antes<=?) "
+               "ORDER BY creada LIMIT 1", (ahora(),))
         if not r:
             _hay_trabajo.wait(30)
             _hay_trabajo.clear()
+            continue
+        if r["reintento_de"] and _hay_exito_posterior(r):
+            actualizar(r["id"], estado="cancelada", fin=ahora(), resumen="Reintento omitido: otra consulta igual ya terminó bien.")
             continue
         try:
             ejecutar(r)
@@ -361,6 +425,9 @@ def crear(c: NuevaConsulta, x_token: str = Header("")):
                           (c.anio, json.dumps(sorted(c.meses)), json.dumps(sorted(c.contratos)),
                            ",".join(regs)))
     if activa:
+        # si la igual es un reintento que está esperando su hora, se adelanta: corre ya
+        actualizar(activa["id"], no_antes=None)
+        _hay_trabajo.set()
         return {"id": activa["id"], "duplicada": True}
     cid = uuid.uuid4().hex[:10]
     with _lock, db() as con:

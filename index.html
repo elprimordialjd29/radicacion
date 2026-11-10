@@ -1575,7 +1575,10 @@ async function cargarJobs() {
         <span class="muted" style="font-size:12px">${esc(j.usuario)} · ${fmtFecha(j.creada)}</span></div>
       <div class="job-m">${j.n_contratos ? j.n_contratos + ' contrato(s)' : 'Todos los contratos'} · ${esc(j.regimenes || 'RS')}${j.sin_soportes ? ' · rápido' : ''}
         ${j.estado === 'corriendo' ? ` · ${j.hechos}/${j.total} · ${esc(j.actual || 'iniciando…')} · ${duracion(j.inicio)}` : ''}
-        ${j.fin ? ' · duró ' + duracion(j.inicio, j.fin) : ''}</div>
+        ${j.fin ? ' · duró ' + duracion(j.inicio, j.fin) : ''}
+        ${(j.intento || 1) > 1 ? ` · <b>reintento automático #${j.intento}</b>` : ''}
+        ${j.estado === 'en_cola' && j.no_antes && new Date(j.no_antes) > new Date() ? ` · ⏱ correrá a las ${new Date(j.no_antes).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}` : ''}</div>
+      ${j.estado === 'error' && j.resumen ? `<div class="job-m" style="color:var(--ink-2)">↻ ${esc(String(j.resumen).split('\n')[0])}</div>` : ''}
       ${j.estado === 'corriendo' ? `<div class="prog"><div style="width:${pct}%"></div></div>` : ''}
       <div class="acc">
         ${j.tiene_excel && puede('descargar_reportes') ? `<a class="btn sm" href="/api/excel?id=${j.id}">⬇ Excel</a>` : ''}

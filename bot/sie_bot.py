@@ -236,9 +236,30 @@ def evidencia(page, nombre):
 
 
 # --------------------------------------------------------------- navegación
+def ir(page, url, intentos=3):
+    """page.goto con reintentos: el SIE a veces tarda más de un minuto en responder."""
+    for i in range(intentos):
+        try:
+            return page.goto(url, wait_until="domcontentloaded", timeout=90000)
+        except PWTimeout:
+            if i == intentos - 1:
+                raise
+            log(f"  el SIE no respondió a tiempo; reintento {i + 2}/{intentos} en {15 * (i + 1)} s…")
+            page.wait_for_timeout(15000 * (i + 1))
+
+
+def aviso_sie(page):
+    """Texto del aviso amarillo/rojo que muestra el SIE (p. ej. 'El usuario ingresado se encuentra inactivo')."""
+    try:
+        t = page.locator(".ui-messages, .ui-growl, .ui-message").all_inner_texts()
+        return " ".join(" ".join(t).split())[:200]
+    except Exception:
+        return ""
+
+
 def iniciar_sesion(page, usuario, clave, anio):
     log("Abriendo login del SIE…")
-    page.goto(LOGIN_URL, wait_until="domcontentloaded")
+    ir(page, LOGIN_URL)
     page.locator("xpath=//label[normalize-space()='Usuario']/following::input[1]").fill(usuario)
     page.locator("input[type=password]").fill(clave)
     anio_in = page.locator("xpath=//label[normalize-space()='Año Trabajo']/following::input[1]")
@@ -250,19 +271,20 @@ def iniciar_sesion(page, usuario, clave, anio):
     except PWTimeout:
         if "login" in page.url:
             evidencia(page, "login_fallido")
-            sys.exit("No se pudo iniciar sesión. Revisa usuario/clave en el archivo .env")
+            msg = aviso_sie(page)
+            sys.exit(f"No se pudo iniciar sesión. SIE dice: {msg}" if msg
+                     else "No se pudo iniciar sesión. Revisa usuario/clave en el archivo .env")
     log("Sesión iniciada ✔")
 
 
 def abrir_consulta(page):
     log("Abriendo Consulta Recepción…")
-    page.goto(CONSULTA_URL, wait_until="domcontentloaded")
+    ir(page, CONSULTA_URL)
     esperar_ajax(page)
     if page.locator(f"xpath={xp_label('Número Contrato Prestador')}").count() == 0:
         # Plan B: entrar por el menú como lo haría una persona
         log("  entrando por el menú Gestión de Cuentas Médicas…")
-        page.goto(f"{BASE_URL}/medical_accounts.xhtml?URL_ANTERIOR=medical_accounts",
-                  wait_until="domcontentloaded")
+        ir(page, f"{BASE_URL}/medical_accounts.xhtml?URL_ANTERIOR=medical_accounts")
         page.get_by_text("Consulta Recepción", exact=True).first.click()
         page.wait_for_load_state("domcontentloaded")
         esperar_ajax(page)
@@ -838,6 +860,7 @@ def main():
             page = browser.new_page(viewport={"width": 1500, "height": 950},
                                     accept_downloads=True)
             page.set_default_timeout(30000)
+            page.set_default_navigation_timeout(90000)
             try:
                 iniciar_sesion(page, usuario, clave, a.anio)
                 abrir_consulta(page)
