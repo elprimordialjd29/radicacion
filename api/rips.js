@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   if (!(await requiere(req, res, 'descargar_rips'))) return;
   const { contrato = '', anio = '', mes = '', regimen = '', formato = 'txt', por = 'capita', meses = '' } = req.query;
   const qs = new URLSearchParams({ contrato, anio, mes, regimen, formato, por });
-  if (meses) qs.set('meses', meses);   // unificado: varios meses de atención en un solo archivo
+  if (meses) { qs.set('meses', meses); qs.delete('mes'); qs.delete('por'); }   // unificado: varios meses en un solo archivo
   try {
     const r = await worker('/rips?' + qs.toString(), { signal: AbortSignal.timeout(55000) });
     if (!r.ok) {
