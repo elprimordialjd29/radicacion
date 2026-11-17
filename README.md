@@ -1,27 +1,27 @@
 # Radicasión — seguimiento de radicación de contratos cápita
 
 Automatiza la consulta de **Gestión de Cuentas Médicas → Consulta Recepción** en el
-SIE de Dusakawi EPSI. Para cada contrato capitado identifica **qué periodos están
-radicados y cuáles faltan**. Publica el resultado en un **dashboard en Vercel**,
-protegido con clave.
+SIE de Dusakawi EPSI. Para cada contrato capitado (RS y RC) identifica **qué periodos están
+radicados y cuáles faltan**, descarga los **soportes RIPS** y calcula el mes con las **fechas de
+atención que trae el RIPS**. Lo publica en un **tablero web** con usuarios y permisos.
+
+Versión actual: **0.11.0** (ver [CHANGELOG.md](CHANGELOG.md)).
 
 ```
-┌──────────────── Tu Mac ────────────────┐        ┌──────────── Vercel ────────────┐
-│ bot/sie_bot.py (Playwright)            │        │ index.html  (dashboard)        │
-│  1. login SIE                          │  POST  │ api/subir.js ─► Blob PRIVADO   │
-│  2. Consulta Recepción por contrato    │ ─────► │ api/datos.js ◄─ Blob           │
-│  3. descarga soporte RIPS (hojita)     │ token  │ middleware.js (clave de acceso)│
-│  4. periodo = fechas ARCHIVO-CONSULTAS │        └────────────────────────────────┘
-│  5. Excel + historial.db + notificación│
-└────────────────────────────────────────┘
+ Usuarios ──► radicacion.vercel.app (Vercel)                    VPS Contabo (worker)
+              index.html · login.html                           nginx :8443 ─► FastAPI :8092
+              middleware.js (sesión firmada)   x-token          ├─ cola de consultas (reintentos)
+              api/*.js  ───────────────────────────────────────►├─ bot/sie_bot.py (Playwright) ─► SIE
+                                                                 ├─ soportes RIPS (datos de pacientes)
+                                                                 ├─ dashboard.json · usuarios.json
+                                                                 └─ seguridad.db (intentos, alertas)
+ Timer 12:00 m y 12:00 a. m. (hora Colombia) ─► consulta completa programada
 ```
 
-- **El repositorio es público.** Aquí solo va código. Las credenciales, el listado de
-  contratos, los soportes RIPS, el historial y los Excel están en `.gitignore` y
-  **nunca** se suben.
-- Los soportes RIPS contienen datos de pacientes y **se quedan en tu equipo**. Al
-  dashboard solo llegan datos agregados por radicación: contrato, recepción, IPS,
-  valor, periodo y número de radicación.
+- **El repositorio es público.** Aquí solo va código. Credenciales, listado de contratos,
+  soportes RIPS, historial, usuarios y Excel están fuera del repo (`.gitignore`) y viven en el servidor.
+- Los soportes RIPS contienen datos de pacientes: **se quedan en el servidor** y solo se entregan
+  a usuarios con permiso «Descargar RIPS».
 
 ## Inicio rápido
 
@@ -39,8 +39,8 @@ O haz doble clic en `bot/Radicacion.command`.
 
 | Documento | Contenido |
 |---|---|
-| [docs/USO.md](docs/USO.md) | Comandos, opciones y cómo leer el Excel y el dashboard |
-| [docs/VERCEL.md](docs/VERCEL.md) | Cómo conectar el repo a Vercel, Blob y variables |
-| [docs/SERVIDOR.md](docs/SERVIDOR.md) | Worker en el VPS: instalación, servicio, actualización |
+| [docs/USO.md](docs/USO.md) | Tablero (pestañas, descargas, unificado, reporte) y comandos del bot |
+| [docs/VERCEL.md](docs/VERCEL.md) | Proyecto en Vercel, variables, límite de funciones y seguridad |
+| [docs/SERVIDOR.md](docs/SERVIDOR.md) | Worker en el VPS: servicio, reintentos, alertas, claves, actualización |
 | [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) | Flujo, reglas de negocio, formato de datos |
 | [CHANGELOG.md](CHANGELOG.md) | Historial de versiones |

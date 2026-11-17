@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.11.0 — 2026-11-17
+- **Descarga RIPS unificada**: al elegir varios meses (p. ej. Jul–Sep o Mar–Sep) aparece, debajo
+  de cada contrato, «⬇ Unificado» con TXT y JSON por régimen. Un solo archivo con las
+  atenciones de todos esos meses: cada sección (consultas, procedimientos, urgencias,
+  medicamentos, otros servicios…) trae las líneas de todos los meses; usuarios sin repetir;
+  todas las facturas. Mismo formato y codificación del SIE (unir un solo mes da el archivo
+  original byte por byte). Solo descarga: los soportes guardados no se modifican.
+  Más de 4 MB → se entrega en .zip. (`rips_json.unir_planos`, worker `/rips?meses=`.)
+- **Reintentos automáticos**: si una consulta al SIE falla se vuelve a poner en cola sola
+  (5, 10, 20, 30 min y luego cada hora; hasta 10 intentos); se omite si otra igual ya terminó
+  bien. Correo de aviso si el SIE no deja iniciar sesión o si se agotan los intentos.
+- **SIE lento**: páginas con 90 s de espera y 3 intentos; el clic en «Ingresar» ya no espera
+  la navegación (causaba «Locator.click: Timeout 30000ms»); el ingreso se reintenta 3 veces.
+  El error muestra el aviso del SIE (p. ej. «El usuario ingresado se encuentra inactivo»).
+- **Régimen fijo**: las consultas siempre incluyen RS y RC (tablero y servidor).
+- Atenciones por mes: el nombre del mes aparece dentro de cada celda; buscar un número de
+  contrato exacto (o elegirlo en las sugerencias) muestra solo ese contrato.
+
+## 0.10.0 — 2026-10-29
+- **Datos y usuarios en el servidor**: Vercel Blob (plan Hobby) se suspendió por exceder la
+  cuota de operaciones. Ahora el tablero lee los datos (`bot/descargas/dashboard.json`) y los
+  usuarios (`bot/worker_datos/usuarios.json`) del worker del VPS; ya no se usa Blob.
+- **Seguridad**: bloqueo de 15 min tras 5 claves erradas del mismo usuario o 10 desde la
+  misma IP; registro de intentos sin permiso (clave errada, token inválido en la API o
+  directo al servidor, permiso negado, admin desde IP nueva) en Servidor → Seguridad;
+  alertas por correo (`deploy/configurar_alertas.py`); las sesiones se cierran al cambiar la
+  clave, desactivar el usuario o cambiar sus permisos; cabeceras CSP, HSTS, nosniff,
+  Referrer-Policy y Permissions-Policy.
+- Lecturas tolerantes a fallas pasajeras (reintentos y última copia buena) en Vercel y en el
+  tablero («Reconectando…» en vez de error).
+- Roles nuevos: «Descarga RIPS (solo tablero)» y «Reporte (ver y descargar)».
+- `api/rips-ext` (evaluador externo) entrega por defecto el RIPS por **mes de atención**
+  (antes daba la cápita inicial en cero para el primer mes).
+- Atenciones por mes: solo las columnas de los meses filtrados, contratos con RIPS primero y
+  aviso corto cuando un mes elegido aún está en plazo.
+- Se retiró el modo «rápido» (sin soportes): siempre se descargan los soportes RIPS.
+
+## 0.9.0 — 2026-10-15
+- **Resumen del reporte**: valor contratado, radicado (RS/RC), sin radicar vencido, radicado de
+  más fuera del margen (facturas y contratos por régimen) y **saldo de los contratos** con
+  «¿alcanza para los meses que faltan?»; barra con meses radicados, vencidos, en plazo y por
+  venir. Saldo también por prestador, por contrato, en el detalle y en los Excel.
+- Desviación por prestador/contrato: columnas ordenables (Desv. %, Desviación $, Ejecución),
+  ranking, barra por %, filtro de % mínimo; la relación de contratos en Excel respeta el orden.
+- Tablero por **mes de atención** (gráfica e indicadores coinciden con la tabla RIPS); meses en
+  plazo muestran el % parcial recibido.
+- Horas con zona horaria (sin duraciones negativas); el worker cierra siempre las conexiones
+  SQLite (una fuga agotaba los 1024 archivos y dejaba el tablero con error).
+
 ## 0.8.1 — 2026-10-07
 - **Validación factura (SIE) vs RIPS** en cada radicación: número de factura del RIPS, valor de
   la factura, fechas de las atenciones, usuarios y servicios; ✓ si las atenciones son del mes

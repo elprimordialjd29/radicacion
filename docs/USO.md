@@ -1,4 +1,46 @@
-# Uso del bot
+# Uso
+
+## Tablero (https://radicacion.vercel.app)
+
+### Filtros
+Año, Régimen, Tipo, Municipio y **Buscar** (prestador, contrato o NIT). Si escribes un número de
+contrato completo, o lo eliges en las sugerencias, se muestra **solo ese contrato**; si eliges el
+prestador, todos sus contratos. Meses: chips (varios a la vez) o rango **Desde / Hasta**.
+
+### Pestañas del Tablero
+| Pestaña | Qué muestra |
+|---|---|
+| Atenciones por mes (RIPS) | Contrato × **mes de atención** (fechas dentro del RIPS): usuarios RS/RC, descarga TXT/JSON por mes y **Unificado** |
+| Pendientes | Contratos con meses vencidos sin RIPS |
+| Radicaciones | Cada radicación: recepción, factura, fechas de atención, valor, fuente del periodo |
+| Corridas | Historial de consultas al SIE |
+
+Cada celda de Atenciones por mes lleva el nombre del mes arriba. ⏳ = aún en plazo, ✕ = sin RIPS,
+— = fuera de vigencia.
+
+### Descarga unificada de varios meses
+1. Elige los meses (p. ej. Jul, Ago, Sep o Desde Marzo / Hasta Septiembre).
+2. Debajo de cada contrato aparece **⬇ Unificado Jul–Sep** con **RS** y **RC**, cada uno **TXT** y **JSON**.
+3. El archivo trae en cada sección (consultas, procedimientos, urgencias, medicamentos, otros
+   servicios…) las líneas de **todos** esos meses; usuarios sin repetir; todas las facturas.
+   Nombre: `RIPS_<contrato>_atenciones_2026-07_a_2026-09_RS_unificado.txt`. Si pasa de 4 MB baja en .zip.
+
+### Consultar en el SIE
+Meses de atención y contratos (filtrados o todos); el régimen es siempre **RS y RC**. La consulta
+corre en el servidor (se puede cerrar la página). Si falla, se reintenta sola y se ve como
+«reintento automático #N · correrá a las HH:MM». No hace falta lanzarla de nuevo.
+
+### Reporte (permiso «Ver reporte»)
+Resumen (valor contratado, radicado RS/RC, sin radicar vencido, radicado de más fuera del margen,
+saldo de los contratos y si alcanza), facturas duplicadas, alertas, desviación por prestador o
+contrato (ordenable por %, $ o ejecución; filtro de % mínimo), periodos sin radicar y tabla
+detallada con saldo. Clic en una fila → detalle mes a mes con gráfica. Descargas en Excel y PDF.
+
+### Servidor (solo administradores)
+Memoria, disco, CPU, servicios, cola de consultas, almacenamiento y **Seguridad** (intentos sin
+permiso, bloqueos, estado del correo de alertas).
+
+## Bot por línea de comandos
 
 ```bash
 cd bot
@@ -10,12 +52,12 @@ cd bot
 
 | Opción | Qué hace |
 |---|---|
-| `--regimen RS` | Tipo Régimen en el SIE (RS por defecto; RC para contributivo) |
+| `--regimen RS,RC` | Regímenes a consultar (por defecto los dos) |
 | `--tipo Capita` | Tipo Contrato (elige la opción que contiene "Capita", p. ej. "Capita RS") |
 | `--contratos RUTA` | Excel o .txt de contratos (por defecto `SIE_CONTRATOS` del `.env`) |
 | `--solo C1 C2` | Consultar solo esos contratos |
 | `--incluir-fuera-vigencia` | Consulta también contratos que no estaban vigentes en el mes |
-| `--sin-soportes` | No descarga soportes; el mes sale de la Fecha Recepción (más rápido) |
+| `--sin-soportes` | No descarga soportes (no recomendado; el tablero ya no lo ofrece) |
 | `--por-recepcion` | Filtra por Fecha Recepción aunque se descarguen soportes |
 | `--oculto` | Navegador sin ventana |
 | `--no-publicar` | No sube nada al dashboard |
