@@ -107,6 +107,7 @@ tr:hover td { background: var(--surface-2); }
   border-radius: 5px; padding: 1px 5px; line-height: 1.5; background: var(--surface); }
 .dl a:hover { color: var(--accent); border-color: var(--accent); }
 .reg-tag { font-size: 10.5px; color: var(--ink-3); margin-left: 3px; }
+.unif { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; align-items: flex-start; } .unif small { font-size: 11px; color: var(--accent); font-weight: 600; }
 .mes-cel { font-size: 11px; font-weight: 650; letter-spacing: .02em; text-transform: uppercase; color: var(--ink-3); }
 .celda { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
 .celda .lin { display: flex; align-items: center; gap: 4px; }
@@ -561,6 +562,18 @@ function estado(c, anio, mes) {
 }
 const ripsUrl = (contrato, anio, mes, regimen, formato, por = 'capita') =>
   `/api/rips?${new URLSearchParams({ contrato, anio, mes, regimen, formato, por })}`;
+// varios meses elegidos → un solo RIPS por régimen con las atenciones de todos esos meses (solo descarga)
+function unificado(c, meses) {
+  if (!puede('descargar_rips') || meses.length < 2) return '';
+  const con = (rg) => meses.filter((m) => (D.idxAt[c.contrato]?.[st.anio + '-' + m] || []).some((r) => (r.regimen || 'RS') === rg));
+  const regs = ['RS', 'RC'].filter((rg) => (!st.reg || st.reg === rg) && con(rg).length > 1);
+  if (!regs.length) return '';
+  const url = (rg, f) => `/api/rips?${new URLSearchParams({ contrato: c.contrato, anio: st.anio, regimen: rg, formato: f, meses: con(rg).join(',') })}`;
+  return `<div class="unif"><small>⬇ Unificado ${MESES[meses[0] - 1]}–${MESES[meses[meses.length - 1] - 1]}</small>${regs.map((rg) => {
+    const ms = con(rg), tip = `Un solo RIPS ${rg} con las atenciones de ${ms.map((m) => MESES_L[m - 1]).join(', ')}`;
+    return `<span class="lin"><span class="rg">${rg}</span><span class="dl"><a href="${url(rg, 'txt')}" title="${tip} (TXT)">TXT</a><a href="${url(rg, 'json')}" title="${tip} (JSON)">JSON</a></span></span>`;
+  }).join('')}</div>`;
+}
 function botonesRips(contrato, anio, mes, regimen, por = 'capita') {
   if (!puede('descargar_rips')) return '';
   const r = regimen || st.reg;
@@ -757,7 +770,7 @@ function renderTabla(lista, meses) {
         fila.push('Sin RIPS'); return `<td><div class="celda">${mesCel}<span class="st no" title="No hay RIPS con atenciones de ${MESES_L[m - 1]}"><i>✕</i> Sin RIPS</span></div></td>`;
       }).join('');
       filasCsv.push(fila);
-      html += `<tr><td><b class="lnk" data-det="contrato" data-clave="${esc(c.contrato)}" title="Ver detalle explicado">${esc(c.contrato)}</b></td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.municipio)}</td>${celdas}</tr>`;
+      html += `<tr><td><b class="lnk" data-det="contrato" data-clave="${esc(c.contrato)}" title="Ver detalle explicado">${esc(c.contrato)}</b>${unificado(c, meses)}</td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.municipio)}</td>${celdas}</tr>`;
     }
     html += '</tbody></table>';
   } else if (st.tab === 'pend') {

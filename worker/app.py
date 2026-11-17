@@ -482,8 +482,8 @@ def _limpio(x):
 
 
 @app.get("/rips")
-def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "txt", por: str = "capita",
-         x_token: str = Header("")):
+def rips(contrato: str, anio: int, mes: int = 0, regimen: str = "", formato: str = "txt", por: str = "capita",
+         meses: str = "", x_token: str = Header("")):
     """Soporte(s) RIPS de un contrato para un periodo de atención (y régimen).
     Un archivo → se entrega directo; varios → .zip. formato = txt (original SIE) | json (Res. 2275)."""
     auth(x_token)
@@ -493,6 +493,8 @@ def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "
     hist = BOT / "historial.db"
     if not hist.exists():
         raise HTTPException(404, "Sin historial")
+    if meses:
+        return _rips_unificado(contrato, anio, meses, regimen, formato, hist)
     if por == "atencion":
         # por MES DE LAS ATENCIONES del RIPS (modelo vencido: mes de cápita - 1); excluye los RIPS en cero
         a_cap, m_cap = (anio + 1, 1) if mes == 12 else (anio, mes + 1)
@@ -544,6 +546,55 @@ def rips(contrato: str, anio: int, mes: int, regimen: str = "", formato: str = "
     sufijo = f"_{regimen.upper()}" if regimen else ""
     return Response(buf.getvalue(), media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{base}{sufijo}_{formato}.zip"'})
+
+
+def _rips_unificado(contrato, anio, meses, regimen, formato, hist):
+    """UN solo RIPS con las atenciones de varios meses (p. ej. jul+ago+sep): cada sección trae las
+    líneas de todos los meses. Solo para descargar; los archivos guardados no se modifican."""
+    try:
+        lista = sorted({int(m) for m in meses.split(",") if m.strip()})
+    except ValueError:
+        raise HTTPException(400, "meses inválidos")
+    if not lista or any(m < 1 or m > 12 for m in lista):
+        raise HTTPException(400, "meses inválidos")
+    regimen = regimen.upper()
+    if regimen not in ("RS", "RC"):
+        raise HTTPException(400, "Elige el régimen (RS o RC) para el unificado")
+    carpeta = BOT / "descargas" / "soportes" / _limpio(contrato)
+    textos, incluidos = [], []
+    with closing(sqlite3.connect(hist)) as con:
+        for m in lista:   # mes de atención m → viene en la cápita de m+1
+            a_cap, m_cap = (anio + 1, 1) if m == 12 else (anio, m + 1)
+            filas = con.execute(
+                "SELECT recepcion FROM registros WHERE contrato=? AND periodo_anio=? AND periodo_mes=? AND regimen=? "
+                "AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%') AND estado NOT LIKE 'NO VIGENTE%' "
+                "ORDER BY recepcion", (contrato, a_cap, m_cap, regimen)).fetchall()
+            for (rec,) in filas:
+                enc = sorted(carpeta.glob(f"{_limpio(rec)}__*"))
+                if enc:
+                    textos.append(rips_json.leer_archivo(enc[0]))
+                    incluidos.append(m)
+    if not textos:
+        raise HTTPException(404, "No hay RIPS con atenciones en esos meses")
+    plano = rips_json.unir_planos(textos)
+    nombre = (f"RIPS_{_limpio(contrato)}_atenciones_{anio}-{min(incluidos):02d}_a_{anio}-{max(incluidos):02d}"
+              f"_{regimen}_unificado.{formato}")
+    if formato == "json":
+        d = rips_json.a_json(plano)
+        datos = json.dumps(d[0] if len(d) == 1 else d, ensure_ascii=False, indent=1).encode("utf-8")
+        tipo = "application/json"
+    else:
+        datos = plano.encode("latin-1", "replace")   # mismo formato y codificación del SIE
+        tipo = "text/plain; charset=latin-1"
+    if len(datos) <= 4_000_000:
+        return Response(datos, media_type=tipo, headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+        z.writestr(nombre, datos)
+    if buf.tell() > 4_400_000:
+        raise HTTPException(413, "El unificado es demasiado grande para descargarlo en línea; elige menos meses.")
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{nombre.rsplit(".", 1)[0]}.zip"'})
 
 
 # ------------------------------------------------------------------ monitoreo (solo lectura)

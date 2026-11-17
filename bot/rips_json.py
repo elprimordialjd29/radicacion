@@ -161,6 +161,58 @@ def a_json(texto):
     return salida
 
 
+def _es_dato(s):
+    s = s.strip()
+    return bool(s) and s != "|" and not set(s) <= set("*|") and "FACTURAS*" not in s
+
+
+def _bloques(texto):
+    """Plano → lista ordenada de secciones con su marcador, encabezado y líneas de datos (sin tocarlas)."""
+    out, actual = [], None
+    for linea in texto.splitlines():
+        m = re.search(r"ARCHIVO-([A-Za-z_ ]+?)\s*-", linea)
+        if m:
+            nombre = m.group(1).strip().upper()
+            if actual and actual["nombre"] == nombre:      # marcador de cierre
+                out.append(actual); actual = None
+            else:                                           # marcador de apertura
+                if actual:
+                    out.append(actual)
+                actual = {"nombre": nombre, "marca": linea, "pre": [], "datos": []}
+            continue
+        if actual is None:
+            continue
+        if _es_dato(linea):
+            actual["datos"].append(linea)
+        elif not actual["datos"]:
+            actual["pre"].append(linea)                     # renglón en blanco / ****USUARIOS****
+    if actual:
+        out.append(actual)
+    return out
+
+
+def unir_planos(textos):
+    """Une varios planos del SIE (p. ej. julio + agosto + septiembre) en UNO con el mismo formato:
+    cada sección (USUARIOS, FACTURAS, CONSULTAS, PROCEDIMIENTOS…) trae las líneas de todos los meses.
+    USUARIOS sin repetir (tipo + número de documento); FACTURAS sin repetir; servicios todos, en orden."""
+    secciones = {}
+    for t in textos:
+        for b in _bloques(t):
+            s = secciones.setdefault(b["nombre"], {"marca": b["marca"], "pre": b["pre"], "datos": [], "vistos": set()})
+            for l in b["datos"]:
+                if b["nombre"] in ("USUARIOS", "FACTURAS"):
+                    c = _campos(l)
+                    clave = tuple(c[:2]) if b["nombre"] == "USUARIOS" else l.strip()
+                    if clave in s["vistos"]:
+                        continue
+                    s["vistos"].add(clave)
+                s["datos"].append(l)
+    lineas = []
+    for s in secciones.values():
+        lineas += [s["marca"], *s["pre"], *s["datos"], s["marca"], "   |"]
+    return "\r\n".join(lineas) + "\r\n"
+
+
 def leer_archivo(ruta):
     b = Path(ruta).read_bytes()
     for enc in ("utf-8", "latin-1"):
