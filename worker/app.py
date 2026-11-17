@@ -408,7 +408,7 @@ def crear(c: NuevaConsulta, x_token: str = Header("")):
     auth(x_token)
     if any(m < 1 or m > 12 for m in c.meses):
         raise HTTPException(400, "Mes inválido")
-    regs = sorted({r.upper() for r in c.regimenes if r.upper() in ("RS", "RC")})
+    regs = ["RC", "RS"]   # siempre los dos regímenes (subsidiado y contributivo)
     if not regs:
         raise HTTPException(400, "Elige al menos un régimen (RS o RC)")
     if c.catalogo:

@@ -413,8 +413,9 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
             <label class="chk"><input type="radio" name="cAlc" value="todos"> <span id="cAlcTodos">Todos</span></label>
           </div>
           <div class="fld"><span class="lbl">Régimen</span>
-            <label class="chk"><input type="checkbox" class="cReg" value="RS" checked> Subsidiado (Capita RS)</label>
-            <label class="chk"><input type="checkbox" class="cReg" value="RC" checked> Contributivo (Capita RC)</label>
+            <label class="chk"><input type="checkbox" class="cReg" value="RS" checked disabled> Subsidiado (Capita RS)</label>
+            <label class="chk"><input type="checkbox" class="cReg" value="RC" checked disabled> Contributivo (Capita RC)</label>
+            <small class="muted" style="display:block">Siempre se consultan los dos regímenes.</small>
           </div>
           <div style="margin-top:8px"><button class="btn primary" id="btnConsultar">▶ Consultar en SIE</button></div>
           <div class="aviso" id="cAviso">La consulta corre en el servidor; puedes cerrar esta página y volver luego.</div>
@@ -1622,8 +1623,7 @@ $('#jobs').addEventListener('click', async (e) => {
 $('#btnConsultar').onclick = async () => {
   const meses = [...document.querySelectorAll('#cMeses input:checked')].map((x) => +x.value);
   if (!meses.length) return alert('Elige al menos un mes.');
-  const regimenes = [...document.querySelectorAll('.cReg:checked')].map((x) => x.value);
-  if (!regimenes.length) return alert('Elige al menos un régimen.');
+  const regimenes = ['RS', 'RC'];   // fijo: siempre los dos
   const alc = document.querySelector('input[name="cAlc"]:checked').value;
   const contratos = alc === 'todos' ? [] : filtrados().map((c) => c.contrato);
   if (alc !== 'todos' && !contratos.length) return alert('No hay contratos con el filtro actual.');

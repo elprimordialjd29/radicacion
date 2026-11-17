@@ -257,7 +257,19 @@ def aviso_sie(page):
         return ""
 
 
-def iniciar_sesion(page, usuario, clave, anio):
+def iniciar_sesion(page, usuario, clave, anio, intentos=3):
+    """Ingresa al SIE; si el SIE tarda en responder al botón Ingresar, vuelve a intentar."""
+    for i in range(intentos):
+        try:
+            return _iniciar_sesion(page, usuario, clave, anio)
+        except PWTimeout:
+            if i == intentos - 1:
+                raise
+            log(f"  el SIE tardó demasiado en el ingreso; reintento {i + 2}/{intentos} en {20 * (i + 1)} s…")
+            page.wait_for_timeout(20000 * (i + 1))
+
+
+def _iniciar_sesion(page, usuario, clave, anio):
     log("Abriendo login del SIE…")
     ir(page, LOGIN_URL)
     page.locator("xpath=//label[normalize-space()='Usuario']/following::input[1]").fill(usuario)
@@ -265,9 +277,10 @@ def iniciar_sesion(page, usuario, clave, anio):
     anio_in = page.locator("xpath=//label[normalize-space()='Año Trabajo']/following::input[1]")
     if anio_in.count():
         anio_in.fill(str(anio))
-    page.get_by_role("button", name="Ingresar").click()
+    # el SIE puede tardar más de 30 s en entrar: no esperar la navegación dentro del clic
+    page.get_by_role("button", name="Ingresar").click(no_wait_after=True)
     try:
-        page.wait_for_url(re.compile(r"home\.xhtml|index\.xhtml"), timeout=30000)
+        page.wait_for_url(re.compile(r"home\.xhtml|index\.xhtml"), timeout=90000)
     except PWTimeout:
         if "login" in page.url:
             evidencia(page, "login_fallido")
