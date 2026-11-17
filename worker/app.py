@@ -482,7 +482,7 @@ def _limpio(x):
 
 
 @app.get("/rips")
-def rips(contrato: str, anio: int, mes: int = 0, regimen: str = "", formato: str = "txt", por: str = "capita",
+def rips(contrato: str, anio: int, mes: str = "", regimen: str = "", formato: str = "txt", por: str = "capita",
          meses: str = "", x_token: str = Header("")):
     """Soporte(s) RIPS de un contrato para un periodo de atención (y régimen).
     Un archivo → se entrega directo; varios → .zip. formato = txt (original SIE) | json (Res. 2275)."""
@@ -495,6 +495,10 @@ def rips(contrato: str, anio: int, mes: int = 0, regimen: str = "", formato: str
         raise HTTPException(404, "Sin historial")
     if meses:
         return _rips_unificado(contrato, anio, meses, regimen, formato, hist)
+    try:   # "mes" llega como texto (puede venir vacío desde el tablero)
+        mes = int(mes)
+    except ValueError:
+        raise HTTPException(400, "Falta el mes")
     if por == "atencion":
         # por MES DE LAS ATENCIONES del RIPS (modelo vencido: mes de cápita - 1); excluye los RIPS en cero
         a_cap, m_cap = (anio + 1, 1) if mes == 12 else (anio, mes + 1)
