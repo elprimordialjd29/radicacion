@@ -4,12 +4,16 @@
 - **Frecuencia de uso** (nueva pestaña, permiso «Ver reporte»): cuántas veces se reportó cada CUPS
   en los RIPS (consultas, procedimientos, medicamentos y otros servicios) y cuántos pacientes
   distintos, por **total del tipo de contrato** (p. ej. todos los DNT), **departamento**,
-  **municipio** y **contrato**. Opción «Solo pacientes con diagnóstico del catálogo».
-- Tabla de **diagnósticos** (CIE-10, principal o relacionados) agrupados (riesgo, aguda moderada,
+  **municipio** y **contrato**. - Tabla de **diagnósticos** (CIE-10, principal o relacionados) agrupados (riesgo, aguda moderada,
   aguda severa…): pacientes y atenciones.
 - **Catálogo por tipo de contrato** (DNT, PMS, ASE…): el administrador pega desde Excel las
   columnas DESCRIPCIÓN · CUPS (varios CUPS por celda) y CIE-10 · GRUPO. Actividades sin código se
   listan aparte. Excel con hojas CUPS, Diagnósticos y Resumen.
+- **Por grupo** (p. ej. riesgo de desnutrición, aguda moderada, aguda severa): el catálogo se pega con
+  tres columnas GRUPO · DESCRIPCIÓN · CUPS (celdas combinadas de Excel se rellenan hacia abajo) y los
+  diagnósticos con su grupo; cada CUPS de un grupo se cuenta en los pacientes con diagnóstico de ese
+  grupo (si un paciente tiene varios grupos en el mes, queda en el más severo). Opción «Contar en
+  todos los pacientes».
 - Usa los meses de atención y el régimen elegidos arriba; la búsqueda de prestador/contrato limita
   las columnas. Cada RIPS se lee una sola vez y queda en caché (`worker_datos/frecuencia_cache/`).
   Departamento = código DIVIPOLA del número de contrato (20 Cesar, 44 La Guajira, 47 Magdalena…).

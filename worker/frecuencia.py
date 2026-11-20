@@ -55,33 +55,56 @@ def _filas(texto):
     return [[c.strip() for c in f] for f in csv.reader(io.StringIO(texto), delimiter=sep) if any(c.strip() for c in f)]
 
 
+def _grupo(t):
+    return re.sub(r"\s+", " ", str(t or "")).strip().upper()
+
+
 def parse_catalogo(texto_act, texto_dx):
-    actividades, sin_codigo = {}, []
-    for f in _filas(texto_act):
-        if len(f) < 2:
-            f = f + [""]
-        desc, cods = f[0], f[1]
-        if desc.upper().startswith("DESCRIPCION") and "CUPS" in cods.upper():
-            continue   # encabezado
+    """Actividades: 3 columnas GRUPO · DESCRIPCIÓN · CUPS (el grupo puede venir solo en una fila de un
+    bloque combinado de Excel: se rellena hacia abajo; las filas antes del primer grupo van al primero)
+    o 2 columnas DESCRIPCIÓN · CUPS (un solo grupo). Diagnósticos: CIE-10 · GRUPO."""
+    filas = [f for f in _filas(texto_act)
+             if not (len(f) >= 2 and any(x.upper().startswith("DESCRIPCION") for x in f) and "CUPS" in " ".join(f).upper())]
+    tres = any(len(f) >= 3 for f in filas)
+    crudas, grupo, pendientes = [], "", []
+    for f in filas:
+        f = f + [""] * (3 - len(f))
+        g, desc, cods = (f[0], f[1], f[2]) if tres else ("", f[0], f[1])
+        if g.strip():
+            grupo = _grupo(g)
+            for r in pendientes:   # filas sin grupo antes del primero → ese grupo
+                r[0] = grupo
+            pendientes = []
+        r = [grupo, desc.strip(), cods]
+        crudas.append(r)
+        if not grupo:
+            pendientes.append(r)
+    grupos, actividades, sin_codigo = [], {}, []
+    for g, desc, cods in crudas:
+        g = g or "GENERAL"
+        if g not in grupos:
+            grupos.append(g)
         codigos = [_codigo(x) for x in re.split(r"[,;\n]+|\s+(?=\d)", cods) if _codigo(x)]
         codigos = [c for c in codigos if c not in ("N/A", "NA", "-")]
         if not codigos:
-            if desc and desc not in sin_codigo:
-                sin_codigo.append(desc)
+            if desc and {"grupo": g, "descripcion": desc} not in sin_codigo:
+                sin_codigo.append({"grupo": g, "descripcion": desc})
             continue
         for c in codigos:
-            a = actividades.setdefault(c, {"codigo": c, "descripciones": []})
+            a = actividades.setdefault((g, c), {"grupo": g, "codigo": c, "descripciones": []})
             if desc and desc.upper() not in [d.upper() for d in a["descripciones"]]:
                 a["descripciones"].append(desc)
     diagnosticos = {}
     for f in _filas(texto_dx):
-        if len(f) < 2:
-            f = f + [""]
+        f = f + [""] * (2 - len(f))
         a, b = _codigo(f[0]), f[1].strip()
-        cod, grupo = (a, b) if RE_CIE.match(a) else (_codigo(b), f[0].strip())
+        cod, gr = (a, b) if RE_CIE.match(a) else (_codigo(b), f[0].strip())
         if RE_CIE.match(cod):
-            diagnosticos.setdefault(cod, {"codigo": cod, "grupo": grupo.upper()})
-    return {"actividades": list(actividades.values()), "sin_codigo": sin_codigo,
+            gr = _grupo(gr) or (grupos[0] if len(grupos) == 1 else "GENERAL")
+            diagnosticos.setdefault(cod, {"codigo": cod, "grupo": gr})
+            if gr not in grupos:
+                grupos.append(gr)
+    return {"grupos": grupos, "actividades": list(actividades.values()), "sin_codigo": sin_codigo,
             "diagnosticos": list(diagnosticos.values())}
 
 
@@ -156,8 +179,11 @@ class Frecuencia:
         cat = self.catalogo().get(tipo)
         if not cat:
             return {"tipo": tipo, "sin_catalogo": True}
-        cods = {a["codigo"] for a in cat["actividades"]}
         dxcat = {d["codigo"]: d["grupo"] for d in cat["diagnosticos"]}
+        orden_g = cat.get("grupos") or sorted({d["grupo"] for d in cat["diagnosticos"]})
+        sev = {gr: i for i, gr in enumerate(orden_g)}   # los grupos van de menos a más severo
+        acts = [(a.get("grupo", "GENERAL"), a["codigo"]) for a in cat["actividades"]]
+        cods = {c for _, c in acts}
         contratos = {c["contrato"]: c for c in contratos_meta if c["contrato"].upper().startswith(tipo + "-")}
         # grupos: clave → acumuladores (pacientes como conjuntos para no contar dos veces)
         grupos = {}
@@ -166,7 +192,8 @@ class Frecuencia:
             k = (nivel, nombre)
             if k not in grupos:
                 grupos[k] = {"nivel": nivel, "nombre": nombre, "svc": {}, "pac": {}, "svc_dx": {}, "pac_dx": {},
-                             "dx_pac": {}, "dx_svc": {}, "pacientes": set(), "pacientes_dx": set(), "archivos": 0}
+                             "dx_pac": {}, "dx_svc": {}, "pacientes": set(), "pacientes_dx": set(), "archivos": 0,
+                             "pac_grupo": {}}
             return grupos[k]
 
         carpeta = self.bot / "descargas" / "soportes"
@@ -187,19 +214,27 @@ class Frecuencia:
                             continue
                         R = self._resumen(enc[0])
                         pref = f"{contrato}|"   # un paciente es distinto en cada contrato
-                        con_dx = {p for p, dxs in R["dxp"].items() if any(d in dxcat for d in dxs)}
+                        # cada paciente queda en el grupo MÁS SEVERO de sus diagnósticos del catálogo en ese RIPS
+                        grupo_de = {}
+                        for p, dxs in R["dxp"].items():
+                            gs = [dxcat[d] for d in dxs if d in dxcat]
+                            if gs:
+                                grupo_de[p] = max(gs, key=lambda x: sev.get(x, -1))
                         destinos = [g("total", f"Total {tipo}"), g("departamento", departamento(contrato)),
                                     g("municipio", meta.get("municipio") or "—"),
                                     g("contrato", contrato)]
                         for G in destinos:
                             G["archivos"] += 1
-                            for cod in cods:
+                            for p, gr in grupo_de.items():
+                                G["pac_grupo"].setdefault(gr, set()).add(pref + p)
+                            for gr, cod in acts:
+                                k = f"{gr}|{cod}"
                                 for p, n in R["svc"].get(cod, {}).items():
-                                    G["svc"][cod] = G["svc"].get(cod, 0) + n
-                                    G["pac"].setdefault(cod, set()).add(pref + p)
-                                    if p in con_dx:
-                                        G["svc_dx"][cod] = G["svc_dx"].get(cod, 0) + n
-                                        G["pac_dx"].setdefault(cod, set()).add(pref + p)
+                                    G["svc"][k] = G["svc"].get(k, 0) + n            # todos los pacientes
+                                    G["pac"].setdefault(k, set()).add(pref + p)
+                                    if grupo_de.get(p) == gr:                      # pacientes de ese grupo
+                                        G["svc_dx"][k] = G["svc_dx"].get(k, 0) + n
+                                        G["pac_dx"].setdefault(k, set()).add(pref + p)
                             for p, dxs in R["dxp"].items():
                                 G["pacientes"].add(pref + p)
                                 for d in dxs:
@@ -215,8 +250,10 @@ class Frecuencia:
             salida.append({
                 "nivel": G["nivel"], "nombre": G["nombre"], "archivos": G["archivos"],
                 "pacientes": len(G["pacientes"]), "pacientes_dx": len(G["pacientes_dx"]),
-                "actividades": {c: [G["svc"].get(c, 0), len(G["pac"].get(c, ())), G["svc_dx"].get(c, 0),
-                                    len(G["pac_dx"].get(c, ()))] for c in cods},
+                # actividades["GRUPO|CUPS"] = [veces en pacientes del grupo, pacientes del grupo, veces en todos, pacientes todos]
+                "actividades": {f"{gr}|{c}": [G["svc_dx"].get(f"{gr}|{c}", 0), len(G["pac_dx"].get(f"{gr}|{c}", ())),
+                                              G["svc"].get(f"{gr}|{c}", 0), len(G["pac"].get(f"{gr}|{c}", ()))] for gr, c in acts},
+                "pacientes_grupo": {gr: len(G["pac_grupo"].get(gr, ())) for gr in orden_g},
                 "diagnosticos": {d: [len(G["dx_pac"].get(d, ())), G["dx_svc"].get(d, 0)] for d in dxcat},
             })
         for s in salida:   # prestador / municipio de cada contrato, para mostrarlo
@@ -224,5 +261,5 @@ class Frecuencia:
                 c = contratos.get(s["nombre"], {})
                 s["prestador"], s["municipio"] = c.get("prestador", ""), c.get("municipio", "")
         return {"tipo": tipo, "anio": anio, "meses": meses, "regimen": regimen or "RS+RC",
-                "catalogo": {k: cat[k] for k in ("actividades", "sin_codigo", "diagnosticos", "actualizado", "por")},
+                "catalogo": {"grupos": orden_g, **{k: cat.get(k) for k in ("actividades", "sin_codigo", "diagnosticos", "actualizado", "por")}},
                 "grupos": salida, "contratos_tipo": len(contratos)}

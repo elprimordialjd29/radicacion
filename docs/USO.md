@@ -39,13 +39,16 @@ detallada con saldo. Clic en una fila → detalle mes a mes con gráfica. Descar
 ### Frecuencia de uso (permiso «Ver reporte»)
 Elige el **tipo de contrato** (DNT, PMS…), los meses de atención arriba y la vista
 **Departamento / Municipio / Contrato**. La primera columna es la **frecuencia total** de todos los
-contratos de ese tipo. Cada celda: veces que se reportó el CUPS y, debajo, pacientes distintos.
-«Solo pacientes con diagnóstico del catálogo» cuenta solo en pacientes que tienen un diagnóstico
-de la lista en ese RIPS. Abajo, los diagnósticos por grupo (pacientes y atenciones). ⬇ Excel.
+contratos de ese tipo. La tabla va por **grupo** (riesgo, aguda moderada, aguda severa…): cada grupo
+muestra sus pacientes con diagnóstico y sus CUPS; cada CUPS se cuenta en los pacientes con
+diagnóstico de ese grupo (un paciente con varios grupos en el mes queda en el más severo). Cada
+celda: veces que se reportó el CUPS y, debajo, pacientes distintos. «Contar en todos los pacientes»
+cuenta el CUPS en todos los pacientes del RIPS. Abajo, los diagnósticos por grupo (pacientes y atenciones). ⬇ Excel.
 
 **Cargar el catálogo** (administrador): «⬆ Cargar CUPS y diagnósticos» → tipo de contrato y pegar
-desde Excel: actividades (DESCRIPCIÓN · CUPS, varios CUPS en una celda separados por coma o punto
-y coma) y diagnósticos (CIE-10 · GRUPO). Reemplaza el catálogo anterior de ese tipo.
+desde Excel: actividades (GRUPO · DESCRIPCIÓN · CUPS; el grupo puede estar en una celda combinada;
+varios CUPS en una celda separados por coma o punto y coma) y diagnósticos (CIE-10 · GRUPO, con el
+mismo nombre de grupo). Reemplaza el catálogo anterior de ese tipo.
 
 ### Servidor (solo administradores)
 Memoria, disco, CPU, servicios, cola de consultas, almacenamiento y **Seguridad** (intentos sin
