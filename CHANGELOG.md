@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.12.0 — 2026-11-20
+- **Frecuencia de uso** (nueva pestaña, permiso «Ver reporte»): cuántas veces se reportó cada CUPS
+  en los RIPS (consultas, procedimientos, medicamentos y otros servicios) y cuántos pacientes
+  distintos, por **total del tipo de contrato** (p. ej. todos los DNT), **departamento**,
+  **municipio** y **contrato**. Opción «Solo pacientes con diagnóstico del catálogo».
+- Tabla de **diagnósticos** (CIE-10, principal o relacionados) agrupados (riesgo, aguda moderada,
+  aguda severa…): pacientes y atenciones.
+- **Catálogo por tipo de contrato** (DNT, PMS, ASE…): el administrador pega desde Excel las
+  columnas DESCRIPCIÓN · CUPS (varios CUPS por celda) y CIE-10 · GRUPO. Actividades sin código se
+  listan aparte. Excel con hojas CUPS, Diagnósticos y Resumen.
+- Usa los meses de atención y el régimen elegidos arriba; la búsqueda de prestador/contrato limita
+  las columnas. Cada RIPS se lee una sola vez y queda en caché (`worker_datos/frecuencia_cache/`).
+  Departamento = código DIVIPOLA del número de contrato (20 Cesar, 44 La Guajira, 47 Magdalena…).
+
 ## 0.11.0 — 2026-11-17
 - **Descarga RIPS unificada**: al elegir varios meses (p. ej. Jul–Sep o Mar–Sep) aparece, debajo
   de cada contrato, «⬇ Unificado» con TXT y JSON por régimen. Un solo archivo con las

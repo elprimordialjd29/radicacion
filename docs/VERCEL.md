@@ -22,7 +22,7 @@ Después de cambiar variables: **Deployments → Redeploy**.
 Hoy: `cuenta`, `consultas`, `datos`, `subir`, `excel`, `rips`, `usuarios`, `monitor`, `duplicados`,
 `evaluar`, `rips-ext` + `middleware` = 12. Los archivos que empiezan por `_` (`_auth`, `_sesion`,
 `_usuarios`, `_blob`, `_seguridad`) son módulos compartidos, no funciones. Login, logout, sesión y
-cambio de clave van en `api/cuenta.js` (rewrites en `vercel.json`). **Antes de agregar una función,
+cambio de clave van en `api/cuenta.js`; duplicados y frecuencia de uso en `api/duplicados.js` (rewrites en `vercel.json`). **Antes de agregar una función,
 agrupar en una existente.**
 
 ## Usuarios y permisos

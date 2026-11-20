@@ -63,6 +63,7 @@ correo de prueba y solo guarda si llegó.
 | `GET/PUT /usuarios` | Usuarios del tablero |
 | `GET /monitor` | Memoria, disco, CPU, servicios, cola, almacenamiento y seguridad |
 | `GET /duplicados`, `GET /duplicados/excel` | Análisis de facturas duplicadas |
+| `GET /frecuencia`, `GET /frecuencia/catalogo`, `PUT /frecuencia/catalogo/{tipo}` | Frecuencia de uso de CUPS y diagnósticos; catálogo en `worker_datos/frecuencia_catalogo.json` |
 | `POST /seguridad/evento`, `GET /seguridad/estado`, `GET /seguridad`, `POST /seguridad/prueba` | Registro, bloqueos y alertas |
 
 Toda respuesta 401 del worker se registra como intento externo (`token_invalido_servidor`).
