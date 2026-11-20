@@ -45,8 +45,9 @@ diagnóstico de ese grupo (un paciente con varios grupos en el mes queda en el m
 celda: veces que se reportó el CUPS y, debajo, pacientes distintos. «Contar en todos los pacientes»
 cuenta el CUPS en todos los pacientes del RIPS. Abajo, los diagnósticos por grupo (pacientes y atenciones). ⬇ Excel.
 
-**Cargar el catálogo** (administrador): «⬆ Cargar CUPS y diagnósticos» → tipo de contrato y pegar
-desde Excel: actividades (GRUPO · DESCRIPCIÓN · CUPS; el grupo puede estar en una celda combinada;
+**Cargar el catálogo** (administrador): «⬆ Cargar CUPS y diagnósticos» → tipo de contrato y
+**📄 Cargar desde Excel** (el archivo con las columnas ACTIVIDAD · DESCRIPCIÓN DEL CUPS · CUPS y, en la
+misma hoja o en otra, CIE-10 · GRUPO), o pegar desde Excel: actividades (GRUPO · DESCRIPCIÓN · CUPS; el grupo puede estar en una celda combinada;
 varios CUPS en una celda separados por coma o punto y coma) y diagnósticos (CIE-10 · GRUPO, con el
 mismo nombre de grupo). Reemplaza el catálogo anterior de ese tipo.
 

@@ -110,6 +110,7 @@ tr:hover td { background: var(--surface-2); }
 .usr-ver { padding: 6px 12px 2px; font-size: 11px; color: var(--ink-3); border-top: 1px solid var(--border); margin-top: 4px; }
 .fr-tabla td small, .fr-tabla th small { display: block; font-size: 11px; color: var(--ink-3); font-weight: 400; } .fr-tabla tr.fr-grupo td { background: var(--surface-2); border-top: 2px solid var(--border); } .fr-tabla tr.fr-grupo small { display: block; font-weight: 400; }
 .fr-tabla .fr-tot { background: var(--accent-soft); font-weight: 650; }
+.fr-subir { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; } .fr-subir .sub { flex: 1; min-width: 240px; font-size: 12px; }
 .fr-lbl { display: block; margin-top: 10px; font-size: 13px; } .fr-lbl textarea { width: 100%; margin-top: 4px; font: 12px ui-monospace, monospace; background: var(--surface-2); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
 .unif { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; align-items: flex-start; } .unif small { font-size: 11px; color: var(--accent); font-weight: 600; }
 .mes-cel { font-size: 11px; font-weight: 650; letter-spacing: .02em; text-transform: uppercase; color: var(--ink-3); }
@@ -366,7 +367,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.12.1</div>
+          <div class="usr-ver">Radicación cápita · v0.12.2</div>
         </div>
       </div>
     </div>
@@ -1478,11 +1479,24 @@ function abrirCatalogoFrec() {
   mostrarModal(`<div class="dt-cab"><div><div class="rp-kicker">Frecuencia de uso</div><h3 id="modalTitulo" class="dt-titulo">Cargar CUPS y diagnósticos</h3>
       <div class="sub">Copia las dos columnas desde Excel y pégalas. Reemplaza el catálogo anterior de ese tipo de contrato.</div></div></div>
     <label class="fr-lbl">Tipo de contrato <input id="frcTipo" value="${esc(frTipo)}" maxlength="6" style="width:90px;text-transform:uppercase"></label>
+    <div class="fr-subir"><label class="btn sm">📄 Cargar desde Excel<input type="file" id="frcArchivo" accept=".xlsx,.xls,.xlsm,.csv" hidden></label>
+      <span class="sub" id="frcLeido">El Excel debe tener las columnas <b>ACTIVIDAD</b> (o GRUPO) · <b>DESCRIPCIÓN DEL CUPS</b> · <b>CUPS</b>, y los diagnósticos (<b>CIE-10</b> · <b>GRUPO</b>) en la misma hoja o en otra. Se lee en tu equipo y llena los campos de abajo para revisarlos.</span></div>
     <label class="fr-lbl">Actividades: <b>GRUPO</b> · <b>DESCRIPCIÓN</b> · <b>CUPS</b> (copia las tres columnas; el grupo puede venir en una celda combinada; varios CUPS en una celda separados por coma o punto y coma)
       <textarea id="frcAct" rows="10" placeholder="CONSULTA DE PRIMERA VEZ POR MEDICINA GENERAL&#9;890201">${esc(c.texto_actividades || '')}</textarea></label>
     <label class="fr-lbl">Diagnósticos: <b>CIE-10</b> · <b>GRUPO</b> (p. ej. E440 · DESNUTRICION AGUDA MODERADA)
       <textarea id="frcDx" rows="8" placeholder="E440&#9;DESNUTRICION AGUDA MODERADA">${esc(c.texto_diagnosticos || '')}</textarea></label>
     <div class="rp-acciones" style="margin-top:10px"><button class="btn primary" id="frcGuardar">Guardar catálogo</button><span id="frcMsg" class="sub"></span></div>`);
+  $('#frcArchivo').onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    $('#frcLeido').textContent = 'Leyendo ' + f.name + '…';
+    try {
+      const r = await leerExcelCatalogo(f);
+      if (!r.act && !r.dx) throw new Error('No encontré las columnas DESCRIPCIÓN y CUPS ni códigos CIE-10.');
+      if (r.act) $('#frcAct').value = r.act;
+      if (r.dx) $('#frcDx').value = r.dx;
+      $('#frcLeido').innerHTML = `✓ ${esc(f.name)}: ${fmtN(r.nAct)} filas de actividades (${r.grupos.length ? r.grupos.map(esc).join(' · ') : 'sin columna de grupo'}) y ${fmtN(r.nDx)} diagnósticos. Revisa y pulsa «Guardar catálogo».`;
+    } catch (err) { $('#frcLeido').textContent = '✕ ' + err.message; }
+  };
   $('#frcGuardar').onclick = async () => {
     const tipo = $('#frcTipo').value.trim().toUpperCase();
     $('#frcMsg').textContent = 'Guardando…';
@@ -1495,6 +1509,45 @@ function abrirCatalogoFrec() {
       FRCAT = null; frTipo = tipo; frClave = ''; setTimeout(() => { cerrarDetalle(); render(); }, 900);
     } catch (e) { $('#frcMsg').textContent = '✕ ' + e.message; }
   };
+}
+// Lee el Excel del catálogo en el navegador (SheetJS) y lo deja como texto con tabulaciones, igual
+// que si se hubiera copiado y pegado: busca la fila de encabezado con DESCRIPCIÓN y CUPS (y ACTIVIDAD/
+// GRUPO) y, en cualquier hoja, las filas con un código CIE-10 y su grupo.
+async function leerExcelCatalogo(archivo) {
+  const X = await libXlsx();
+  const wb = X.read(await archivo.arrayBuffer(), { type: 'array' });
+  const celda = (v) => { const t = String(v ?? '').trim(); return /[\t\n"]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const N = (v) => norm(String(v ?? ''));
+  const CIE = /^[A-Z]\d{2}[0-9X]$/;
+  let act = [], dx = [], grupos = new Set();
+  for (const nombre of wb.SheetNames) {
+    const filas = X.utils.sheet_to_json(wb.Sheets[nombre], { header: 1, raw: false, defval: '' });
+    // actividades: fila de encabezado con DESCRIPCIÓN y CUPS
+    const h = filas.findIndex((f) => f.some((c) => N(c).includes('descrip')) && f.some((c) => N(c) === 'cups' || N(c).startsWith('cups')));
+    let fin = -1;
+    if (h >= 0 && !act.length) {
+      const cab = filas[h].map(N);
+      const cD = cab.findIndex((c) => c.includes('descrip')), cC = cab.findIndex((c) => c === 'cups' || c.startsWith('cups'));
+      const cG = cab.findIndex((c, i) => i !== cD && i !== cC && /actividad|grupo|clasific|ruta/.test(c));
+      let vacias = 0;
+      for (let i = h + 1; i < filas.length && vacias < 3; i++) {
+        const f = filas[i], d = String(f[cD] ?? '').trim(), c = String(f[cC] ?? '').trim(), g = cG >= 0 ? String(f[cG] ?? '').trim() : '';
+        if (!d && !c && !g) { vacias++; continue; }
+        vacias = 0; fin = i;
+        if (g) grupos.add(g.replace(/\s+/g, ' ').toUpperCase());
+        act.push(cG >= 0 ? [celda(g), celda(d), celda(c)].join('\t') : [celda(d), celda(c)].join('\t'));
+      }
+    }
+    // diagnósticos: cualquier fila con un código CIE-10 y un texto (el grupo), fuera del bloque de actividades
+    filas.forEach((f, i) => {
+      if (h >= 0 && i >= h && i <= fin) return;
+      const k = f.findIndex((c) => CIE.test(String(c).trim().toUpperCase()));
+      if (k < 0) return;
+      const g = f.find((c, j) => j !== k && String(c).trim().length > 3 && !CIE.test(String(c).trim().toUpperCase()));
+      if (g) dx.push([String(f[k]).trim().toUpperCase(), celda(g)].join('\t'));
+    });
+  }
+  return { act: act.join('\n'), dx: dx.join('\n'), nAct: act.length, nDx: dx.length, grupos: [...grupos] };
 }
 async function exportarFrecuenciaExcel() {
   const X = await libXlsx(); if (!FR?.grupos) return;

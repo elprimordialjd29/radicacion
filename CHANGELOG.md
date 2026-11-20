@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.2 — 2026-11-20
+- Frecuencia de uso: **cargar el catálogo desde un archivo Excel** (.xlsx/.xls/.csv) en «⬆ Cargar CUPS
+  y diagnósticos». Se lee en el navegador: busca la fila de encabezado con ACTIVIDAD (o GRUPO) ·
+  DESCRIPCIÓN DEL CUPS · CUPS (aunque haya títulos arriba o columnas de más), rellena los grupos de
+  celdas combinadas y toma los diagnósticos (CIE-10 · GRUPO) de cualquier hoja. Llena los campos
+  para revisarlos antes de guardar.
+
 ## 0.12.1 — 2026-11-20
 - **Por grupo** (p. ej. riesgo de desnutrición, aguda moderada, aguda severa): el catálogo se pega con
   tres columnas GRUPO · DESCRIPCIÓN · CUPS (celdas combinadas de Excel se rellenan hacia abajo) y los
