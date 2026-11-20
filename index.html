@@ -108,6 +108,8 @@ tr:hover td { background: var(--surface-2); }
 .dl a:hover { color: var(--accent); border-color: var(--accent); }
 .reg-tag { font-size: 10.5px; color: var(--ink-3); margin-left: 3px; }
 .usr-ver { padding: 6px 12px 2px; font-size: 11px; color: var(--ink-3); border-top: 1px solid var(--border); margin-top: 4px; }
+.fr-tabla td small, .fr-tabla th small { display: block; font-size: 11px; color: var(--ink-3); font-weight: 400; } .fr-tabla .fr-tot { background: var(--accent-soft); font-weight: 650; }
+.fr-lbl { display: block; margin-top: 10px; font-size: 13px; } .fr-lbl textarea { width: 100%; margin-top: 4px; font: 12px ui-monospace, monospace; background: var(--surface-2); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
 .unif { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; align-items: flex-start; } .unif small { font-size: 11px; color: var(--accent); font-weight: 600; }
 .mes-cel { font-size: 11px; font-weight: 650; letter-spacing: .02em; text-transform: uppercase; color: var(--ink-3); }
 .celda { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
@@ -351,6 +353,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
       <div class="vistas" role="tablist" aria-label="Vista">
         <button class="vbtn" data-vista="tablero" aria-selected="true">Tablero</button>
         <button class="vbtn" data-vista="reporte" aria-selected="false">📊 Reporte</button>
+        <button class="vbtn" data-vista="frecuencia" aria-selected="false">📈 Frecuencia de uso</button>
         <button class="vbtn" data-vista="servidor" aria-selected="false" data-perm="admin_usuarios" hidden>🖥 Servidor</button>
       </div>
       <button class="btn" id="btnCsv" title="Descargar la tabla visible">⬇ CSV</button>
@@ -450,6 +453,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
    </div>
    <div id="vistaReporte" hidden></div>
    <div id="vistaServidor" hidden></div>
+   <div id="vistaFrecuencia" hidden></div>
   </div>
 </div>
 <div class="modal" id="modal" hidden><div class="modal-fondo" data-cerrar></div>
@@ -622,6 +626,7 @@ var render = function () {
   renderNovedades();
   renderTabla(lista, meses);
   if (vista === 'reporte') renderReporteVista(lista, meses);
+  if (vista === 'frecuencia') renderFrecuencia(lista, meses);
 }
 
 const selMeses = (meses) => (st.meses.length ? [...st.meses].sort((a, b) => a - b) : meses);
@@ -1372,6 +1377,137 @@ function mostrarModal(html) {
   document.body.style.overflow = 'hidden';
   $('#modal .modal-x').focus();
 }
+// ---- Frecuencia de uso: cuántas veces se reportó cada CUPS (y diagnóstico) en los RIPS, según el
+// catálogo cargado para el tipo de contrato (DNT, PMS…). Total, departamento, municipio y contrato.
+let frTipo = 'DNT', frNivel = 'contrato', frSoloDx = false, FR = null, frClave = '', frCargando = false, FRCAT = null;
+async function renderFrecuencia(lista, mesesTodos) {
+  const meses = selMeses(mesesTodos);
+  const tipos = [...new Set(D.contratos.map((c) => tipoDe(c.contrato)))].sort();
+  const clave = [frTipo, st.anio, meses.join(','), st.reg].join('|');
+  if (clave !== frClave && !frCargando) {
+    frCargando = true; frClave = clave;
+    $('#vistaFrecuencia').innerHTML = `<div class="card"><p class="muted">⏳ Contando CUPS y diagnósticos en los RIPS de ${esc(frTipo)}… (la primera vez puede tardar unos segundos)</p></div>`;
+    try {
+      const [{ r, j }, cat] = await Promise.all([
+        pedirJSON('/api/frecuencia?' + new URLSearchParams({ tipo: frTipo, anio: st.anio, meses: meses.join(','), regimen: st.reg || '' })),
+        FRCAT ? Promise.resolve(FRCAT) : pedirJSON('/api/frecuencia-catalogo').then((x) => x.j)]);
+      if (!r.ok) throw new Error(j.error || j.detail || r.status);
+      FR = j; FRCAT = cat;
+    } catch (e) { FR = { error: e.message }; }
+    frCargando = false;
+  }
+  if (frCargando) return;
+  pintarFrecuencia(lista, meses, tipos);
+}
+function pintarFrecuencia(lista, meses, tipos) {
+  const admin = puede('admin_usuarios');
+  const cab = `<section class="rp-cab card"><div><div class="rp-kicker">Frecuencia de uso</div>
+      <h2 class="rp-titulo">CUPS y diagnósticos reportados en los RIPS · ${esc(frTipo)}</h2>
+      <div class="sub">${periodoTxt()} (meses de atención) · ${st.reg ? 'régimen ' + st.reg : 'RS + RC'}${FR?.catalogo?.actualizado ? ` · catálogo cargado ${fmtFecha(FR.catalogo.actualizado)}${FR.catalogo.por ? ' por ' + esc(FR.catalogo.por) : ''}` : ''}</div></div>
+    <div class="rp-acciones">
+      <select id="frTipo" title="Tipo de contrato">${tipos.map((t) => `<option ${t === frTipo ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+      ${FR && !FR.sin_catalogo && !FR.error && puede('descargar_reportes') ? '<button class="btn sm" id="frExcel">⬇ Excel</button>' : ''}
+      ${admin ? '<button class="btn sm" id="frCargar">⬆ Cargar CUPS y diagnósticos</button>' : ''}
+    </div></section>`;
+  if (!FR || FR.error) { $('#vistaFrecuencia').innerHTML = cab + `<div class="card"><p class="u-msg err">No se pudo calcular: ${esc(FR?.error || '')}</p></div>`; return; }
+  if (FR.sin_catalogo) {
+    $('#vistaFrecuencia').innerHTML = cab + `<div class="card"><p>Aún no hay catálogo de CUPS y diagnósticos para <b>${esc(frTipo)}</b>.</p>
+      <p class="muted">${admin ? 'Usa «⬆ Cargar CUPS y diagnósticos» y pega las columnas desde Excel.' : 'Pídele a un administrador que lo cargue.'}</p></div>`;
+    return;
+  }
+  // columnas: total + el nivel elegido (si hay búsqueda arriba, solo esos contratos)
+  const visibles = new Set(lista.map((c) => c.contrato));
+  const total = FR.grupos.find((g) => g.nivel === 'total');
+  let cols = FR.grupos.filter((g) => g.nivel === frNivel);
+  if (frNivel === 'contrato') cols = cols.filter((g) => visibles.has(g.nombre));
+  if (frNivel === 'municipio') cols = cols.filter((g) => lista.some((c) => (c.municipio || '—') === g.nombre));
+  const columnas = [total, ...cols].filter(Boolean);
+  const i0 = frSoloDx ? 2 : 0, i1 = frSoloDx ? 3 : 1;   // [veces, pacientes, veces con dx, pacientes con dx]
+  const act = FR.catalogo.actividades;
+  const filaAct = (a) => `<tr><td class="wrap">${esc(a.descripciones.join(' / ') || '—')}</td><td><b>${esc(a.codigo)}</b></td>
+    ${columnas.map((g, k) => { const v = g.actividades[a.codigo] || [0, 0, 0, 0];
+      return `<td class="num ${k === 0 ? 'fr-tot' : ''} ${v[i0] ? '' : 'muted'}">${fmtN(v[i0])}<small>${v[i0] ? fmtN(v[i1]) + ' pac.' : ''}</small></td>`; }).join('')}</tr>`;
+  const sumaCol = (g) => act.reduce((t, a) => t + ((g.actividades[a.codigo] || [])[i0] || 0), 0);
+  const nomCol = (g) => g.nivel === 'total' ? `<b>${esc(g.nombre)}</b>` : g.nivel === 'contrato'
+    ? `<span class="lnk" title="${esc(g.prestador)}">${esc(g.nombre)}</span><small>${esc(g.prestador || '')}</small>` : esc(g.nombre);
+  // diagnósticos agrupados por su grupo (riesgo, moderada, severa…)
+  const porGrupo = {};
+  for (const d of FR.catalogo.diagnosticos) (porGrupo[d.grupo] ??= []).push(d);
+  const filasDx = Object.entries(porGrupo).map(([grupo, ds]) => ds.map((d, n) => `<tr>${n === 0 ? `<td rowspan="${ds.length}" class="wrap"><b>${esc(grupo)}</b></td>` : ''}<td><b>${esc(d.codigo)}</b></td>
+      ${columnas.map((g, k) => { const v = g.diagnosticos[d.codigo] || [0, 0]; return `<td class="num ${k === 0 ? 'fr-tot' : ''} ${v[0] ? '' : 'muted'}">${fmtN(v[0])}<small>${v[0] ? fmtN(v[1]) + ' aten.' : ''}</small></td>`; }).join('')}</tr>`).join('')
+    + `<tr class="rp-total"><td colspan="2">Subtotal ${esc(grupo)} (pacientes distintos ≈ suma)</td>${columnas.map((g) => `<td class="num">${fmtN(ds.reduce((t, d) => t + ((g.diagnosticos[d.codigo] || [])[0] || 0), 0))}</td>`).join('')}</tr>`).join('');
+  $('#vistaFrecuencia').innerHTML = cab + `
+  <div class="rv-kpis">
+    <div class="card rv-kpi"><div class="l">Contratos ${esc(frTipo)}</div><div class="v">${fmtN(FR.contratos_tipo)}</div><div class="d">${fmtN(total?.archivos || 0)} RIPS leídos</div></div>
+    <div class="card rv-kpi"><div class="l">Pacientes atendidos</div><div class="v">${fmtN(total?.pacientes || 0)}</div><div class="d">distintos por contrato en el periodo</div></div>
+    <div class="card rv-kpi"><div class="l">Pacientes con diagnóstico del catálogo</div><div class="v">${fmtN(total?.pacientes_dx || 0)}</div><div class="d">${total?.pacientes ? (total.pacientes_dx / total.pacientes * 100).toFixed(1) : 0}% de los atendidos</div></div>
+    <div class="card rv-kpi"><div class="l">Actividades del catálogo reportadas</div><div class="v">${fmtN(total ? sumaCol(total) : 0)}</div><div class="d">${act.filter((a) => (total?.actividades[a.codigo] || [])[i0]).length} de ${act.length} CUPS con al menos un registro</div></div>
+  </div>
+  <div class="card">
+    <div class="rp-sec-h"><h2>Frecuencia por CUPS</h2>
+      <span class="rv-ctl" style="margin:0">
+        <span class="seg" id="frNivel">${[['departamento', 'Departamento'], ['municipio', 'Municipio'], ['contrato', 'Contrato']].map(([v, t]) => `<button data-v="${v}" aria-pressed="${frNivel === v}">${t}</button>`).join('')}</span>
+        <label class="chk" title="Contar solo en pacientes que tienen un diagnóstico del catálogo"><input type="checkbox" id="frSoloDx" ${frSoloDx ? 'checked' : ''}> Solo pacientes con diagnóstico del catálogo</label>
+      </span></div>
+    <p class="sub" style="margin:0 0 8px">Número = veces que se reportó el CUPS en los RIPS (consultas, procedimientos, medicamentos y otros servicios); debajo, pacientes distintos. La primera columna es la <b>frecuencia total</b> de todos los contratos ${esc(frTipo)}.</p>
+    <div class="tbl-wrap"><table class="rp-tabla fr-tabla"><thead><tr><th>Actividad</th><th>CUPS</th>${columnas.map((g) => `<th class="num">${nomCol(g)}</th>`).join('')}</tr></thead><tbody>
+      ${act.map(filaAct).join('')}
+      <tr class="rp-total"><td colspan="2">Total actividades</td>${columnas.map((g) => `<td class="num">${fmtN(sumaCol(g))}</td>`).join('')}</tr>
+    </tbody></table></div>
+    ${FR.catalogo.sin_codigo.length ? `<p class="sub rp-nota">Sin código en el catálogo (no se pueden contar): ${FR.catalogo.sin_codigo.map(esc).join(' · ')}</p>` : ''}
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="rp-sec-h"><h2>Diagnósticos</h2><span class="sub">pacientes con el diagnóstico (principal o relacionado) · debajo, atenciones</span></div>
+    <div class="tbl-wrap"><table class="rp-tabla fr-tabla"><thead><tr><th>Grupo</th><th>CIE-10</th>${columnas.map((g) => `<th class="num">${nomCol(g)}</th>`).join('')}</tr></thead><tbody>${filasDx}</tbody></table></div>
+  </div>`;
+}
+function abrirCatalogoFrec() {
+  const c = FRCAT?.[frTipo] || {};
+  mostrarModal(`<div class="dt-cab"><div><div class="rp-kicker">Frecuencia de uso</div><h3 id="modalTitulo" class="dt-titulo">Cargar CUPS y diagnósticos</h3>
+      <div class="sub">Copia las dos columnas desde Excel y pégalas. Reemplaza el catálogo anterior de ese tipo de contrato.</div></div></div>
+    <label class="fr-lbl">Tipo de contrato <input id="frcTipo" value="${esc(frTipo)}" maxlength="6" style="width:90px;text-transform:uppercase"></label>
+    <label class="fr-lbl">Actividades: <b>DESCRIPCIÓN</b> · <b>CUPS</b> (varios CUPS en una celda separados por coma o punto y coma)
+      <textarea id="frcAct" rows="10" placeholder="CONSULTA DE PRIMERA VEZ POR MEDICINA GENERAL&#9;890201">${esc(c.texto_actividades || '')}</textarea></label>
+    <label class="fr-lbl">Diagnósticos: <b>CIE-10</b> · <b>GRUPO</b> (p. ej. E440 · DESNUTRICION AGUDA MODERADA)
+      <textarea id="frcDx" rows="8" placeholder="E440&#9;DESNUTRICION AGUDA MODERADA">${esc(c.texto_diagnosticos || '')}</textarea></label>
+    <div class="rp-acciones" style="margin-top:10px"><button class="btn primary" id="frcGuardar">Guardar catálogo</button><span id="frcMsg" class="sub"></span></div>`);
+  $('#frcGuardar').onclick = async () => {
+    const tipo = $('#frcTipo').value.trim().toUpperCase();
+    $('#frcMsg').textContent = 'Guardando…';
+    try {
+      const { r, j } = await pedirJSON('/api/frecuencia-catalogo?tipo=' + encodeURIComponent(tipo), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actividades: $('#frcAct').value, diagnosticos: $('#frcDx').value }) }, 1);
+      if (!r.ok) throw new Error(j.detail || j.error || r.status);
+      $('#frcMsg').textContent = `✓ ${j.actividades.length} CUPS y ${j.diagnosticos.length} diagnósticos guardados.`;
+      FRCAT = null; frTipo = tipo; frClave = ''; setTimeout(() => { cerrarDetalle(); render(); }, 900);
+    } catch (e) { $('#frcMsg').textContent = '✕ ' + e.message; }
+  };
+}
+async function exportarFrecuenciaExcel() {
+  const X = await libXlsx(); if (!FR?.grupos) return;
+  const wb = X.utils.book_new();
+  const cols = FR.grupos;
+  const nom = (g) => (g.nivel === 'total' ? g.nombre : `${g.nivel}: ${g.nombre}`);
+  const act = [['Actividad', 'CUPS', ...cols.flatMap((g) => [`${nom(g)} · veces`, `${nom(g)} · pacientes`, `${nom(g)} · veces (con dx)`, `${nom(g)} · pacientes (con dx)`])],
+    ...FR.catalogo.actividades.map((a) => [a.descripciones.join(' / '), a.codigo, ...cols.flatMap((g) => g.actividades[a.codigo] || [0, 0, 0, 0])])];
+  X.utils.book_append_sheet(wb, hoja(X, [...cabecera(`Frecuencia de uso ${FR.tipo} — CUPS`), ...act], [50, 16]), 'CUPS');
+  const dx = [['Grupo', 'CIE-10', ...cols.flatMap((g) => [`${nom(g)} · pacientes`, `${nom(g)} · atenciones`])],
+    ...FR.catalogo.diagnosticos.map((d) => [d.grupo, d.codigo, ...cols.flatMap((g) => g.diagnosticos[d.codigo] || [0, 0])])];
+  X.utils.book_append_sheet(wb, hoja(X, [...cabecera(`Frecuencia de uso ${FR.tipo} — diagnósticos`), ...dx], [34, 10]), 'Diagnósticos');
+  X.utils.book_append_sheet(wb, hoja(X, [['Nivel', 'Nombre', 'Prestador', 'RIPS leídos', 'Pacientes', 'Pacientes con dx del catálogo'],
+    ...cols.map((g) => [g.nivel, g.nombre, g.prestador || '', g.archivos, g.pacientes, g.pacientes_dx])], [14, 30, 36, 12, 12, 16]), 'Resumen');
+  descargarLibro(X, wb, `Frecuencia_${FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}.xlsx`);
+}
+$('#vistaFrecuencia').addEventListener('click', (e) => {
+  const nv = e.target.closest('#frNivel [data-v]'); if (nv) { frNivel = nv.dataset.v; render(); return; }
+  if (e.target.closest('#frCargar')) { abrirCatalogoFrec(); return; }
+  if (e.target.closest('#frExcel')) { exportarFrecuenciaExcel(); }
+});
+$('#vistaFrecuencia').addEventListener('change', (e) => {
+  if (e.target.id === 'frTipo') { frTipo = e.target.value; render(); }
+  if (e.target.id === 'frSoloDx') { frSoloDx = e.target.checked; render(); }
+});
 function cerrarDetalle() { $('#modal').hidden = true; document.body.style.overflow = ''; }
 $('#modal').addEventListener('click', (e) => {
   if (e.target.closest('[data-cerrar]')) cerrarDetalle();
@@ -1390,16 +1526,17 @@ document.addEventListener('change', (e) => {
 });
 
 // ---- cambio de vista (Tablero / Reporte), recordado en la URL (#reporte)
-const VISTA_HASH = { '#reporte': 'reporte', '#servidor': 'servidor' };
+const VISTA_HASH = { '#reporte': 'reporte', '#servidor': 'servidor', '#frecuencia': 'frecuencia' };
 let vista = VISTA_HASH[location.hash] || 'tablero';
 function aplicarVista() {
   if (!$('#vistaTablero') || !$('#vistaReporte')) return;   // pantalla de "sin datos"
-  if (vista === 'reporte' && !puede('ver_reporte')) vista = 'tablero';
+  if ((vista === 'reporte' || vista === 'frecuencia') && !puede('ver_reporte')) vista = 'tablero';
   if (vista === 'servidor' && !puede('admin_usuarios')) vista = 'tablero';
   document.querySelectorAll('.vbtn').forEach((b) => b.setAttribute('aria-selected', b.dataset.vista === vista));
   $('#vistaTablero').hidden = vista !== 'tablero';
   $('#vistaReporte').hidden = vista !== 'reporte';
   $('#vistaServidor').hidden = vista !== 'servidor';
+  $('#vistaFrecuencia').hidden = vista !== 'frecuencia';
   // los filtros de meses/contratos no aplican al monitoreo
   document.querySelectorAll('.filters, .mes-bar, .mes-bar + .sub').forEach((el) => { el.hidden = vista === 'servidor'; });
   history.replaceState(null, '', vista === 'tablero' ? location.pathname : '#' + vista);
@@ -1884,6 +2021,7 @@ function aplicarPermisos() {
   document.querySelectorAll('[data-sin-perm]').forEach((el) => { el.hidden = puede(el.dataset.sinPerm); });
   $('#btnCsv').hidden = !puede('descargar_reportes');
   document.querySelector('[data-vista="reporte"]').hidden = !puede('ver_reporte');
+  document.querySelector('[data-vista="frecuencia"]').hidden = !puede('ver_reporte');
 }
 // si la sesión vence en medio del uso, cualquier llamada 401 lleva al login
 const _fetch = window.fetch.bind(window);

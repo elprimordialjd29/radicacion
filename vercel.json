@@ -17,6 +17,14 @@
     {
       "source": "/api/clave",
       "destination": "/api/cuenta?accion=clave"
+    },
+    {
+      "source": "/api/frecuencia",
+      "destination": "/api/duplicados?accion=frecuencia"
+    },
+    {
+      "source": "/api/frecuencia-catalogo",
+      "destination": "/api/duplicados?accion=catalogo"
     }
   ],
   "headers": [

@@ -46,11 +46,13 @@ TOKEN = os.getenv("WORKER_TOKEN", "")
 sys.path.insert(0, str(BOT))
 import rips_json  # noqa: E402  (convertidor plano → JSON Res. 2275)
 from seguridad import Seguridad, enviar_correo  # noqa: E402
+from frecuencia import Frecuencia  # noqa: E402
 PY = str(BOT / ".venv" / "bin" / "python")
 
 app = FastAPI(title="Radicación worker", docs_url=None, redoc_url=None)
 _lock = threading.Lock()
 SEG = Seguridad(DATOS / "seguridad.db")
+FREC = Frecuencia(DATOS, BOT)
 
 
 def _ip(request):
@@ -386,6 +388,47 @@ def seguridad_prueba(x_token: str = Header("")):
     ok, msg = enviar_correo("✅ Radicación cápita: prueba de alertas",
                             "Este es un correo de prueba. Las alertas de seguridad llegarán a esta dirección.")
     return {"ok": ok, "mensaje": msg}
+
+
+# ------------------------------------------------------------------ frecuencia de uso (CUPS / diagnósticos)
+class CatalogoFrec(BaseModel):
+    actividades: str = Field("", max_length=200_000)
+    diagnosticos: str = Field("", max_length=100_000)
+    usuario: str = Field("", max_length=60)
+
+
+@app.get("/frecuencia/catalogo")
+def frecuencia_catalogo(x_token: str = Header("")):
+    auth(x_token)
+    return FREC.catalogo()
+
+
+@app.put("/frecuencia/catalogo/{tipo}")
+def frecuencia_guardar(tipo: str, c: CatalogoFrec, x_token: str = Header("")):
+    auth(x_token)
+    if not re.fullmatch(r"[A-Za-z]{1,6}", tipo):
+        raise HTTPException(400, "Tipo de contrato inválido")
+    try:
+        return FREC.guardar_catalogo(tipo, c.actividades, c.diagnosticos, c.usuario)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/frecuencia")
+def frecuencia(tipo: str, anio: int, meses: str, regimen: str = "", x_token: str = Header("")):
+    auth(x_token)
+    try:
+        lista = sorted({int(m) for m in meses.split(",") if m.strip()})
+    except ValueError:
+        raise HTTPException(400, "meses inválidos")
+    if not lista or any(m < 1 or m > 12 for m in lista):
+        raise HTTPException(400, "meses inválidos")
+    regimen = regimen.upper() if regimen.upper() in ("RS", "RC") else ""
+    hist = BOT / "historial.db"
+    if not hist.exists():
+        raise HTTPException(404, "Sin historial")
+    meta = json.loads(CATALOGO.read_text(encoding="utf-8")) if CATALOGO.exists() else []
+    return FREC.calcular(tipo, anio, lista, regimen, meta, hist)
 
 
 @app.get("/salud")
