@@ -109,7 +109,14 @@ tr:hover td { background: var(--surface-2); }
 .reg-tag { font-size: 10.5px; color: var(--ink-3); margin-left: 3px; }
 .usr-ver { padding: 6px 12px 2px; font-size: 11px; color: var(--ink-3); border-top: 1px solid var(--border); margin-top: 4px; }
 .fr-tabla td small, .fr-tabla th small { display: block; font-size: 11px; color: var(--ink-3); font-weight: 400; } .fr-tabla tr.fr-grupo td { background: var(--surface-2); border-top: 2px solid var(--border); } .fr-tabla tr.fr-grupo small { display: block; font-weight: 400; }
-.fr-tabla .fr-tot { background: var(--accent-soft); font-weight: 650; }
+.fr-tabla .fr-tot, .rp-tabla.fr-tabla tbody tr td.fr-tot { background: color-mix(in srgb, var(--accent) 9%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.fr-tabla td.num { min-width: 118px; vertical-align: top; } .fr-n { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; } .fr-veces { font-size: 11px; color: var(--ink-3); margin-left: 4px; }
+.fr-cob { display: block; height: 4px; border-radius: 2px; background: var(--surface-2); margin: 4px 0 0 auto; width: 90px; overflow: hidden; } .fr-cob i { display: block; height: 100%; background: var(--accent); }
+.fr-dx { display: inline-block; font: 600 11px ui-monospace, monospace; color: var(--ink-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 10px; margin: 1px 2px 1px 0; } .fr-dxs { white-space: normal; max-width: 150px; }
+.fr-cero { color: var(--ink-3); } .fr-desc { max-width: 420px; } .fr-cups { font: 600 12px ui-monospace, monospace; background: var(--surface-2); padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+.fr-tabla tr.fr-grupo td { padding-top: 14px; } .fr-gnom { font-size: 14px; font-weight: 700; letter-spacing: .02em; } .fr-sin { color: var(--warning) !important; }
+.fr-tabla tr.fr-s1 td:first-child { box-shadow: inset 4px 0 0 var(--warning); } .fr-tabla tr.fr-s2 td:first-child { box-shadow: inset 4px 0 0 var(--serious, #e8833a); } .fr-tabla tr.fr-s3 td:first-child { box-shadow: inset 4px 0 0 var(--critical); }
+.fr-ayuda { background: var(--surface-2); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; color: var(--ink-2); line-height: 1.55; margin: 0 0 10px; }
 .fr-subir { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; } .fr-subir .sub { flex: 1; min-width: 240px; font-size: 12px; }
 .fr-lbl { display: block; margin-top: 10px; font-size: 13px; } .fr-lbl textarea { width: 100%; margin-top: 4px; font: 12px ui-monospace, monospace; background: var(--surface-2); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
 .unif { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; align-items: flex-start; } .unif small { font-size: 11px; color: var(--accent); font-weight: 600; }
@@ -367,7 +374,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.12.2</div>
+          <div class="usr-ver">Radicación cápita · v0.12.3</div>
         </div>
       </div>
     </div>
@@ -1428,18 +1435,31 @@ function pintarFrecuencia(lista, meses, tipos) {
   const i0 = frSoloDx ? 2 : 0, i1 = frSoloDx ? 3 : 1;
   const act = FR.catalogo.actividades, gruposCat = FR.catalogo.grupos || [];
   const kA = (a) => `${a.grupo || 'GENERAL'}|${a.codigo}`;
-  const celda = (v, k) => `<td class="num ${k === 0 ? 'fr-tot' : ''} ${v[i0] ? '' : 'muted'}">${fmtN(v[i0])}<small>${v[i0] ? fmtN(v[i1]) + ' pac.' : ''}</small></td>`;
-  const filaAct = (a) => `<tr><td class="wrap">${esc(a.descripciones.join(' / ') || '—')}</td><td><b>${esc(a.codigo)}</b></td>
-    ${columnas.map((g, k) => celda(g.actividades[kA(a)] || [0, 0, 0, 0], k)).join('')}</tr>`;
+  const dxDe = (gr) => FR.catalogo.diagnosticos.filter((d) => d.grupo === gr).map((d) => d.codigo);
+  // cobertura: de los pacientes del grupo (o de todos), cuántos recibieron la actividad
+  const baseCob = (g, gr) => (frSoloDx ? g.pacientes : (g.pacientes_grupo || {})[gr]) || 0;
+  const celda = (v, k, base) => {
+    if (!v[i0]) return `<td class="num ${k === 0 ? 'fr-tot' : ''}"><span class="fr-cero">—</span></td>`;
+    const pct = base ? Math.min(100, v[i1] / base * 100) : 0;
+    return `<td class="num ${k === 0 ? 'fr-tot' : ''}"><span class="fr-n">${fmtN(v[i0])}</span><span class="fr-veces">veces</span>
+      <small>${fmtN(v[i1])} niños · ${pct.toFixed(0)}%</small><span class="fr-cob"><i style="width:${pct}%"></i></span></td>`;
+  };
+  const dxChips = (gr) => dxDe(gr).map((d) => `<span class="fr-dx">${esc(d)}</span>`).join('');
+  const filaAct = (a) => `<tr><td class="wrap fr-desc">${esc(a.descripciones.join(' / ') || '—')}</td><td><span class="fr-cups">${esc(a.codigo)}</span></td><td class="fr-dxs">${dxChips(a.grupo || 'GENERAL')}</td>
+    ${columnas.map((g, k) => celda(g.actividades[kA(a)] || [0, 0, 0, 0], k, baseCob(g, a.grupo || 'GENERAL'))).join('')}</tr>`;
+  const SEV = ['fr-s1', 'fr-s2', 'fr-s3'];
   const sumaCol = (g, gr) => act.filter((a) => !gr || (a.grupo || 'GENERAL') === gr).reduce((t, a) => t + ((g.actividades[kA(a)] || [])[i0] || 0), 0);
   const bloques = gruposCat.map((gr) => {
     const as = act.filter((a) => (a.grupo || 'GENERAL') === gr);
     if (!as.length) return '';
     const sin = (FR.catalogo.sin_codigo || []).filter((x) => x.grupo === gr).map((x) => x.descripcion);
-    return `<tr class="fr-grupo"><td colspan="2"><b>${esc(gr)}</b>${sin.length ? `<small>sin código: ${sin.map(esc).join(' · ')}</small>` : ''}</td>
-        ${columnas.map((g) => `<td class="num"><b>${fmtN((g.pacientes_grupo || {})[gr] || 0)}</b><small>pacientes con dx</small></td>`).join('')}</tr>
+    const ig = gruposCat.indexOf(gr);
+    return `<tr class="fr-grupo ${SEV[Math.min(ig, 2)] || ''}"><td colspan="3"><span class="fr-gnom">${esc(gr)}</span> <span class="fr-dxs">${dxChips(gr)}</span>
+          <small>Niños con alguno de estos diagnósticos en el mes. Los CUPS de abajo se cuentan solo en ellos.</small>
+          ${sin.length ? `<small class="fr-sin">Sin CUPS en el catálogo (no se pueden contar): ${sin.map(esc).join(' · ')}</small>` : ''}</td>
+        ${columnas.map((g) => `<td class="num"><span class="fr-n">${fmtN((g.pacientes_grupo || {})[gr] || 0)}</span><small>niños en este grupo</small></td>`).join('')}</tr>
       ${as.map(filaAct).join('')}
-      <tr class="rp-total"><td colspan="2">Subtotal ${esc(gr)}</td>${columnas.map((g) => `<td class="num">${fmtN(sumaCol(g, gr))}</td>`).join('')}</tr>`;
+      <tr class="rp-total"><td colspan="3">Subtotal ${esc(gr)}</td>${columnas.map((g) => `<td class="num">${fmtN(sumaCol(g, gr))}</td>`).join('')}</tr>`;
   }).join('');
   const nomCol = (g) => g.nivel === 'total' ? `<b>${esc(g.nombre)}</b>` : g.nivel === 'contrato'
     ? `<span class="lnk" title="${esc(g.prestador)}">${esc(g.nombre)}</span><small>${esc(g.prestador || '')}</small>` : esc(g.nombre);
@@ -1462,10 +1482,12 @@ function pintarFrecuencia(lista, meses, tipos) {
         <span class="seg" id="frNivel">${[['departamento', 'Departamento'], ['municipio', 'Municipio'], ['contrato', 'Contrato']].map(([v, t]) => `<button data-v="${v}" aria-pressed="${frNivel === v}">${t}</button>`).join('')}</span>
         <label class="chk" title="Sin marcar: cada CUPS se cuenta solo en los pacientes con diagnóstico de su grupo. Marcado: en todos los pacientes del RIPS."><input type="checkbox" id="frSoloDx" ${frSoloDx ? 'checked' : ''}> Contar en todos los pacientes</label>
       </span></div>
-    <p class="sub" style="margin:0 0 8px">Cada grupo trae sus CUPS y se cuentan en los <b>pacientes con diagnóstico de ese grupo</b> (si un paciente tiene diagnósticos de varios grupos en el mes, queda en el más severo). Número = veces que se reportó el CUPS en los RIPS (consultas, procedimientos, medicamentos y otros servicios); debajo, pacientes distintos. La primera columna es la <b>frecuencia total</b> de todos los contratos ${esc(frTipo)}.</p>
-    <div class="tbl-wrap"><table class="rp-tabla fr-tabla"><thead><tr><th>Actividad</th><th>CUPS</th>${columnas.map((g) => `<th class="num">${nomCol(g)}</th>`).join('')}</tr></thead><tbody>
+    <div class="fr-ayuda"><b>Cómo leer:</b> cada grupo empieza con los <b>niños en ese grupo</b> (los que tienen un diagnóstico del grupo en el mes; si tienen de dos grupos, cuentan en el más severo).
+      Debajo, cada CUPS: <b>veces</b> que se reportó en los RIPS de esos niños, cuántos <b>niños</b> lo recibieron y qué <b>%</b> del grupo es (barra).
+      La primera columna, <b>Total ${esc(frTipo)}</b>, suma todos los contratos.</div>
+    <div class="tbl-wrap"><table class="rp-tabla fr-tabla"><thead><tr><th>Actividad</th><th>CUPS</th><th>DX que corresponde</th>${columnas.map((g) => `<th class="num">${nomCol(g)}</th>`).join('')}</tr></thead><tbody>
       ${bloques}
-      <tr class="rp-total"><td colspan="2">Total actividades</td>${columnas.map((g) => `<td class="num">${fmtN(sumaCol(g))}</td>`).join('')}</tr>
+      <tr class="rp-total"><td colspan="3">Total actividades</td>${columnas.map((g) => `<td class="num">${fmtN(sumaCol(g))}</td>`).join('')}</tr>
     </tbody></table></div>
     <p class="sub rp-nota">Las actividades sin código en el catálogo no se pueden contar y aparecen junto al nombre de su grupo.</p>
   </div>
@@ -1554,9 +1576,10 @@ async function exportarFrecuenciaExcel() {
   const wb = X.utils.book_new();
   const cols = FR.grupos;
   const nom = (g) => (g.nivel === 'total' ? g.nombre : `${g.nivel}: ${g.nombre}`);
-  const act = [['Grupo', 'Actividad', 'CUPS', ...cols.flatMap((g) => [`${nom(g)} · veces (pacientes del grupo)`, `${nom(g)} · pacientes del grupo`, `${nom(g)} · veces (todos)`, `${nom(g)} · pacientes (todos)`])],
-    ...FR.catalogo.actividades.map((a) => [a.grupo || 'GENERAL', a.descripciones.join(' / '), a.codigo, ...cols.flatMap((g) => g.actividades[`${a.grupo || 'GENERAL'}|${a.codigo}`] || [0, 0, 0, 0])])];
-  X.utils.book_append_sheet(wb, hoja(X, [...cabecera(`Frecuencia de uso ${FR.tipo} — CUPS`), ...act], [28, 50, 16]), 'CUPS');
+  const dxG = (gr) => FR.catalogo.diagnosticos.filter((d) => d.grupo === gr).map((d) => d.codigo).join(', ');
+  const act = [['Grupo', 'Actividad', 'CUPS', 'DX que corresponde', ...cols.flatMap((g) => [`${nom(g)} · veces (pacientes del grupo)`, `${nom(g)} · pacientes del grupo`, `${nom(g)} · veces (todos)`, `${nom(g)} · pacientes (todos)`])],
+    ...FR.catalogo.actividades.map((a) => [a.grupo || 'GENERAL', a.descripciones.join(' / '), a.codigo, dxG(a.grupo || 'GENERAL'), ...cols.flatMap((g) => g.actividades[`${a.grupo || 'GENERAL'}|${a.codigo}`] || [0, 0, 0, 0])])];
+  X.utils.book_append_sheet(wb, hoja(X, [...cabecera(`Frecuencia de uso ${FR.tipo} — CUPS`), ...act], [28, 50, 16, 26]), 'CUPS');
   const dx = [['Grupo', 'CIE-10', ...cols.flatMap((g) => [`${nom(g)} · pacientes`, `${nom(g)} · atenciones`])],
     ...FR.catalogo.diagnosticos.map((d) => [d.grupo, d.codigo, ...cols.flatMap((g) => g.diagnosticos[d.codigo] || [0, 0])])];
   X.utils.book_append_sheet(wb, hoja(X, [...cabecera(`Frecuencia de uso ${FR.tipo} — diagnósticos`), ...dx], [34, 10]), 'Diagnósticos');

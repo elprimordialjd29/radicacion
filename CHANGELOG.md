@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.3 — 2026-11-20
+- Frecuencia de uso más clara: columna **DX que corresponde** al lado de cada CUPS (diagnósticos de su
+  grupo); cabecera de cada grupo con «niños en este grupo», sus diagnósticos y color por severidad
+  (riesgo, moderada, severa); cada celda muestra veces, niños y **% del grupo** con barra; recuadro
+  «Cómo leer»; columna total resaltada de forma uniforme. El Excel incluye la columna DX.
+
 ## 0.12.2 — 2026-11-20
 - Frecuencia de uso: **cargar el catálogo desde un archivo Excel** (.xlsx/.xls/.csv) en «⬆ Cargar CUPS
   y diagnósticos». Se lee en el navegador: busca la fila de encabezado con ACTIVIDAD (o GRUPO) ·
