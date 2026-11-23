@@ -374,7 +374,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.12.3</div>
+          <div class="usr-ver">Radicación cápita · v0.12.4</div>
         </div>
       </div>
     </div>
@@ -1430,7 +1430,11 @@ function pintarFrecuencia(lista, meses, tipos) {
   let cols = FR.grupos.filter((g) => g.nivel === frNivel);
   if (frNivel === 'contrato') cols = cols.filter((g) => visibles.has(g.nombre));
   if (frNivel === 'municipio') cols = cols.filter((g) => lista.some((c) => (c.municipio || '—') === g.nombre));
-  const columnas = [total, ...cols].filter(Boolean);
+  // con una búsqueda arriba (prestador o contrato) se muestra SOLO lo buscado: un valor por contrato, sin el total
+  const buscando = !!st.texto && lista.length < D.contratos.length;
+  if (buscando) cols = FR.grupos.filter((g) => g.nivel === 'contrato' && visibles.has(g.nombre));
+  const columnas = buscando ? cols : [total, ...cols].filter(Boolean);
+  const ref = columnas.length === 1 ? columnas[0] : total;   // de dónde salen las tarjetas de arriba
   // valores: [veces en pacientes del grupo, pacientes del grupo, veces en todos los pacientes, pacientes todos]
   const i0 = frSoloDx ? 2 : 0, i1 = frSoloDx ? 3 : 1;
   const act = FR.catalogo.actividades, gruposCat = FR.catalogo.grupos || [];
@@ -1461,7 +1465,7 @@ function pintarFrecuencia(lista, meses, tipos) {
       ${as.map(filaAct).join('')}
       <tr class="rp-total"><td colspan="3">Subtotal ${esc(gr)}</td>${columnas.map((g) => `<td class="num">${fmtN(sumaCol(g, gr))}</td>`).join('')}</tr>`;
   }).join('');
-  const nomCol = (g) => g.nivel === 'total' ? `<b>${esc(g.nombre)}</b>` : g.nivel === 'contrato'
+  const nomCol = (g) => g.nivel === 'total' ? `<b>${esc(g.nombre)}</b><small>todos los contratos</small>` : g.nivel === 'contrato'
     ? `<span class="lnk" title="${esc(g.prestador)}">${esc(g.nombre)}</span><small>${esc(g.prestador || '')}</small>` : esc(g.nombre);
   // diagnósticos agrupados por su grupo (riesgo, moderada, severa…)
   const porGrupo = {};
@@ -1471,20 +1475,21 @@ function pintarFrecuencia(lista, meses, tipos) {
     + `<tr class="rp-total"><td colspan="2">Subtotal ${esc(grupo)} (pacientes distintos ≈ suma)</td>${columnas.map((g) => `<td class="num">${fmtN(ds.reduce((t, d) => t + ((g.diagnosticos[d.codigo] || [])[0] || 0), 0))}</td>`).join('')}</tr>`).join('');
   $('#vistaFrecuencia').innerHTML = cab + `
   <div class="rv-kpis">
-    <div class="card rv-kpi"><div class="l">Contratos ${esc(frTipo)}</div><div class="v">${fmtN(FR.contratos_tipo)}</div><div class="d">${fmtN(total?.archivos || 0)} RIPS leídos</div></div>
-    <div class="card rv-kpi"><div class="l">Pacientes atendidos</div><div class="v">${fmtN(total?.pacientes || 0)}</div><div class="d">distintos por contrato en el periodo</div></div>
-    <div class="card rv-kpi"><div class="l">Pacientes con diagnóstico del catálogo</div><div class="v">${fmtN(total?.pacientes_dx || 0)}</div><div class="d">${total?.pacientes ? (total.pacientes_dx / total.pacientes * 100).toFixed(1) : 0}% de los atendidos</div></div>
-    <div class="card rv-kpi"><div class="l">Actividades del catálogo reportadas</div><div class="v">${fmtN(total ? sumaCol(total) : 0)}</div><div class="d">${act.filter((a) => (total?.actividades[kA(a)] || [])[i0]).length} de ${act.length} CUPS (por grupo) con al menos un registro</div></div>
+    <div class="card rv-kpi"><div class="l">${buscando ? 'Contratos mostrados' : 'Contratos ' + esc(frTipo)}</div><div class="v">${fmtN(buscando ? columnas.length : FR.contratos_tipo)}</div><div class="d">${fmtN(ref?.archivos || 0)} RIPS leídos</div></div>
+    <div class="card rv-kpi"><div class="l">Pacientes atendidos</div><div class="v">${fmtN(ref?.pacientes || 0)}</div><div class="d">distintos por contrato en el periodo</div></div>
+    <div class="card rv-kpi"><div class="l">Pacientes con diagnóstico del catálogo</div><div class="v">${fmtN(ref?.pacientes_dx || 0)}</div><div class="d">${ref?.pacientes ? (ref.pacientes_dx / ref.pacientes * 100).toFixed(1) : 0}% de los atendidos</div></div>
+    <div class="card rv-kpi"><div class="l">Actividades del catálogo reportadas</div><div class="v">${fmtN(ref ? sumaCol(ref) : 0)}</div><div class="d">${act.filter((a) => (ref?.actividades[kA(a)] || [])[i0]).length} de ${act.length} CUPS (por grupo) con al menos un registro</div></div>
   </div>
   <div class="card">
     <div class="rp-sec-h"><h2>Frecuencia por CUPS</h2>
       <span class="rv-ctl" style="margin:0">
-        <span class="seg" id="frNivel">${[['departamento', 'Departamento'], ['municipio', 'Municipio'], ['contrato', 'Contrato']].map(([v, t]) => `<button data-v="${v}" aria-pressed="${frNivel === v}">${t}</button>`).join('')}</span>
+        ${buscando ? `<span class="sub">Solo «${esc(st.texto)}» · borra la búsqueda para ver el total ${esc(frTipo)}</span>`
+          : `<span class="seg" id="frNivel">${[['departamento', 'Departamento'], ['municipio', 'Municipio'], ['contrato', 'Contrato']].map(([v, t]) => `<button data-v="${v}" aria-pressed="${frNivel === v}">${t}</button>`).join('')}</span>`}
         <label class="chk" title="Sin marcar: cada CUPS se cuenta solo en los pacientes con diagnóstico de su grupo. Marcado: en todos los pacientes del RIPS."><input type="checkbox" id="frSoloDx" ${frSoloDx ? 'checked' : ''}> Contar en todos los pacientes</label>
       </span></div>
     <div class="fr-ayuda"><b>Cómo leer:</b> cada grupo empieza con los <b>niños en ese grupo</b> (los que tienen un diagnóstico del grupo en el mes; si tienen de dos grupos, cuentan en el más severo).
       Debajo, cada CUPS: <b>veces</b> que se reportó en los RIPS de esos niños, cuántos <b>niños</b> lo recibieron y qué <b>%</b> del grupo es (barra).
-      La primera columna, <b>Total ${esc(frTipo)}</b>, suma todos los contratos.</div>
+      ${buscando ? '' : `La primera columna, <b>Total ${esc(frTipo)}</b>, suma todos los contratos; las demás son cada ${frNivel}.`}</div>
     <div class="tbl-wrap"><table class="rp-tabla fr-tabla"><thead><tr><th>Actividad</th><th>CUPS</th><th>DX que corresponde</th>${columnas.map((g) => `<th class="num">${nomCol(g)}</th>`).join('')}</tr></thead><tbody>
       ${bloques}
       <tr class="rp-total"><td colspan="3">Total actividades</td>${columnas.map((g) => `<td class="num">${fmtN(sumaCol(g))}</td>`).join('')}</tr>

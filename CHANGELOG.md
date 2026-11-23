@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.4 — 2026-11-23
+- Frecuencia de uso: si se busca un prestador o contrato, se muestra **solo su valor** (sin la columna
+  del total de todos los contratos) y las tarjetas de arriba son de lo buscado; sin búsqueda se ve el
+  total y la columna por departamento, municipio o contrato.
+
 ## 0.12.3 — 2026-11-20
 - Frecuencia de uso más clara: columna **DX que corresponde** al lado de cada CUPS (diagnósticos de su
   grupo); cabecera de cada grupo con «niños en este grupo», sus diagnósticos y color por severidad
