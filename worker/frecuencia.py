@@ -11,9 +11,12 @@ import csv
 import hashlib
 import io
 import json
+import os
 import re
 import sqlite3
+import subprocess
 import sys
+import threading
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
@@ -36,10 +39,15 @@ CAMPOS = {
 }
 RE_CIE = re.compile(r"^[A-Z]\d{2}[0-9X]?$")
 VERSION_CACHE = 1
+# tipos de contrato que se cuentan con la matriz 3280 (versión sencilla); TODOS = toda la EPS;
+# los demás, como la Evaluación Cápita Asistencial; un tipo con catálogo cargado usa su catálogo (p. ej. DNT)
+TIPOS_3280 = {"PMS", "RCV"}
+ARCHIVO_RIPS = {"consultas": "Consultas", "procedimientos": "Procedimientos", "medicamentos": "Medicamentos",
+                "otrosServicios": "Otros servicios"}
 
 
 def departamento(contrato):
-    m = re.match(r"^[A-Z]+-(\d{2})\d{3}-", contrato or "")
+    m = re.match(r"^[A-Z]+(?:-[A-Z]+)*-(\d{2})\d{3}-", contrato or "")
     return DEPARTAMENTOS.get(m.group(1), f"Dpto {m.group(1)}") if m else "—"
 
 
@@ -118,6 +126,13 @@ class Frecuencia:
         sys.path.insert(0, str(self.bot))
         import rips_json   # noqa: E402
         self.rj = rips_json
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import motores   # noqa: E402
+        self.M = motores
+        # cola de cálculos en segundo plano (un proceso aparte por lote, para no cargar la memoria del worker)
+        self._cola, self._en_curso = [], set()
+        self._cola_lock, self._hay = threading.Lock(), threading.Event()
+        threading.Thread(target=self._correr_cola, daemon=True).start()
 
     # ------------------------------------------------------------- catálogo
     def catalogo(self):
@@ -263,3 +278,178 @@ class Frecuencia:
         return {"tipo": tipo, "anio": anio, "meses": meses, "regimen": regimen or "RS+RC",
                 "catalogo": {"grupos": orden_g, **{k: cat.get(k) for k in ("actividades", "sin_codigo", "diagnosticos", "actualizado", "por")}},
                 "grupos": salida, "contratos_tipo": len(contratos)}
+
+    # ══════════════════════════════════════════ tipos sin catálogo: motores 3280, asistencial y TODOS
+    def motor_de(self, tipo):
+        t = tipo.upper()
+        if t in self.catalogo():
+            return "dx"
+        if t == "TODOS":
+            return "todos"
+        return "3280" if t in TIPOS_3280 or "RCV" in t.split("-") else "asis"
+
+    def _archivos_contrato(self, con, contrato, anio, meses, regimen):
+        carpeta = self.bot / "descargas" / "soportes" / re.sub(r"[^A-Za-z0-9._-]", "_", contrato).strip("_")
+        limpio = lambda x: re.sub(r"[^A-Za-z0-9._-]", "_", str(x)).strip("_") or "sin_nombre"
+        rutas = []
+        for m in meses:   # mes de atención m → cápita m+1 (sin los RIPS en cero)
+            a_cap, m_cap = (anio + 1, 1) if m == 12 else (anio, m + 1)
+            sql = ("SELECT recepcion FROM registros WHERE contrato=? AND periodo_anio=? AND periodo_mes=? "
+                   "AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%') AND estado NOT LIKE 'NO VIGENTE%'")
+            params = [contrato, a_cap, m_cap]
+            if regimen:
+                sql += " AND regimen=?"
+                params.append(regimen)
+            for (rec,) in con.execute(sql + " ORDER BY recepcion", params).fetchall():
+                enc = sorted(carpeta.glob(f"{limpio(rec)}__*"))
+                if enc:
+                    rutas.append(str(enc[0]))
+        return rutas
+
+    def solicitar(self, tipo, anio, meses, regimen, contratos_meta, hist, encolar=True):
+        """Resultado listo o, si falta calcular contratos, {'calculando': True, 'hechos', 'total'} (se calcula aparte)."""
+        motor = self.motor_de(tipo)
+        if motor == "dx":
+            res = self.calcular(tipo, anio, meses, regimen, contratos_meta, hist)
+            res["motor"] = "dx"
+            return res
+        t = tipo.upper()
+        contratos = [c for c in contratos_meta if t == "TODOS" or c["contrato"].upper().startswith(t + "-")]
+        tareas, faltan = [], []
+        with closing(sqlite3.connect(hist)) as con:
+            for c in contratos:
+                rutas = self._archivos_contrato(con, c["contrato"], anio, meses, regimen)
+                firma = "|".join(f"{r}:{os.stat(r).st_mtime_ns}:{os.stat(r).st_size}" for r in sorted(rutas))
+                clave = hashlib.sha1(f"{motor}|{self.M.VERSION}|{c['contrato']}|{firma}".encode()).hexdigest()[:24]
+                out = self.cache / f"c_{motor}_{clave}.json"
+                tareas.append((c, rutas, out))
+                if rutas and not out.exists():
+                    faltan.append({"archivos": rutas, "out": str(out)})
+        if faltan:
+            if encolar:
+                self._encolar(motor, faltan)
+            return {"tipo": t, "motor": motor, "calculando": True, "total": len(tareas),
+                    "hechos": len(tareas) - len(faltan)}
+        return self._agregar(motor, t, anio, meses, regimen, tareas)
+
+    def _encolar(self, motor, tareas):
+        with self._cola_lock:
+            nuevas = [x for x in tareas if x["out"] not in self._en_curso]
+            if not nuevas:
+                return
+            self._en_curso.update(x["out"] for x in nuevas)
+            self._cola.append((motor, nuevas))
+            self._hay.set()
+
+    def _correr_cola(self):
+        job = Path(__file__).resolve().parent / "frecuencia_job.py"
+        while True:
+            self._hay.wait()
+            with self._cola_lock:
+                if not self._cola:
+                    self._hay.clear()
+                    continue
+                motor, tareas = self._cola.pop(0)
+            spec = self.cache / f"job_{os.getpid()}_{threading.get_ident()}.json"
+            try:
+                spec.write_text(json.dumps({"motor": motor, "cache": str(self.cache), "tareas": tareas}), encoding="utf-8")
+                r = subprocess.run([sys.executable, str(job), str(spec)], capture_output=True, text=True, timeout=3 * 3600)
+                print((r.stdout or "").strip() or (r.stderr or "")[-500:], flush=True)
+            except Exception as e:   # un fallo no detiene la cola
+                print(f"[frecuencia] error en el cálculo: {e}", flush=True)
+            finally:
+                spec.unlink(missing_ok=True)
+                with self._cola_lock:
+                    self._en_curso.difference_update(x["out"] for x in tareas)
+
+    def _agregar(self, motor, tipo, anio, meses, regimen, tareas):
+        vacio = {"act": {}, "pg": {}, "n": {}, "s": {}, "pac": 0, "arch": 0}
+        G, nombres, secc, errores = {}, {}, {}, []
+        orden = {"contrato": 0, "municipio": 1, "departamento": 2, "total": 3}
+        for c, rutas, out in tareas:
+            r = json.loads(out.read_text(encoding="utf-8")) if rutas and out.exists() else vacio
+            if r.get("error"):
+                errores.append(f"{c['contrato']}: {r['error']}")
+                r = vacio
+            for k, v in r.get("n", {}).items():
+                nombres.setdefault(k, v)
+            for k, v in r.get("s", {}).items():
+                secc.setdefault(k, v)
+            for nivel, nombre in (("contrato", c["contrato"]), ("municipio", c.get("municipio") or "—"),
+                                  ("departamento", departamento(c["contrato"])), ("total", f"Total {tipo}")):
+                g = G.setdefault((nivel, nombre), {"nivel": nivel, "nombre": nombre, "act": {}, "pg": {}, "pac": 0, "arch": 0})
+                for k, v in r["act"].items():
+                    acc = g["act"].setdefault(k, [0] * len(v))
+                    for i, x in enumerate(v):
+                        acc[i] += x
+                for k, n in r["pg"].items():
+                    g["pg"][k] = g["pg"].get(k, 0) + n
+                g["pac"] += r["pac"]
+                g["arch"] += r["arch"]
+                if nivel == "contrato":
+                    g["prestador"], g["municipio"] = c.get("prestador", ""), c.get("municipio", "")
+        total = G.get(("total", f"Total {tipo}"), {"act": {}, "pg": {}})
+        cat, renombre = self._catalogo_motor(motor, total, nombres, secc)
+        salida = []
+        for g in sorted(G.values(), key=lambda x: (orden[x["nivel"]], x["nombre"])):
+            act = {renombre(k): v for k, v in g["act"].items() if any(v)}
+            pg = {renombre(k + "|").rstrip("|"): n for k, n in g["pg"].items()}
+            salida.append({"nivel": g["nivel"], "nombre": g["nombre"], "archivos": g["arch"], "pacientes": g["pac"],
+                           "pacientes_dx": g["pac"], "actividades": act, "pacientes_grupo": pg, "diagnosticos": {},
+                           **({"prestador": g["prestador"], "municipio": g["municipio"]} if g["nivel"] == "contrato" else {})})
+        return {"tipo": tipo, "motor": motor, "anio": anio, "meses": meses, "regimen": regimen or "RS+RC",
+                "catalogo": cat, "grupos": salida, "contratos_tipo": len(tareas), "errores": errores[:20]}
+
+    def _catalogo_motor(self, motor, total, nombres, secc):
+        """Catálogo para la pantalla (grupos, actividades) y función que pasa claves internas a las de pantalla."""
+        M = self.M
+        ahora = datetime.now().astimezone().isoformat(timespec="seconds")
+        if motor == "3280":
+            progs = M.CFG3280["programas"]
+            etiqueta = {p["id"]: p.get("nombre") or p["id"] for p in progs}
+            cfg = M.CFG3280["actividades_base"]
+            rutas = M.CFG3280.get("rutas_diag", {})
+            grupos, acts, info = [], [], {}
+            for p in progs:
+                claves = [f"{p['id']}|{aid}" for aid in p["actividades"] if aid in cfg]
+                if not total["pg"].get(p["id"]) and not any(any(total["act"].get(k, [])) for k in claves):
+                    continue
+                gr = etiqueta[p["id"]]
+                grupos.append(gr)
+                ap = M.grupos_programa(p)
+                if p.get("aplica_a"):
+                    info[gr] = "Pacientes con diagnóstico de: " + ", ".join(
+                        re.sub(r"^[^\w]+\s*", "", rutas.get(x, {}).get("label", x)) for x in ap)
+                else:
+                    info[gr] = f"Pacientes de {p.get('edad_min', 0)} a {p.get('edad_max', 200)} años" if p["id"] not in M.CVS \
+                        else f"Curso de vida por edad: {p.get('edad_min', 0)}–{p.get('edad_max', 200)} años"
+                for aid in p["actividades"]:
+                    a = cfg.get(aid)
+                    if not a:
+                        continue
+                    cups = ", ".join(a.get("cups", [])) or ("Medicamento: " + ", ".join(a.get("nombres") or a.get("busqueda_nombre") or []))
+                    acts.append({"grupo": gr, "codigo": aid, "cups_txt": cups, "descripciones": [a.get("descripcion", aid)],
+                                 "criterio": ARCHIVO_RIPS.get(a.get("archivo"), a.get("archivo", ""))})
+            return ({"grupos": grupos, "actividades": acts, "sin_codigo": [], "diagnosticos": [], "grupos_info": info,
+                     "actualizado": ahora, "por": "matriz 3280 (sencilla)",
+                     "etiquetas": {"criterio": "Archivo RIPS", "pacientes_grupo": "Pacientes del grupo",
+                                   "todos": "Contar en todos los pacientes"}},
+                    lambda k: etiqueta.get(k.split("|", 1)[0], k.split("|", 1)[0]) + "|" + k.split("|", 1)[1])
+        # asistencial / todos: grupos = tipos de servicio; actividades = códigos reportados
+        por_tipo = {}
+        for k, v in total["act"].items():
+            tipo_s, cod = k.split("|", 1)
+            if v[0] > 0:
+                por_tipo.setdefault(tipo_s, []).append((v[0], cod))
+        orden_t = {t: i for i, t in enumerate(M.ORDEN_TIPOS)}
+        grupos = sorted(por_tipo, key=lambda t: (orden_t.get(t, 999), t))
+        acts = []
+        for gr in grupos:
+            for _, cod in sorted(por_tipo[gr], reverse=True):
+                nom = M.NOMBRE_CUPS.get(cod) or nombres.get(cod, "")   # primero la descripción oficial (matriz 3280)
+                acts.append({"grupo": gr, "codigo": cod, "descripciones": [nom] if nom else [], "criterio": secc.get(cod, "")})
+        return ({"grupos": grupos, "actividades": acts, "sin_codigo": [], "diagnosticos": [], "grupos_info": {},
+                 "actualizado": ahora, "por": "Evaluación Asistencial" if motor == "asis" else "todos los RIPS",
+                 "etiquetas": {"criterio": "Archivo RIPS" if motor == "todos" else None,
+                               "pacientes_grupo": "Pacientes con este servicio", "todos": None}},
+                lambda k: k)

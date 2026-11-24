@@ -210,6 +210,7 @@ def ejecutar(r):
         _duplicados(esperar=True)
     except Exception:
         pass
+    precalentar_frecuencia()   # y la frecuencia de uso (en segundo plano)
 
 
 # Si una consulta falla (SIE caído, lento, usuario inactivo un rato…) se vuelve a poner en cola sola,
@@ -428,7 +429,41 @@ def frecuencia(tipo: str, anio: int, meses: str, regimen: str = "", x_token: str
     if not hist.exists():
         raise HTTPException(404, "Sin historial")
     meta = json.loads(CATALOGO.read_text(encoding="utf-8")) if CATALOGO.exists() else []
-    return FREC.calcular(tipo, anio, lista, regimen, meta, hist)
+    return FREC.solicitar(tipo, anio, lista, regimen, meta, hist)
+
+
+def _meses_activos(anio):
+    """Los meses que el tablero muestra en «Todos» (igual que mesesActivos del tablero)."""
+    hoy = datetime.now()
+    lim = 12 if anio < hoy.year else hoy.month
+    meta = json.loads(CATALOGO.read_text(encoding="utf-8")) if CATALOGO.exists() else []
+    hist = BOT / "historial.db"
+    con_reg = set()
+    if hist.exists():
+        with closing(sqlite3.connect(hist)) as con:
+            con_reg = {m for (m,) in con.execute("SELECT DISTINCT periodo_mes FROM registros WHERE periodo_anio=?", (anio,))}
+    out = []
+    for m in range(1, min(12, lim) + 1):
+        ini_m, fin_m = f"{anio}-{m:02d}-01", f"{anio}-{m:02d}-31"
+        if m in con_reg or any((not c.get("inicio") or c["inicio"] <= fin_m) and (not c.get("fin") or c["fin"] >= ini_m) for c in meta):
+            out.append(m)
+    return out or [hoy.month]
+
+
+def precalentar_frecuencia():
+    """Deja calculada la frecuencia de uso de todos los tipos (y TODOS) con los meses que el tablero muestra
+    por defecto, para que abra al instante. Solo calcula lo que cambió (caché por archivo y por contrato)."""
+    try:
+        anio = datetime.now().year
+        meta = json.loads(CATALOGO.read_text(encoding="utf-8")) if CATALOGO.exists() else []
+        tipo_de = lambda c: (re.match(r"^[A-Z]+(?:-[A-Z]+)?(?=-\d)", c) or re.match(r"^[^-]+", c)).group(0)   # = tipoDe del tablero
+        tipos = sorted({tipo_de(c["contrato"].upper()) for c in meta}) + ["TODOS"]
+        meses = _meses_activos(anio)
+        for t in tipos:
+            if FREC.motor_de(t) != "dx":
+                FREC.solicitar(t, anio, meses, "", meta, BOT / "historial.db")
+    except Exception as e:
+        print(f"[frecuencia] no se pudo precalcular: {e}", flush=True)
 
 
 @app.get("/salud")
@@ -795,3 +830,7 @@ def duplicados_excel(x_token: str = Header("")):
         viejo.unlink(missing_ok=True)
     return FileResponse(ruta, filename=ruta.name,
                         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+# al arrancar el worker, completar en segundo plano lo que falte de la frecuencia de uso
+threading.Thread(target=precalentar_frecuencia, daemon=True).start()

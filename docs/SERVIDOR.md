@@ -63,10 +63,15 @@ correo de prueba y solo guarda si llegó.
 | `GET/PUT /usuarios` | Usuarios del tablero |
 | `GET /monitor` | Memoria, disco, CPU, servicios, cola, almacenamiento y seguridad |
 | `GET /duplicados`, `GET /duplicados/excel` | Análisis de facturas duplicadas |
-| `GET /frecuencia`, `GET /frecuencia/catalogo`, `PUT /frecuencia/catalogo/{tipo}` | Frecuencia de uso de CUPS y diagnósticos; catálogo en `worker_datos/frecuencia_catalogo.json` |
+| `GET /frecuencia`, `GET /frecuencia/catalogo`, `PUT /frecuencia/catalogo/{tipo}` | Frecuencia de uso (catálogo en `worker_datos/frecuencia_catalogo.json`). Si falta calcular responde `{calculando, hechos, total}` y lo calcula aparte (`worker/frecuencia_job.py` con los motores de `worker/motores.py`); cachés en `worker_datos/frecuencia_cache/` (`r_*` por RIPS, `c_*` por contrato) |
 | `POST /seguridad/evento`, `GET /seguridad/estado`, `GET /seguridad`, `POST /seguridad/prueba` | Registro, bloqueos y alertas |
 
 Toda respuesta 401 del worker se registra como intento externo (`token_invalido_servidor`).
+
+## Frecuencia de uso
+Motores en `worker/motores.py` con copias de las tablas de las otras apps en `worker/config/`
+(`res3280_cups.json` del evaluador 3280 y `asistencial_cups.json` de la Evaluación Asistencial: si allá
+cambian, copiar de nuevo). Se precalcula al arrancar el worker y al terminar cada consulta.
 
 ## Consultas programadas y reintentos
 - `radicacion-programada.timer` lanza una consulta completa (todos los contratos, RS y RC,

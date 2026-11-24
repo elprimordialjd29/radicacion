@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.13.0 — 2026-11-24
+- **Frecuencia de uso para todos los tipos de contrato** y opción **TODOS (toda la EPS)**. Cada tipo se
+  cuenta como en su aplicación:
+  - **PMS y RCV (incl. MD-RCV): matriz 3280**, versión sencilla pedida por el usuario: los 25 programas
+    y 156 actividades de `res3280_cups.json` (copia del evaluador 3280); cada registro con un CUPS de la
+    actividad (o el nombre del medicamento) cuenta en los pacientes del programa —curso de vida por edad a
+    la última atención del mes y rutas por diagnóstico (embarazo, DM, HTA…)—, **sin finalidad ni valor
+    único**. Opción «Contar en todos los pacientes».
+  - **ASE, ASB, EB, MD, MDC, CMP, PAI: Evaluación Cápita Asistencial**: el mismo mapa CUPS → tipo de
+    servicio (`asistencial_cups.json`, copia de la app) y las mismas reglas de lectura del TXT
+    (medicamentos y otros servicios por cantidad, urgencias, traslados).
+  - **DNT**: su catálogo de CUPS y diagnósticos (sin cambios).
+  - **TODOS**: todos los códigos reportados en los RIPS de la EPS, por tipo de servicio o, si no está en
+    el mapa, por el archivo RIPS.
+- Cálculo **en segundo plano** (proceso aparte) con barra de avance; cada RIPS se resume una vez y cada
+  contrato queda en caché (`worker_datos/frecuencia_cache/`). Al terminar cada consulta al SIE y al
+  arrancar el worker se precalcula lo que cambió.
+- Pantalla: selector con el tipo y su forma de contar, buscador de CUPS/actividad, columnas según el
+  tipo (programa, tipo de servicio, archivo RIPS). Excel en formato lista para todos los tipos.
+- Departamento también para contratos con prefijo doble (MD-RCV).
+
 ## 0.12.11 — 2026-11-24
 - Excel de frecuencia de uso: vuelve el **bloque de datos del reporte arriba de cada hoja** (título,
   periodo, régimen, margen, plazo, corte de datos, generado por y fuente), como en la primera versión;

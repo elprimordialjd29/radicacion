@@ -37,13 +37,19 @@ contrato (ordenable por %, $ o ejecución; filtro de % mínimo), periodos sin ra
 detallada con saldo. Clic en una fila → detalle mes a mes con gráfica. Descargas en Excel y PDF.
 
 ### Frecuencia de uso (permiso «Ver reporte»)
-Elige el **tipo de contrato** (DNT, PMS…), los meses de atención arriba y la vista
-**Departamento / Municipio / Contrato**. La primera columna es la **frecuencia total** de todos los
-contratos de ese tipo. La tabla va por **grupo** (riesgo, aguda moderada, aguda severa…): cada grupo
-muestra sus pacientes con diagnóstico y sus CUPS; cada CUPS se cuenta en los pacientes con
-diagnóstico de ese grupo (un paciente con varios grupos en el mes queda en el más severo). Cada
-celda: veces que se reportó el CUPS y, debajo, pacientes distintos. «Contar en todos los pacientes»
-cuenta el CUPS en todos los pacientes del RIPS. Abajo, los diagnósticos por grupo (pacientes y atenciones). ⬇ Excel.
+Elige el **tipo de contrato** (o **TODOS (toda la EPS)**), los meses de atención arriba y la vista
+**Departamento / Municipio / Contrato**. La última columna es el **Total**. Cada celda: veces que se
+reportó y, debajo, pacientes distintos y % del grupo. El selector dice cómo se cuenta cada tipo:
+
+| Tipo | Cómo se cuenta | Grupos |
+|---|---|---|
+| PMS, RCV, MD-RCV | Matriz 3280 sencilla: cada registro con un CUPS de la actividad cuenta en los pacientes del programa (curso de vida por edad, rutas por diagnóstico); sin finalidad ni valor único | Programas 3280 |
+| ASE, ASB, EB, MD, MDC, CMP, PAI | Igual que la Evaluación Cápita Asistencial (mapa CUPS → tipo de servicio; medicamentos y otros servicios por cantidad) | Tipos de servicio |
+| DNT (o un tipo con catálogo cargado) | Catálogo de CUPS y diagnósticos por grupo | Grupos del catálogo |
+| TODOS | Todos los códigos de todos los RIPS de la EPS | Tipo de servicio o archivo RIPS |
+
+La primera vez de cada tipo se calcula en segundo plano (barra de avance); después abre al instante.
+Usa el buscador para encontrar un CUPS o una actividad. ⬇ Excel: una fila por contrato y CUPS/actividad.
 
 **Cargar el catálogo** (administrador): «⬆ Cargar CUPS y diagnósticos» → tipo de contrato y
 **📄 Cargar desde Excel** (el archivo con las columnas ACTIVIDAD · DESCRIPCIÓN DEL CUPS · CUPS y, en la
