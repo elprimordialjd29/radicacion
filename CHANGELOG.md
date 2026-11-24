@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.14.6 — 2026-11-24
+- **Usuarios del RIPS idénticos al SIE.** El lector contaba como usuario la línea de título
+  «****USUARIOS****|» que el SIE pone al inicio de la sección: todos los meses salían con 1 usuario de más
+  (KANKUAMA abril 3.802 → 3.801). Ahora se saltan los títulos de sección; usuarios = registros del archivo
+  de usuarios del SIE, sin quitar repetidos (igual al SIE). Verificado con los planos bajados del SIE el
+  24-nov (md5 idénticos a los del servidor): usuarios 5.974 / 3.801 / 3.342 / 2.687 / 2.781 y servicios
+  24.153 / 17.512 / 15.405 / 14.182 / 15.476 (marzo–julio RS). Se recalcularon los usuarios de todas las
+  radicaciones guardadas.
+
 ## 0.14.5 — 2026-11-24
 - **Último cargue = número de recepción RIPS más alto** (orden real de carga en el SIE). La «Fecha Recepción»
   puede quedar vieja: al volver a cargar el RIPS de una factura ya radicada, el SIE le deja la fecha original

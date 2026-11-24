@@ -110,7 +110,9 @@ def leer_plano(texto):
             secciones.setdefault(actual, [])
             continue
         s = linea.strip()
-        if not actual or not s or s == "|" or set(s) <= set("*|") or "FACTURAS*" in s:
+        # fuera: líneas vacías, separadores «****|» y títulos de sección («****USUARIOS****|», «****FACTURAS****|»),
+        # que el SIE pone al inicio de cada sección y no son registros (contarlos daba un usuario de más)
+        if not actual or not s or s == "|" or set(s) <= set("*|") or (s.startswith("*") and "," not in s):
             continue
         secciones[actual].append(s)
     return secciones
