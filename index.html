@@ -374,7 +374,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.12.8</div>
+          <div class="usr-ver">Radicación cápita · v0.12.9</div>
         </div>
       </div>
     </div>
@@ -1595,19 +1595,25 @@ async function exportarFrecuenciaExcel() {
     : ['TODOS', 'TODOS', `TOTAL ${FR.tipo}`, 'TODOS LOS PRESTADORES'];
   const dxG = (gr) => FR.catalogo.diagnosticos.filter((d) => d.grupo === gr).map((d) => d.codigo).join(', ');
   const pct = (a, b) => (b ? +(a / b * 100).toFixed(1) : 0);
-  const f = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'Actividad', 'CUPS', 'DX que corresponde',
-    'Niños en el grupo', 'Veces (niños del grupo)', 'Niños que lo recibieron', '% del grupo', 'Veces (todos los pacientes)', 'Pacientes (todos)']];
+  // un solo juego de cifras, el mismo de la pantalla: por defecto en los niños del grupo; con «Contar en
+  // todos los pacientes» marcado, en todos los atendidos (antes iban los dos y se repetían en cada grupo)
+  const todos = frSoloDx;
+  const f = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'DX que corresponde',
+    todos ? 'Pacientes atendidos' : 'Niños en el grupo', 'Actividad', 'CUPS', 'Veces',
+    todos ? 'Pacientes que lo recibieron' : 'Niños que lo recibieron', todos ? '% de los atendidos' : '% del grupo']];
   for (const g of filasG) for (const a of FR.catalogo.actividades) {
-    const gr = a.grupo || 'GENERAL', v = g.actividades[`${gr}|${a.codigo}`] || [0, 0, 0, 0], ng = (g.pacientes_grupo || {})[gr] || 0;
-    f.push([...ubic(g), gr, a.descripciones.join(' / '), a.codigo, dxG(gr), ng, v[0], v[1], pct(v[1], ng), v[2], v[3]]);
+    const gr = a.grupo || 'GENERAL', v = g.actividades[`${gr}|${a.codigo}`] || [0, 0, 0, 0];
+    const base = todos ? g.pacientes : ((g.pacientes_grupo || {})[gr] || 0);
+    const veces = todos ? v[2] : v[0], ninos = todos ? v[3] : v[1];
+    f.push([...ubic(g), gr, dxG(gr), base, a.descripciones.join(' / '), a.codigo, veces, ninos, pct(ninos, base)]);
   }
-  const wsC = hojaListaFmt(wb, 'Frecuencia CUPS', f, [14, 18, 19, 30, 30, 52, 17, 24, 12, 14, 14, 10, 16, 14]);
+  const wsC = hojaListaFmt(wb, 'Frecuencia CUPS', f, [14, 18, 19, 30, 30, 24, 12, 52, 17, 10, 14, 10]);
   const d = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'CIE-10', 'Niños con el diagnóstico', 'Atenciones']];
   for (const g of filasG) for (const x of FR.catalogo.diagnosticos) { const v = g.diagnosticos[x.codigo] || [0, 0]; d.push([...ubic(g), x.grupo, x.codigo, v[0], v[1]]); }
   const wsD = hojaListaFmt(wb, 'Diagnósticos', d, [14, 18, 19, 30, 30, 10, 14, 12]);
   // filas del total en negrilla para distinguirlas
   for (const ws of [wsC, wsD]) ws.eachRow((row, n) => { if (n > 1 && String(row.getCell(3).value).startsWith('TOTAL')) row.font = { bold: true }; });
-  await descargarExcelJS(wb, `Frecuencia_${FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}.xlsx`);
+  await descargarExcelJS(wb, `Frecuencia_${FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}${todos ? '_todos_los_pacientes' : ''}.xlsx`);
 }
 $('#vistaFrecuencia').addEventListener('click', (e) => {
   const nv = e.target.closest('#frNivel [data-v]'); if (nv) { frNivel = nv.dataset.v; render(); return; }

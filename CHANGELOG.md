@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.9 — 2026-11-24
+- Excel de frecuencia de uso sin columnas repetidas: un solo juego de cifras (Veces, Niños que lo
+  recibieron, % del grupo), el mismo de la pantalla; si está marcado «Contar en todos los pacientes»
+  el Excel trae esas cifras (y lo dice en el nombre del archivo). Se quitaron «Veces (todos)» y
+  «Pacientes (todos)», que repetían lo mismo en cada grupo. Columnas ordenadas: ubicación · contrato ·
+  prestador · grupo · DX · niños en el grupo · actividad · CUPS · cifras.
+
 ## 0.12.8 — 2026-11-24
 - Excel de frecuencia de uso simplificado: solo hojas **Frecuencia CUPS** y **Diagnósticos**; sin columna
   «Nivel» ni filas de municipio/departamento (se filtran por sus columnas); una fila por contrato y al
