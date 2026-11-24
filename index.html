@@ -374,7 +374,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.12.6</div>
+          <div class="usr-ver">Radicación cápita · v0.12.7</div>
         </div>
       </div>
     </div>
@@ -1581,22 +1581,20 @@ async function leerExcelCatalogo(archivo) {
   }
   return { act: act.join('\n'), dx: dx.join('\n'), nAct: act.length, nDx: dx.length, grupos: [...grupos] };
 }
-// Excel en formato de LISTA (una fila por contrato × CUPS), con encabezado en la fila 1 y filtros:
-// fácil de filtrar por contrato, municipio, departamento, grupo o CUPS y de usar en tablas dinámicas.
-function hojaLista(X, filas, anchos) {
-  const ws = hoja(X, filas, anchos);
-  ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: filas.length - 1, c: filas[0].length - 1 } }) };
-  return ws;
-}
+// Excel en formato de LISTA (una fila por contrato × CUPS) con encabezado fijo y filtros (ExcelJS).
 async function exportarFrecuenciaExcel() {
-  const X = await libXlsx(); if (!FR?.grupos) return;
-  const wb = X.utils.book_new();
+  if (!FR?.grupos) return;
+  const E = await libExcelJS();
+  const wb = new E.Workbook();
   const NIVEL = { contrato: 'Contrato', municipio: 'Municipio', departamento: 'Departamento', total: 'Total' };
   const orden = { contrato: 0, municipio: 1, departamento: 2, total: 3 };
   const cols = [...FR.grupos].sort((a, b) => orden[a.nivel] - orden[b.nivel]);   // contratos primero, total al final
+  const contratosG = FR.grupos.filter((g) => g.nivel === 'contrato');
+  const prestadores = (lst) => [...new Set(lst.map((g) => g.prestador).filter(Boolean))].sort().join(' · ');
   const ubic = (g) => g.nivel === 'contrato' ? { dep: deptoDe(g.nombre), mun: g.municipio || '', con: g.nombre, pre: g.prestador || '' }
-    : g.nivel === 'municipio' ? { dep: deptoMuni(g.nombre), mun: g.nombre, con: '', pre: '' }
-    : g.nivel === 'departamento' ? { dep: g.nombre, mun: '', con: '', pre: '' } : { dep: 'TODOS', mun: 'TODOS', con: 'TODOS', pre: '' };
+    : g.nivel === 'municipio' ? { dep: deptoMuni(g.nombre), mun: g.nombre, con: 'VARIOS', pre: prestadores(contratosG.filter((c) => c.municipio === g.nombre)) }
+    : g.nivel === 'departamento' ? { dep: g.nombre, mun: 'VARIOS', con: 'VARIOS', pre: prestadores(contratosG.filter((c) => deptoDe(c.nombre) === g.nombre)) }
+    : { dep: 'TODOS', mun: 'TODOS', con: 'TODOS', pre: prestadores(contratosG) };
   const dxG = (gr) => FR.catalogo.diagnosticos.filter((d) => d.grupo === gr).map((d) => d.codigo).join(', ');
   const pct = (a, b) => (b ? +(a / b * 100).toFixed(1) : 0);
   // 1. Frecuencia de CUPS
@@ -1609,24 +1607,27 @@ async function exportarFrecuenciaExcel() {
       f.push([NIVEL[g.nivel], u.dep, u.mun, u.con, u.pre, gr, a.descripciones.join(' / '), a.codigo, dxG(gr), ng, v[0], v[1], pct(v[1], ng), v[2], v[3]]);
     }
   }
-  X.utils.book_append_sheet(wb, hojaLista(X, f, [12, 14, 18, 18, 28, 30, 50, 16, 22, 12, 14, 14, 10, 16, 14]), 'Frecuencia CUPS');
+  hojaListaFmt(wb, 'Frecuencia CUPS', f, [12, 14, 18, 19, 30, 30, 52, 17, 24, 12, 14, 14, 10, 16, 14]);
   // 2. Diagnósticos
   const d = [['Nivel', 'Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'CIE-10', 'Niños con el diagnóstico', 'Atenciones']];
   for (const g of cols) {
     const u = ubic(g);
     for (const x of FR.catalogo.diagnosticos) { const v = g.diagnosticos[x.codigo] || [0, 0]; d.push([NIVEL[g.nivel], u.dep, u.mun, u.con, u.pre, x.grupo, x.codigo, v[0], v[1]]); }
   }
-  X.utils.book_append_sheet(wb, hojaLista(X, d, [12, 14, 18, 18, 28, 30, 10, 14, 12]), 'Diagnósticos');
+  hojaListaFmt(wb, 'Diagnósticos', d, [12, 14, 18, 19, 30, 30, 10, 14, 12]);
   // 3. Resumen por contrato / municipio / departamento / total
   const gruposCat = FR.catalogo.grupos || [];
   const r = [['Nivel', 'Departamento', 'Municipio', 'Contrato', 'Prestador', 'RIPS leídos', 'Pacientes atendidos', 'Pacientes con dx del catálogo', ...gruposCat.map((x) => 'Niños: ' + x)]];
   for (const g of cols) { const u = ubic(g); r.push([NIVEL[g.nivel], u.dep, u.mun, u.con, u.pre, g.archivos, g.pacientes, g.pacientes_dx, ...gruposCat.map((x) => (g.pacientes_grupo || {})[x] || 0)]); }
-  X.utils.book_append_sheet(wb, hojaLista(X, r, [12, 14, 18, 18, 28, 10, 12, 14, ...gruposCat.map(() => 16)]), 'Resumen');
+  hojaListaFmt(wb, 'Resumen', r, [12, 14, 18, 19, 30, 10, 12, 14, ...gruposCat.map(() => 18)]);
   // 4. Datos del reporte
-  X.utils.book_append_sheet(wb, hoja(X, [...cabecera(`Frecuencia de uso ${FR.tipo}`),
+  const info = wb.addWorksheet('Info');
+  info.columns = [{ width: 24 }, { width: 110 }];
+  [...cabecera(`Frecuencia de uso ${FR.tipo}`),
     ['Cómo leer', 'Cada CUPS de un grupo se cuenta en los niños con diagnóstico de ese grupo en el mes (si tienen de dos grupos, en el más severo). «Todos los pacientes» = sin filtrar por diagnóstico.'],
-    ['Filtrar', 'Usa los filtros de la fila 1: Nivel = Contrato para ver cada contrato; Nivel = Total para el total del tipo de contrato.']], [22, 110]), 'Info');
-  descargarLibro(X, wb, `Frecuencia_${FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}.xlsx`);
+    ['Filtrar', 'Usa los filtros de la fila 1: Nivel = Contrato para ver cada contrato; Nivel = Total para el total del tipo de contrato.']].forEach((x) => info.addRow(x));
+  info.getRow(1).font = { bold: true, size: 13 };
+  await descargarExcelJS(wb, `Frecuencia_${FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}.xlsx`);
 }
 $('#vistaFrecuencia').addEventListener('click', (e) => {
   const nv = e.target.closest('#frNivel [data-v]'); if (nv) { frNivel = nv.dataset.v; render(); return; }
@@ -1929,6 +1930,38 @@ render = function () { _renderOrig(); if (D) { renderAlcance(); if (!$('#cMeses'
 
 // ---- exportar a Excel (SheetJS, se carga solo al usarlo) e imprimir / PDF
 let XLSXlib = null;
+// ExcelJS: para Excel con formato (encabezado fijo y con color, filtros). Se carga solo al usarlo.
+let EXCELJSlib = null;
+async function libExcelJS() {
+  if (EXCELJSlib) return EXCELJSlib;
+  await new Promise((ok, mal) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    sc.onload = ok; sc.onerror = () => mal(new Error('No se pudo cargar el generador de Excel'));
+    document.head.appendChild(sc);
+  });
+  return (EXCELJSlib = window.ExcelJS);
+}
+// agrega una hoja en formato lista: encabezado en la fila 1, fijo al desplazarse, en negrilla con fondo, y filtros
+function hojaListaFmt(wb, nombre, filas, anchos) {
+  const ws = wb.addWorksheet(nombre, { views: [{ state: 'frozen', ySplit: 1 }] });
+  ws.columns = filas[0].map((h, i) => ({ header: h, width: (anchos || [])[i] || 14 }));
+  filas.slice(1).forEach((f) => ws.addRow(f));
+  const cab = ws.getRow(1);
+  cab.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  cab.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
+  cab.alignment = { vertical: 'middle', wrapText: true };
+  cab.height = 32;
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: filas[0].length } };
+  return ws;
+}
+async function descargarExcelJS(wb, nombre) {
+  const buf = await wb.xlsx.writeBuffer();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
 async function libXlsx() {
   if (XLSXlib) return XLSXlib;
   await new Promise((ok, mal) => {

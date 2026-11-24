@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.7 — 2026-11-24
+- Excel de frecuencia de uso: **encabezado fijo** (la fila 1 queda visible al desplazarse), en negrilla
+  con fondo azul y filtros; los nombres de los **prestadores** también en las filas de municipio,
+  departamento y total. Se genera con ExcelJS (cdnjs, se carga solo al descargar).
+
 ## 0.12.6 — 2026-11-24
 - Excel de frecuencia de uso rehecho en **formato lista**: una fila por contrato × CUPS (y por
   municipio, departamento y total, con la columna Nivel), columnas fijas (departamento, municipio,
