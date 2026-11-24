@@ -43,11 +43,14 @@ reportó y, debajo, pacientes distintos y % del grupo. El selector dice cómo se
 
 | Tipo | Cómo se cuenta | Grupos |
 |---|---|---|
-| PMS, RCV, MD-RCV | Matriz 3280 sencilla: cada registro con un CUPS de la actividad cuenta en los pacientes del programa (curso de vida por edad, rutas por diagnóstico); sin finalidad ni valor único | Programas 3280 |
-| ASE, ASB, EB, MD, MDC, CMP, PAI | Igual que la Evaluación Cápita Asistencial (mapa CUPS → tipo de servicio; medicamentos y otros servicios por cantidad) | Tipos de servicio |
+| PMS, RCV | Matriz 3280 (frecuencia de uso, no evaluación): se busca el CUPS de cada actividad; cursos de vida por **edad**; el diagnóstico solo para las rutas **RCV y materna/prenatal**; cada registro cuenta en todos los programas que le apliquen, sin finalidad, sin valor único ni quitar duplicados. Al final, los códigos de PyM que reportan y la matriz no trae | Programas 3280 |
+| MD, MDC, MD-RCV | Solo los **medicamentos** (unidades), como la Evaluación Asistencial | Medicamentos |
+| ASE, ASB, EB, CMP, PAI | Igual que la Evaluación Cápita Asistencial (mapa CUPS → tipo de servicio; medicamentos y otros servicios por cantidad, sin quitar repetidos) | Tipos de servicio |
 | DNT (o un tipo con catálogo cargado) | Catálogo de CUPS y diagnósticos por grupo | Grupos del catálogo |
 | TODOS | Todos los códigos de todos los RIPS de la EPS | Tipo de servicio o archivo RIPS |
 
+Solo se muestran las actividades con registros (no salen filas vacías); con «Contar en todos los
+pacientes» aparecen también las que solo tienen registros fuera del grupo.
 La primera vez de cada tipo se calcula en segundo plano (barra de avance); después abre al instante.
 Usa el buscador para encontrar un CUPS o una actividad. ⬇ Excel: una fila por contrato y CUPS/actividad.
 

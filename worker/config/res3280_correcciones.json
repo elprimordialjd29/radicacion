@@ -1,0 +1,1335 @@
+{
+ "_fuente": "Correcciones a res3280_cups.json (copia sin tocar del evaluador 3280, que trae CUPS que ningún prestador reporta). Fuente: fórmulas del Excel de la matriz 3280 y los códigos que de verdad vienen en los RIPS de la EPS (verificados con conteos: % embarazadas, % RCV, sexo y edad de quien los recibe). 'actividades' corrige actividades de la matriz; 'nuevas' agrega actividades para códigos que los prestadores reportan y la matriz no trae (subcódigos de demanda inducida, PM, PYM); 'programas' cambia la lista de actividades de un programa ('actividades' la reemplaza, 'agregar' añade) o sus grupos ('aplica_a'). 'rutas' agrega rutas por diagnóstico para que IVE, parto y posparto no repitan a todas las embarazadas o preconcepcionales (sin finalidad no hay otra forma de separarlas).",
+ "actividades": {
+  "consulta_anticoncepcion": {
+   "cups": [
+    "890201",
+    "890205",
+    "890263"
+   ],
+   "nota": "Excel (la copia traía 890203, que es odontología)"
+  },
+  "consulta_anticoncepcion_control": {
+   "cups": [
+    "890301",
+    "890305",
+    "890363"
+   ],
+   "nota": "Excel"
+  },
+  "med_anticoncepcion_oral": {
+   "nombres": [
+    "MEDROXIPROGESTERONA",
+    "CYCLOFEM",
+    "LEVONORGESTREL",
+    "ETINILESTRADIOL",
+    "NORETISTERONA",
+    "ANTICONCEP"
+   ],
+   "nota": "Excel: MEDROXIPROGESTERONA, CYCLOFEM, LEVONORGESTREL (+ nombres que usan los prestadores)"
+  },
+  "med_preservativos": {
+   "cups": [
+    "PYM04RIA",
+    "I10203"
+   ],
+   "nombres": [
+    "PRESERVATIVO",
+    "CONDON",
+    "CONDÓN"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel: otros servicios PYM04RIA"
+  },
+  "proc_fortificacion_micronutrientes": {
+   "cups": [
+    "PYM01RIA"
+   ],
+   "nombres": [
+    "MICRONUTRIENTE"
+   ],
+   "nota": "también en medicamentos por nombre"
+  },
+  "proc_prueba_treponema": {
+   "cups": [
+    "906039"
+   ],
+   "nota": "Excel (906915 es la prueba no treponémica)"
+  },
+  "proc_hep_b": {
+   "cups": [
+    "906221",
+    "906317",
+    "906318"
+   ],
+   "nota": "Excel"
+  },
+  "proc_hep_c": {
+   "cups": [
+    "906225"
+   ],
+   "nota": "Excel"
+  },
+  "proc_detartraje": {
+   "cups": [
+    "997301"
+   ],
+   "nota": "Excel"
+  },
+  "proc_prueba_embarazo": {
+   "cups": [
+    "904508"
+   ],
+   "nota": "Excel"
+  },
+  "proc_anticoncepcion_subdermico": {
+   "cups": [
+    "861801"
+   ],
+   "nota": "Excel"
+  },
+  "proc_diu": {
+   "cups": [
+    "697101"
+   ],
+   "nota": "Excel"
+  },
+  "proc_glicemia": {
+   "cups": [
+    "903841"
+   ],
+   "nota": "Excel"
+  },
+  "proc_colesterol_total": {
+   "cups": [
+    "903818"
+   ],
+   "nota": "Excel"
+  },
+  "proc_colesterol_hdl": {
+   "cups": [
+    "903815"
+   ],
+   "nota": "Excel"
+  },
+  "proc_colesterol_ldl": {
+   "cups": [
+    "903816",
+    "903817"
+   ],
+   "nota": "Excel"
+  },
+  "proc_trigliceridos": {
+   "cups": [
+    "903868"
+   ],
+   "nota": "Excel"
+  },
+  "proc_creatinina": {
+   "cups": [
+    "903895"
+   ],
+   "nota": "Excel"
+  },
+  "proc_uroanalis": {
+   "cups": [
+    "907106"
+   ],
+   "nota": "Excel"
+  },
+  "proc_citologia": {
+   "cups": [
+    "892901"
+   ],
+   "nota": "Excel"
+  },
+  "proc_adn_vph": {
+   "cups": [
+    "908890"
+   ],
+   "nota": "código de VPH que reportan (100 % mujeres, edad mediana 43); el Excel usa 890363"
+  },
+  "proc_inspeccion_visual": {
+   "cups": [
+    "890363"
+   ],
+   "nota": "Excel"
+  },
+  "proc_mamografia": {
+   "cups": [
+    "PYM06RIA"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel: otros servicios PYM06RIA (valoración clínica de la mama)"
+  },
+  "proc_psa": {
+   "cups": [
+    "906611"
+   ],
+   "nota": "Excel"
+  },
+  "proc_tacto_rectal": {
+   "cups": [
+    "PYM08RIA"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel: otros servicios PYM08RIA"
+  },
+  "proc_sangre_oculta": {
+   "cups": [
+    "907009"
+   ],
+   "nota": "Excel"
+  },
+  "materna_ive_ecografia": {
+   "cups": [
+    "881410",
+    "881432"
+   ],
+   "nota": "Excel 881410 + ecografía transvaginal"
+  },
+  "materna_prenatal_consulta_gine": {
+   "cups": [
+    "890250",
+    "890350"
+   ],
+   "nota": "ginecología (56 % embarazadas)"
+  },
+  "materna_prenatal_nutricion": {
+   "cups": [
+    "890206",
+    "890306"
+   ],
+   "nota": "nutrición"
+  },
+  "materna_prenatal_psicologia": {
+   "cups": [
+    "890208",
+    "890308",
+    "890209",
+    "890309"
+   ],
+   "nota": "psicología y trabajo social"
+  },
+  "materna_ive_valoracion_psicosocial": {
+   "cups": [
+    "890208",
+    "890308",
+    "890209",
+    "890309"
+   ],
+   "nota": "psicología y trabajo social"
+  },
+  "materna_prenatal_escala_riesgo": {
+   "cups": [
+    "PYM09RIA"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "«Elaboración de escala de riesgo biopsicosocial» (89 % embarazadas)"
+  },
+  "materna_prenatal_cuadro_hematico": {
+   "cups": [
+    "902207",
+    "902208",
+    "902209",
+    "902210"
+   ],
+   "nota": "hemograma"
+  },
+  "materna_prenatal_urocultivo": {
+   "cups": [
+    "901235",
+    "901236"
+   ],
+   "nota": "urocultivo"
+  },
+  "materna_prenatal_coombs": {
+   "cups": [
+    "911016"
+   ],
+   "nota": "75 % embarazadas, sale junto a la hemoclasificación (la copia traía 903816, que es colesterol LDL)"
+  },
+  "materna_prenatal_ecografia_obs": {
+   "cups": [
+    "881431",
+    "881432",
+    "881434",
+    "881435",
+    "881437"
+   ],
+   "nota": "ecografías obstétricas (93-99 % embarazadas)"
+  },
+  "materna_prenatal_ecografia_nucal": {
+   "cups": [
+    "881436"
+   ],
+   "nota": "translucencia nucal (99 % embarazadas)"
+  },
+  "materna_prenatal_treponema": {
+   "cups": [
+    "906039"
+   ],
+   "nota": "Excel: prueba treponémica"
+  },
+  "materna_prenatal_vdrl": {
+   "cups": [
+    "906915",
+    "906916"
+   ],
+   "nota": "prueba no treponémica"
+  },
+  "materna_prenatal_glicemia_ayunas": {
+   "cups": [
+    "903841"
+   ],
+   "nota": "Excel"
+  },
+  "materna_prenatal_ptog": {
+   "cups": [
+    "903844",
+    "903845"
+   ],
+   "nota": "curva de glucosa (92-99 % embarazadas)"
+  },
+  "materna_prenatal_igg_toxo": {
+   "cups": [
+    "906127",
+    "906128"
+   ],
+   "nota": "toxoplasma IgG"
+  },
+  "materna_prenatal_igm_toxo": {
+   "cups": [
+    "906129",
+    "906130"
+   ],
+   "nota": "toxoplasma IgM (96-98 % embarazadas)"
+  },
+  "materna_prenatal_chagas": {
+   "cups": [
+    "906040"
+   ],
+   "nota": "Trypanosoma cruzi (65 % embarazadas)"
+  },
+  "materna_prenatal_vih": {
+   "cups": [
+    "906249",
+    "906250"
+   ],
+   "nota": "Excel: prueba VIH"
+  },
+  "materna_prenatal_toxoide": {
+   "cups": [
+    "993120"
+   ],
+   "nota": "Td (PAI)"
+  },
+  "materna_prenatal_influenza": {
+   "cups": [
+    "993104"
+   ],
+   "nota": "influenza (PAI)"
+  },
+  "materna_prenatal_tdap": {
+   "cups": [
+    "993122"
+   ],
+   "nota": "DPT/Tdap (PAI)"
+  },
+  "materna_parto_vaginal": {
+   "cups": [
+    "735980"
+   ],
+   "nota": "Excel"
+  },
+  "materna_recien_nacido": {
+   "cups": [
+    "890283"
+   ],
+   "nota": "Excel: valoración del recién nacido"
+  },
+  "materna_posparto_hemoclasif": {
+   "cups": [
+    "911015",
+    "911020"
+   ],
+   "nota": "Excel: hemoclasificación"
+  },
+  "materna_posparto_tsh": {
+   "cups": [
+    "906492"
+   ],
+   "nota": "Excel: TSH recién nacido"
+  },
+  "rcv_glucosa": {
+   "cups": [
+    "903841"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_colesterol_total": {
+   "cups": [
+    "903818"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_colesterol_hdl": {
+   "cups": [
+    "903815"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_colesterol_ldl": {
+   "cups": [
+    "903816",
+    "903817"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_trigliceridos": {
+   "cups": [
+    "903868"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_hemograma2": {
+   "cups": [
+    "902208"
+   ],
+   "nota": "Excel: hemograma II"
+  },
+  "rcv_uroanalis": {
+   "cups": [
+    "907106"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_creatinina": {
+   "cups": [
+    "903895"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_hbg_glicosilada": {
+   "cups": [
+    "903426"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_microalbuminuria": {
+   "cups": [
+    "903026"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_creatinuria": {
+   "cups": [
+    "903876"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_potasio": {
+   "cups": [
+    "903859"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_ecg": {
+   "cups": [
+    "895100",
+    "895101"
+   ],
+   "nota": "Excel 895100 + 895101 (también electrocardiograma, 67 % RCV)"
+  },
+  "rcv_ecografia_cardiaca": {
+   "cups": [
+    "881204"
+   ],
+   "nota": "Excel (ningún prestador lo reporta en cápita)"
+  },
+  "rcv_radiografia_torax": {
+   "cups": [
+    "871121"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_ecografia_urinaria": {
+   "cups": [
+    "881332"
+   ],
+   "nota": "Excel (881401/881402 son ecografías pélvicas: 100 % mujeres, 68 % embarazadas)"
+  },
+  "rcv_transaminasas_glu": {
+   "cups": [
+    "903866"
+   ],
+   "nota": "Excel: AST"
+  },
+  "rcv_transaminasas_ami": {
+   "cups": [
+    "903869",
+    "903867"
+   ],
+   "nota": "Excel: ALT 903869; 903867 también sale junto a la AST"
+  },
+  "rcv_consulta_medgen_1vez": {
+   "cups": [
+    "890201"
+   ],
+   "nota": "Excel: 1.ª vez medicina general"
+  },
+  "rcv_seguimiento_medgen": {
+   "cups": [
+    "890301"
+   ],
+   "nota": "Excel: control medicina general"
+  },
+  "rcv_consulta_enf_1vez": {
+   "cups": [
+    "890205"
+   ],
+   "nota": "Excel: 1.ª vez enfermería"
+  },
+  "rcv_seguimiento_enf": {
+   "cups": [
+    "890305"
+   ],
+   "nota": "Excel: control enfermería"
+  },
+  "rcv_consulta_med_interna": {
+   "cups": [
+    "890266"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_seguimiento_med_interna": {
+   "cups": [
+    "890366"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_consulta_cardiologia": {
+   "cups": [
+    "890228"
+   ],
+   "nota": "Excel (no se reporta en cápita)"
+  },
+  "rcv_seguimiento_cardiologia": {
+   "cups": [
+    "890328"
+   ],
+   "nota": "Excel (no se reporta en cápita)"
+  },
+  "rcv_consulta_endocrino": {
+   "cups": [
+    "890244"
+   ],
+   "nota": "Excel (no se reporta en cápita)"
+  },
+  "rcv_seguimiento_nefrologia": {
+   "cups": [
+    "890368"
+   ],
+   "nota": "Excel (no se reporta en cápita)"
+  },
+  "rcv_consulta_oftalmologia": {
+   "cups": [],
+   "nota": "la copia traía los códigos de cardiología; sin código confirmado y no se reporta en cápita"
+  },
+  "rcv_consulta_nutricion_1vez": {
+   "cups": [
+    "890206"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_seguimiento_nutricion": {
+   "cups": [
+    "890306"
+   ],
+   "nota": "Excel"
+  },
+  "rcv_consulta_psicologia_1vez": {
+   "cups": [
+    "890208"
+   ],
+   "nota": "psicología 1.ª vez"
+  },
+  "rcv_seguimiento_psicologia": {
+   "cups": [
+    "890308"
+   ],
+   "nota": "Excel: control psicología"
+  },
+  "rcv_edu_grupal": {
+   "cups": [
+    "990113"
+   ],
+   "nota": "Excel (98 % RCV)"
+  },
+  "di_captacion_hta": {
+   "cups": [
+    "DI0008-1"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_captacion_dm": {
+   "cups": [
+    "DI0008-2"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_seguimiento_hta": {
+   "cups": [
+    "DI0008-3"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_seguimiento_dm": {
+   "cups": [
+    "DI0008-4"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_canalizacion_citologia": {
+   "cups": [
+    "DI0007-1"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_canalizacion_mamografia": {
+   "cups": [
+    "DI0007-2"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_canalizacion_prostata": {
+   "cups": [
+    "DI0006-9"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_canalizacion_colon": {
+   "cups": [
+    "DI0006-10"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_visita_domiciliaria": {
+   "cups": [
+    "DI0009-2"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_usuarios_renuentes": {
+   "cups": [
+    "DI0009-4",
+    "DI0009-3"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel DI0009-4; algunos prestadores usan DI0009-3 con el mismo nombre"
+  },
+  "di_canalizacion_preconcepcion": {
+   "cups": [
+    "DI00011-1"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_canalizacion_prenatal": {
+   "cups": [
+    "DI00011-4"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_seguimiento_rmnp": {
+   "cups": [
+    "DI00011-7"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_salud_mental_1": {
+   "cups": [
+    "I11101",
+    "DI0017"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_salud_mental_2": {
+   "cups": [
+    "I11104",
+    "DI0018"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_salud_mental_3": {
+   "cups": [
+    "I11107",
+    "DI0019"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_salud_mental_4": {
+   "cups": [
+    "I11110",
+    "DI0020"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_salud_mental_5": {
+   "cups": [
+    "I11202",
+    "DI0021"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "Excel"
+  },
+  "di_salud_mental_6": {
+   "cups": [
+    "I11412",
+    "I11414",
+    "DI0022"
+   ],
+   "archivo": "otrosServicios",
+   "nota": "el Excel repite I11202; en los RIPS «estilos de vida saludable» viene como I11412"
+  }
+ },
+ "nuevas": {
+  "di_pi_1": {
+   "descripcion": "Remisión a valoración integral primera vez o seguimiento (medicina)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0001-1"
+   ]
+  },
+  "di_pi_2": {
+   "descripcion": "Remisión a valoración por enfermería / actualización de esquema PAI",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0001-2"
+   ]
+  },
+  "di_pi_3": {
+   "descripcion": "Remisión a odontología (a partir de los 6 meses)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0001-3"
+   ]
+  },
+  "di_pi_4": {
+   "descripcion": "Remisión a actualización de esquema PAI",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0001-4"
+   ]
+  },
+  "di_pi_5": {
+   "descripcion": "Seguimiento a inasistentes / educación a padres o cuidadores",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0001-5"
+   ]
+  },
+  "di_pi_6": {
+   "descripcion": "Seguimiento a eventos de salud pública",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0001-6"
+   ]
+  },
+  "di_pi_0": {
+   "descripcion": "Demanda inducida primera infancia (DI0001 sin subcódigo)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0001"
+   ]
+  },
+  "di_inf_1": {
+   "descripcion": "Remisión a valoración integral primera vez o seguimiento (medicina)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0002-1"
+   ]
+  },
+  "di_inf_2": {
+   "descripcion": "Remisión a valoración por enfermería / actualización de esquema PAI",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0002-2"
+   ]
+  },
+  "di_inf_3": {
+   "descripcion": "Remisión a odontología (cada 6 meses)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0002-3"
+   ]
+  },
+  "di_inf_4": {
+   "descripcion": "Remisión a actualización de esquema PAI / tamizaje de hemoglobina",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0002-4"
+   ]
+  },
+  "di_inf_5": {
+   "descripcion": "Seguimiento a inasistentes / educación a padres o cuidadores",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0002-5"
+   ]
+  },
+  "di_inf_6": {
+   "descripcion": "Seguimiento a eventos de salud pública",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0002-6"
+   ]
+  },
+  "di_inf_0": {
+   "descripcion": "Demanda inducida infancia (DI0002 sin subcódigo)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0002"
+   ]
+  },
+  "di_ado_1": {
+   "descripcion": "Remisión a valoración integral primera vez o seguimiento (medicina)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0003-1"
+   ]
+  },
+  "di_ado_2": {
+   "descripcion": "Remisión a valoración por enfermería / actualización de esquema PAI",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0003-2"
+   ]
+  },
+  "di_ado_3": {
+   "descripcion": "Remisión a odontología (cada año)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0003-3"
+   ]
+  },
+  "di_ado_4": {
+   "descripcion": "Remisión a actualización de esquema PAI / educación en planificación familiar",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0003-4"
+   ]
+  },
+  "di_ado_5": {
+   "descripcion": "Seguimiento a inasistentes a la ruta PyMS / alteraciones del comportamiento",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0003-5"
+   ]
+  },
+  "di_ado_6": {
+   "descripcion": "Seguimiento a eventos de salud pública",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0003-6"
+   ]
+  },
+  "di_ado_0": {
+   "descripcion": "Demanda inducida adolescencia (DI0003 sin subcódigo)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0003"
+   ]
+  },
+  "di_jov_1": {
+   "descripcion": "Remisión a valoración integral primera vez o seguimiento (medicina)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0004-1"
+   ]
+  },
+  "di_jov_2": {
+   "descripcion": "Remisión a odontología (1 vez cada 2 años) / actualización de esquema PAI",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0004-2"
+   ]
+  },
+  "di_jov_3": {
+   "descripcion": "Remisión a actualización de esquema PAI",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0004-3"
+   ]
+  },
+  "di_jov_4": {
+   "descripcion": "Canalización a la ruta de riesgo cardio-cerebrovascular",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0004-4"
+   ]
+  },
+  "di_jov_5": {
+   "descripcion": "Seguimiento a inasistentes a la ruta PyMS / remisión a ruta materno perinatal",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0004-5"
+   ]
+  },
+  "di_jov_6": {
+   "descripcion": "Seguimiento a eventos de salud pública",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0004-6"
+   ]
+  },
+  "di_jov_0": {
+   "descripcion": "Demanda inducida juventud (DI0004 sin subcódigo)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0004"
+   ]
+  },
+  "di_adu_1": {
+   "descripcion": "Remisión a valoración integral primera vez o seguimiento (medicina)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0005-1"
+   ]
+  },
+  "di_adu_2": {
+   "descripcion": "Remisión a odontología (1 vez cada 2 años) / actualización de esquema PAI",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0005-2"
+   ]
+  },
+  "di_adu_3": {
+   "descripcion": "Remisión a actualización de esquema PAI",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0005-3"
+   ]
+  },
+  "di_adu_4": {
+   "descripcion": "Canalización a la ruta de riesgo cardio-cerebrovascular",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0005-4"
+   ]
+  },
+  "di_adu_5": {
+   "descripcion": "Seguimiento a inasistentes / educación y canalización VIH, sífilis y hepatitis",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0005-5"
+   ]
+  },
+  "di_adu_6": {
+   "descripcion": "Seguimiento a eventos de salud pública",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0005-6"
+   ]
+  },
+  "di_adu_0": {
+   "descripcion": "Demanda inducida adultez (DI0005 sin subcódigo)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0005"
+   ]
+  },
+  "di_vej_1": {
+   "descripcion": "Remisión a valoración integral primera vez o seguimiento (medicina)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0006-1"
+   ]
+  },
+  "di_vej_2": {
+   "descripcion": "Remisión a odontología (1 vez cada 2 años)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0006-2"
+   ]
+  },
+  "di_vej_3": {
+   "descripcion": "Remisión a actualización de esquema PAI",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0006-3"
+   ]
+  },
+  "di_vej_4": {
+   "descripcion": "Canalización a la ruta de riesgo cardio-cerebrovascular y metabólico",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0006-4"
+   ]
+  },
+  "di_vej_5": {
+   "descripcion": "Seguimiento a inasistentes / educación y canalización VIH, sífilis y hepatitis",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0006-5"
+   ]
+  },
+  "di_vej_6": {
+   "descripcion": "Seguimiento a eventos de salud pública",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0006-6"
+   ]
+  },
+  "di_vej_0": {
+   "descripcion": "Demanda inducida vejez (DI0006 sin subcódigo)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0006"
+   ]
+  },
+  "di0007_0": {
+   "descripcion": "Demanda inducida tamizaciones de cáncer (DI0007 sin subcódigo)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0007"
+   ]
+  },
+  "di0008_0": {
+   "descripcion": "Demanda inducida enfermedades precursoras HTA-DM (DI0008 sin subcódigo)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0008"
+   ]
+  },
+  "di0009_1": {
+   "descripcion": "Educación familiar (grupal)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0009-1"
+   ]
+  },
+  "di0009_0": {
+   "descripcion": "Demanda inducida caracterización grupo familiar (DI0009 sin subcódigo)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI0009"
+   ]
+  },
+  "di00011_2": {
+   "descripcion": "Ingreso a control prenatal",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI00011-2"
+   ]
+  },
+  "di00011_3": {
+   "descripcion": "Canalización oportuna al control prenatal antes de las 10 semanas",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI00011-3"
+   ]
+  },
+  "di00011_5": {
+   "descripcion": "Remisión a prueba rápida de sífilis",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI00011-5"
+   ]
+  },
+  "di00011_6": {
+   "descripcion": "Remisión a prueba rápida de VIH",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI00011-6"
+   ]
+  },
+  "di00011_8": {
+   "descripcion": "Seguimiento a eventos de salud pública",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI00011-8"
+   ]
+  },
+  "di00011_0": {
+   "descripcion": "Demanda inducida ruta materno perinatal (DI00011 sin subcódigo)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "DI00011"
+   ]
+  },
+  "sm_pm00011": {
+   "descripcion": "Demanda inducida para incentivar y orientar a la población (PM00011)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "PM00011-16",
+    "PM00011"
+   ]
+  },
+  "sm_pm00012": {
+   "descripcion": "Educación y comunicación para una sexualidad libre, sin discriminación ni violencia (PM00012)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "PM00012-16",
+    "PM00012"
+   ]
+  },
+  "sm_pm00013": {
+   "descripcion": "Información y prevención de la conducta suicida (PM00013)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "PM00013-16",
+    "PM00013"
+   ]
+  },
+  "sm_pm0009": {
+   "descripcion": "Prevención del consumo de sustancias psicoactivas (PM0009)",
+   "archivo": "otrosServicios",
+   "cups": [
+    "PM0009-17",
+    "PM0009"
+   ]
+  },
+  "pym_autoexamen_mama": {
+   "descripcion": "Educación en autoexamen de mama",
+   "archivo": "otrosServicios",
+   "cups": [
+    "PYM05RIA"
+   ]
+  },
+  "pym_solicitud_mamografia": {
+   "descripcion": "Solicitud de mamografía",
+   "archivo": "otrosServicios",
+   "cups": [
+    "PYM07RIA"
+   ]
+  },
+  "rcv_relacion_proteinuria": {
+   "descripcion": "Relación proteinuria / creatinuria",
+   "archivo": "otrosServicios",
+   "cups": [
+    "PYM00RIA"
+   ]
+  }
+ },
+ "rutas": {
+  "IVE": {
+   "label": "Interrupción voluntaria del embarazo (O04)",
+   "prefix": [
+    "O04"
+   ]
+  },
+  "PARTO": {
+   "label": "Parto y recién nacido (O60–O84, Z37, Z38, P00–P96)",
+   "prefix": [
+    "O60",
+    "O61",
+    "O62",
+    "O63",
+    "O64",
+    "O65",
+    "O66",
+    "O67",
+    "O68",
+    "O69",
+    "O70",
+    "O71",
+    "O72",
+    "O73",
+    "O74",
+    "O75",
+    "O80",
+    "O81",
+    "O82",
+    "O83",
+    "O84",
+    "Z37",
+    "Z38",
+    "P"
+   ]
+  },
+  "POSPARTO": {
+   "label": "Posparto y recién nacido (Z39, O85–O92, Z38, P00–P96)",
+   "prefix": [
+    "Z39",
+    "O85",
+    "O86",
+    "O87",
+    "O88",
+    "O89",
+    "O90",
+    "O91",
+    "O92",
+    "Z38",
+    "P"
+   ]
+  }
+ },
+ "programas": {
+  "DI_PRIMERA_INFANCIA": {
+   "actividades": [
+    "di_pi_1",
+    "di_pi_2",
+    "di_pi_3",
+    "di_pi_4",
+    "di_pi_5",
+    "di_pi_6",
+    "di_pi_0"
+   ]
+  },
+  "DI_INFANCIA": {
+   "actividades": [
+    "di_inf_1",
+    "di_inf_2",
+    "di_inf_3",
+    "di_inf_4",
+    "di_inf_5",
+    "di_inf_6",
+    "di_inf_0"
+   ]
+  },
+  "DI_ADOLESCENCIA": {
+   "actividades": [
+    "di_ado_1",
+    "di_ado_2",
+    "di_ado_3",
+    "di_ado_4",
+    "di_ado_5",
+    "di_ado_6",
+    "di_ado_0"
+   ]
+  },
+  "DI_JOVENES": {
+   "actividades": [
+    "di_jov_1",
+    "di_jov_2",
+    "di_jov_3",
+    "di_jov_4",
+    "di_jov_5",
+    "di_jov_6",
+    "di_jov_0"
+   ]
+  },
+  "DI_ADULTEZ": {
+   "actividades": [
+    "di_adu_1",
+    "di_adu_2",
+    "di_adu_3",
+    "di_adu_4",
+    "di_adu_5",
+    "di_adu_6",
+    "di_adu_0"
+   ]
+  },
+  "DI_VEJEZ": {
+   "actividades": [
+    "di_vej_1",
+    "di_vej_2",
+    "di_vej_3",
+    "di_vej_4",
+    "di_vej_5",
+    "di_vej_6",
+    "di_vej_0"
+   ]
+  },
+  "DI0007": {
+   "agregar": [
+    "di0007_0"
+   ]
+  },
+  "DI0008": {
+   "agregar": [
+    "di0008_0"
+   ]
+  },
+  "DI0009": {
+   "agregar": [
+    "di0009_1",
+    "di0009_0"
+   ]
+  },
+  "DI00011": {
+   "agregar": [
+    "di00011_2",
+    "di00011_3",
+    "di00011_5",
+    "di00011_6",
+    "di00011_8",
+    "di00011_0"
+   ]
+  },
+  "DI_SALUD_MENTAL": {
+   "agregar": [
+    "sm_pm00011",
+    "sm_pm00012",
+    "sm_pm00013",
+    "sm_pm0009"
+   ]
+  },
+  "JOVENES": {
+   "agregar": [
+    "pym_autoexamen_mama"
+   ]
+  },
+  "ADULTEZ": {
+   "agregar": [
+    "pym_autoexamen_mama",
+    "pym_solicitud_mamografia"
+   ]
+  },
+  "VEJEZ": {
+   "agregar": [
+    "pym_autoexamen_mama",
+    "pym_solicitud_mamografia"
+   ]
+  },
+  "RCV_RIESGO": {
+   "agregar": [
+    "rcv_relacion_proteinuria"
+   ]
+  },
+  "RCV_DM": {
+   "agregar": [
+    "rcv_relacion_proteinuria"
+   ]
+  },
+  "RCV_DM_HTA": {
+   "agregar": [
+    "rcv_relacion_proteinuria"
+   ],
+   "aplica_a": [
+    "DM_HTA"
+   ]
+  },
+  "RUTA_MATERNA_IVE": {
+   "aplica_a": [
+    "IVE"
+   ]
+  },
+  "RUTA_MATERNA_PARTO": {
+   "aplica_a": [
+    "PARTO"
+   ]
+  },
+  "RUTA_MATERNA_POSPARTO": {
+   "aplica_a": [
+    "POSPARTO"
+   ]
+  }
+ }
+}

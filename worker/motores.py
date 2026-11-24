@@ -3,12 +3,14 @@
 - «asis»  (ASE, ASB, EB, MD, MDC, CMP, PAI): igual que la Evaluación Cápita Asistencial
   (repo evaluacion-capita-asistencial, App.tsx): cada CUPS va a su tipo de servicio según el mapa fijo
   (config/asistencial_cups.json); consultas/procedimientos cuentan cada línea con un CUPS conocido;
-  medicamentos cuentan la cantidad (sin repetir paciente+código+fecha, sin oxígeno); otros servicios
+  medicamentos cuentan la cantidad (sin oxígeno; en frecuencia de uso sí se cuentan los repetidos); otros servicios
   cuentan la cantidad de los códigos de 6 caracteres; cada línea de urgencias = URGENCIAS BC.
 - «3280»  (PMS, RCV): programas y actividades de la matriz 3280 (config/res3280_cups.json, repo
-  evaluador-3280), versión SENCILLA pedida por el usuario: sin finalidad ni valor único. Cada registro
-  con un CUPS de la actividad (o, en medicamentos, con el nombre buscado) cuenta en los pacientes del
-  programa: curso de vida por edad a la última fecha de atención del RIPS y rutas por diagnóstico.
+  evaluador-3280, con las correcciones de config/res3280_correcciones.json). Frecuencia de uso, no evaluación:
+  sin finalidad, sin valor único y sin quitar duplicados. Cada registro con un CUPS de la actividad (o, en
+  medicamentos, con el nombre buscado) cuenta en todos los programas del paciente: curso de vida por EDAD a la
+  última fecha de atención del RIPS y rutas por diagnóstico solo para RCV y materna/prenatal.
+- «med»   (MD, MDC, MD-RCV): solo los medicamentos, contados como la Evaluación Asistencial.
 - «todos» (TODOS): todos los códigos reportados en el RIPS, con su tipo de servicio (mapa asistencial
   o, si no está, el archivo RIPS donde vino).
 
@@ -25,14 +27,67 @@ sys.path.insert(0, str(DIR.parent / "bot"))
 import rips_json  # noqa: E402
 
 VERSION = 1
+# versión del cálculo por motor (cambiarla invalida solo la caché de ese motor)
+VERSIONES = {"asis": 2, "todos": 3, "3280": 3, "med": 2}
 CFG3280 = json.loads((DIR / "config" / "res3280_cups.json").read_text(encoding="utf-8"))
+COR3280 = json.loads((DIR / "config" / "res3280_correcciones.json").read_text(encoding="utf-8"))
 ASIS = json.loads((DIR / "config" / "asistencial_cups.json").read_text(encoding="utf-8"))
 CUPS_TIPO = {c: x["tipo"] for x in ASIS["mapa"] for c in x["cups"]}
 ORDEN_TIPOS = [x["tipo"] for x in ASIS["mapa"]] + ["MEDICAMENTOS", "URGENCIAS BC", "OTROS SERVICIOS"]
 
+
+def _matriz_corregida(cfg, cor):
+    """Matriz 3280 con las correcciones de config/res3280_correcciones.json (la copia del evaluador no se toca)."""
+    acts = {k: dict(v) for k, v in cfg["actividades_base"].items()}
+    for aid, c in cor.get("actividades", {}).items():
+        a = acts.setdefault(aid, {"descripcion": aid, "archivo": "procedimientos"})
+        a.update({k: v for k, v in c.items() if k in ("cups", "nombres", "archivo", "descripcion")})
+    for aid, c in cor.get("nuevas", {}).items():
+        acts[aid] = dict(c)
+    progs = []
+    for p in cfg["programas"]:
+        p, c = dict(p), cor.get("programas", {}).get(p["id"], {})
+        lista = list(c.get("actividades", p["actividades"]))
+        lista += [a for a in c.get("agregar", []) if a not in lista]
+        p["actividades"] = [a for a in lista if a in acts]
+        if "aplica_a" in c:
+            p["aplica_a"] = list(c["aplica_a"])
+        progs.append(p)
+    return acts, progs
+
+
+ACTS_3280, PROGS_3280 = _matriz_corregida(CFG3280, COR3280)
+CUPS_3280 = {str(c).strip().upper() for a in ACTS_3280.values() for c in a.get("cups", [])}
+CONOCIDOS = CUPS_3280 | set(CUPS_TIPO)
+
+
+def normalizar_codigo(cod, conocidos=CONOCIDOS):
+    """Une variantes con que los prestadores escriben un mismo código de servicio:
+    «*PYM02RIA-37», «PYM02R», «PYM02RIAS», «PYMRIA04» → PYMxxRIA; «*DI0001-1» → DI0001-1 (sin el asterisco);
+    «9062491» → 906249 (CUPS de 6 con un dígito de más). Solo si el resultado es un código conocido de las matrices."""
+    c = re.sub(r"\s+", "", str(cod or "")).upper()
+    if not c or c in conocidos:
+        return c
+    base = re.sub(r"^[^0-9A-Z]+", "", c)          # asterisco u otro signo al inicio
+    if base in conocidos:
+        return base
+    m = re.fullmatch(r"PYM(\d\d)R(?:IAS?)?(?:-\w+)?|PYMRIA(\d\d)", base)
+    if m:
+        pym = f"PYM{m.group(1) or m.group(2)}RIA"
+        return pym if pym in conocidos else c
+    if base.startswith(("DI", "PM")):              # en demanda inducida el «-n» es parte del código
+        return c
+    sin_sufijo = re.sub(r"-\w{1,3}$", "", base)
+    if sin_sufijo in conocidos:
+        return sin_sufijo
+    if re.fullmatch(r"\d{7}", base) and base[:6] in conocidos:
+        return base[:6]
+    return c
+
+
 # descripciones conocidas de CUPS (para mostrar algo en consultas/procedimientos, que el RIPS no nombra)
 NOMBRE_CUPS = {}
-for _a in CFG3280["actividades_base"].values():
+for _a in ACTS_3280.values():
     for _c in _a.get("cups", []):
         NOMBRE_CUPS.setdefault(str(_c).upper(), _a.get("descripcion", ""))
 
@@ -103,7 +158,7 @@ def registros_asistencial(texto):
         at_lineas.add(li)
         regs.extend([(cups_at, pac, get_tipo(cups_at) or "TAB", nombre)] * cantidad)
 
-    seccion, en_at, en_urg, med_vistos = "", False, False, set()
+    seccion, en_at, en_urg = "", False, False
     for li, raw in enumerate(lineas):
         if li in at_lineas:
             continue
@@ -154,10 +209,7 @@ def registros_asistencial(texto):
                 continue
             fecha = (mp[6] or "").split(" ")[0].split("T")[0] or _fecha_linea(l)
             cantidad = max(1, _parse_int(mp[16] or "1") or 1)
-            clave = f"{pac}|{cod}|{fecha}"
-            if clave in med_vistos:
-                continue
-            med_vistos.add(clave)
+            # frecuencia de uso: se cuenta todo, también si se repite paciente+código+fecha (la evaluación no lo repite)
             regs.extend([(cod, pac, "MEDICAMENTOS", nombre)] * cantidad)
             continue
         if en_urg:
@@ -259,7 +311,12 @@ def resumen_todos(ruta):
             reg = dict(zip(nombres, rips_json._ajustar(rips_json._campos(l), 3 + len(campos), campo_texto, nombres)))
             pac = f"{reg['_t']}{reg['_d']}"
             campo = _CAMPO_COD.get(nombre_sec)
-            cod = re.sub(r"\s+", "", str(reg.get(campo) or "")).upper() if campo else nombre_sec
+            if not campo:
+                cod = nombre_sec
+            elif nombre_sec == "MEDICAMENTOS":   # códigos CUM: solo sin espacios
+                cod = re.sub(r"\s+", "", str(reg.get(campo) or "")).upper()
+            else:
+                cod = normalizar_codigo(reg.get(campo))
             if not cod:
                 continue
             d = c.setdefault(cod, {})
@@ -272,11 +329,18 @@ def resumen_todos(ruta):
 
 
 # ══════════════════════════════════════════════════════════════════ 3280 (sencillo)
+# Frecuencia de uso, no evaluación (reglas del usuario): se busca el CUPS; los cursos de vida van por EDAD; los
+# diagnósticos solo arman las rutas (RCV y materna/prenatal); cada registro cuenta en todos los programas que le
+# apliquen, sin finalidad, sin valor único y sin quitar duplicados.
 CV = CFG3280["cursos_de_vida"]
 CVS = {cv["id"] for cv in CV}
 EDAD_CV = {"PRIMERA_INFANCIA": (0, 5), "INFANCIA": (6, 11), "ADOLESCENCIA": (12, 17), "JOVENES": (18, 28),
            "ADULTEZ": (29, 59), "VEJEZ": (60, 200)}
-RUTAS = {k: (set(v.get("exact", [])), list(v.get("prefix", []))) for k, v in CFG3280.get("rutas_diag", {}).items()}
+# rutas por diagnóstico (sin los cursos de vida: Z001/Z002/Z003/Z108 no cambian el grupo, que va por edad)
+RUTAS = {k: (set(v.get("exact", [])), list(v.get("prefix", []))) for k, v in CFG3280.get("rutas_diag", {}).items()
+         if k not in CVS}
+# rutas agregadas en las correcciones (IVE, parto, posparto: cada una por su propio diagnóstico)
+RUTAS.update({k: (set(v.get("exact", [])), list(v.get("prefix", []))) for k, v in COR3280.get("rutas", {}).items()})
 
 
 def grupos_programa(prog):
@@ -318,7 +382,7 @@ def _parsear_3280(texto):
                            for l in raw.get("PROCEDIMIENTOS", []) if c(l, 2) and cc(l, 7)]
     r["medicamentos"] = [{"tipo": c(l, 1), "num": c(l, 2), "fecha": c(l, 6)[:10], "cups": cc(l, 10), "nombre": c(l, 11).upper()}
                          for l in raw.get("MEDICAMENTOS", []) if c(l, 2)]
-    r["otrosServicios"] = [{"tipo": c(l, 1), "num": c(l, 2), "fecha": c(l, 6)[:10], "cups": cc(l, 8)}
+    r["otrosServicios"] = [{"tipo": c(l, 1), "num": c(l, 2), "fecha": c(l, 6)[:10], "cups": cc(l, 8), "nombre": c(l, 9).upper()}
                            for l in raw.get("OTROS SERVICIOS", []) if c(l, 2) and cc(l, 8)]
     return r
 
@@ -360,12 +424,20 @@ def _rutas(dx):
     return out
 
 
+SERVICIOS_3280 = ("consultas", "procedimientos", "otrosServicios")
+OTROS_PYM = "OTROS_PYM"        # grupo final: códigos de PyM reportados que no están en la matriz
+PATRON_PYM = re.compile(r"^(DI|PM|PYM|I1)")
+
+
 def resumen_3280(ruta):
-    """{'a': {'PROG|ACT': {paciente: n}}, 't': {ACT: {paciente: n}}, 'g': {PROG: [pacientes]}} de un soporte."""
+    """{'a': {'PROG|ACT': {paciente: n}}, 't': {ACT: {paciente: n}}, 'g': {PROG: [pacientes]},
+    'x': {código PyM fuera de la matriz: {paciente: n}}, 'xn': {código: nombre}} de un soporte."""
     A = _parsear_3280(_leer(ruta, "cp1252"))
-    servicios = ("consultas", "procedimientos", "medicamentos", "otrosServicios")
-    ref = max((r["fecha"] for k in servicios for r in A[k] if r["fecha"]), default="")
-    grupos = {}   # paciente → grupos (curso de vida por edad + rutas por diagnóstico)
+    for k in SERVICIOS_3280:
+        for r in A[k]:
+            r["cups"] = normalizar_codigo(r["cups"], CUPS_3280)
+    ref = max((r["fecha"] for k in SERVICIOS_3280 + ("medicamentos",) for r in A[k] if r["fecha"]), default="")
+    grupos = {}   # paciente → curso de vida (por edad) + rutas (por diagnóstico: RCV, materna)
     for u in A["usuarios"]:
         g = _grupo_cv(_edad(_fecha_iso(u["fnac"]), ref))
         if g:
@@ -374,28 +446,45 @@ def resumen_3280(ruta):
         for r in A[k]:
             for g in _rutas(r["dx"]):
                 grupos.setdefault(r["num"], set()).add(g)
+    for gs in grupos.values():
+        if {"DM", "HIPERTENSION"} <= gs:
+            gs.add("DM_HTA")
     acts, todos, pacs_prog = {}, {}, {}
-    progs = [(p, set(grupos_programa(p))) for p in CFG3280["programas"]]
+    progs = [(p, set(grupos_programa(p))) for p in PROGS_3280]
     for p, aplica in progs:
         pacs_prog[p["id"]] = sorted(num for num, gs in grupos.items() if gs & aplica)
-    cfg = CFG3280["actividades_base"]
-    for aid, act in cfg.items():
+    # índice por código para no recorrer el RIPS por cada actividad
+    por_cod, extra, extra_nom = {}, {}, {}
+    for k in SERVICIOS_3280:
+        for r in A[k]:
+            por_cod.setdefault(r["cups"], []).append(r["num"])
+            if r["cups"] not in CUPS_3280 and PATRON_PYM.match(r["cups"]):
+                d = extra.setdefault(r["cups"], {})
+                d[r["num"]] = d.get(r["num"], 0) + 1
+                if r.get("nombre") and r["cups"] not in extra_nom:
+                    extra_nom[r["cups"]] = r["nombre"][:120]
+    for aid, act in ACTS_3280.items():
         cups = {str(x).strip().upper() for x in act.get("cups", [])}
         kws = [str(x).strip().upper() for x in (act.get("nombres") or act.get("busqueda_nombre") or [])]
         if not cups and not kws:
             continue
-
-        def coincide(r):
-            return (r["cups"] in cups) if cups else any(kw in r.get("nombre", "") for kw in kws)
-
-        filas = [r for r in A.get(act["archivo"], []) if coincide(r)]
-        if not filas and act.get("archivo_fallback"):
-            filas = [r for r in A.get(act["archivo_fallback"], []) if coincide(r)]
-        if not filas:
+        nums = []
+        if act.get("archivo") == "medicamentos":
+            # medicamentos: por el nombre (o por el código si la actividad trae códigos)
+            nums = [r["num"] for r in A["medicamentos"]
+                    if (r["cups"] in cups if cups else any(kw in r["nombre"] for kw in kws))]
+        else:
+            # el CUPS cuenta venga en consultas, procedimientos u otros servicios (hay prestadores que lo cambian
+            # de archivo); si la actividad trae nombres, también se buscan en medicamentos (p. ej. preservativos)
+            for cod in cups:
+                nums += por_cod.get(cod, [])
+            if kws:
+                nums += [r["num"] for r in A["medicamentos"] if any(kw in r["nombre"] for kw in kws)]
+        if not nums:
             continue
         d = todos.setdefault(aid, {})
-        for r in filas:
-            d[r["num"]] = d.get(r["num"], 0) + 1
+        for num in nums:
+            d[num] = d.get(num, 0) + 1
     for p, aplica in progs:
         for aid in p["actividades"]:
             if aid not in todos:
@@ -403,7 +492,7 @@ def resumen_3280(ruta):
             d = {num: n for num, n in todos[aid].items() if grupos.get(num, set()) & aplica}
             if d:
                 acts[f"{p['id']}|{aid}"] = d
-    return {"a": acts, "t": todos, "g": {k: v for k, v in pacs_prog.items() if v}}
+    return {"a": acts, "t": todos, "g": {k: v for k, v in pacs_prog.items() if v}, "x": extra, "xn": extra_nom}
 
 
 # ══════════════════════════════════════════════════════════════════ por contrato
@@ -412,7 +501,7 @@ RESUMIDORES = {"asis": resumen_asistencial, "todos": resumen_todos, "3280": resu
 
 def resumen_archivo(motor, ruta, cache_dir):
     st = Path(ruta).stat()
-    clave = hashlib.sha1(f"{motor}|{VERSION}|{ruta}|{st.st_mtime_ns}|{st.st_size}".encode()).hexdigest()[:24]
+    clave = hashlib.sha1(f"{motor}|{VERSIONES.get(motor, VERSION)}|{ruta}|{st.st_mtime_ns}|{st.st_size}".encode()).hexdigest()[:24]
     arch = Path(cache_dir) / f"r_{motor}_{clave}.json"
     if arch.exists():
         return json.loads(arch.read_text(encoding="utf-8"))
@@ -434,7 +523,7 @@ def resultado_contrato(motor, archivos, cache_dir):
     pg[grupo] = pacientes distintos del grupo; n = nombres; s = sección de cada código."""
     act, pg, nombres, secc, pacientes = {}, {}, {}, {}, set()
     if motor == "3280":
-        a, t, g = {}, {}, {}
+        a, t, g, x = {}, {}, {}, {}
         for ruta in archivos:
             r = resumen_archivo(motor, ruta, cache_dir)
             for k, d in r["a"].items():
@@ -444,23 +533,35 @@ def resultado_contrato(motor, archivos, cache_dir):
             for k, lst in r["g"].items():
                 g.setdefault(k, set()).update(lst)
                 pacientes.update(lst)
+            for k, d in r.get("x", {}).items():
+                _sumar(x.setdefault(k, {}), d)
+            nombres.update({k: v for k, v in r.get("xn", {}).items() if k not in nombres})
         for k, d in a.items():
             aid = k.split("|", 1)[1]
             tt = t.get(aid, {})
             act[k] = [sum(d.values()), len(d), sum(tt.values()), len(tt)]
         # actividades sin pacientes del grupo, pero reportadas en otros pacientes
-        for p in CFG3280["programas"]:
+        for p in PROGS_3280:
             for aid in p["actividades"]:
                 k = f"{p['id']}|{aid}"
                 if k not in act and aid in t:
                     act[k] = [0, 0, sum(t[aid].values()), len(t[aid])]
         pg = {k: len(v) for k, v in g.items()}
+        # códigos de PyM que reportan y la matriz no trae: se cuentan en todos los pacientes
+        pac_x = set()
+        for cod, d in x.items():
+            act[f"{OTROS_PYM}|{cod}"] = [sum(d.values()), len(d), sum(d.values()), len(d)]
+            pac_x.update(d)
+        if pac_x:
+            pg[OTROS_PYM] = len(pac_x)
     else:
         por_tipo, cods = {}, {}
         for ruta in archivos:
-            r = resumen_archivo(motor, ruta, cache_dir)
-            if motor == "asis":
+            r = resumen_archivo("asis" if motor == "med" else motor, ruta, cache_dir)
+            if motor in ("asis", "med"):
                 for tipo, d in r["t"].items():
+                    if motor == "med" and tipo != "MEDICAMENTOS":
+                        continue
                     for cod, pacs in d.items():
                         _sumar(cods.setdefault(f"{tipo}|{cod}", {}), pacs)
                 nombres.update({k: v for k, v in r["n"].items() if k not in nombres})

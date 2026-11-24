@@ -73,6 +73,12 @@ Motores en `worker/motores.py` con copias de las tablas de las otras apps en `wo
 (`res3280_cups.json` del evaluador 3280 y `asistencial_cups.json` de la Evaluación Asistencial: si allá
 cambian, copiar de nuevo). Se precalcula al arrancar el worker y al terminar cada consulta.
 
+Las correcciones a la matriz 3280 van en `worker/config/res3280_correcciones.json` (la copia del
+evaluador no se toca): `actividades` (CUPS corregidos, con la fuente en `nota`), `nuevas` (códigos que
+reportan y la matriz no trae), `rutas` (IVE, parto, posparto por diagnóstico) y `programas` (lista de
+actividades o grupos de un programa). Al cambiar el cálculo, subir `VERSIONES` en `motores.py` para que
+se recalcule solo ese motor.
+
 ## Consultas programadas y reintentos
 - `radicacion-programada.timer` lanza una consulta completa (todos los contratos, RS y RC,
   enero → mes actual) a las **12:00 m y 12:00 a. m. hora Colombia**, como usuario `programada`.

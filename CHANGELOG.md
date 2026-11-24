@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.13.1 — 2026-11-24
+- **Frecuencia de uso: que crucen todas las actividades.** La copia de la matriz 3280 traía CUPS que
+  ningún prestador reporta (glicemia 903901/904332, colesterol 903902…, citología 910101…, 59
+  actividades). Se corrigen en `worker/config/res3280_correcciones.json` con las fórmulas del Excel de
+  la matriz y los códigos que sí vienen en los RIPS de la EPS (verificados con conteos: % embarazadas,
+  % RCV, sexo y edad). La copia del evaluador no se toca. De 389 actividades por programa solo quedan
+  sin registros en toda la EPS las de especialistas que no se reportan en cápita (cardiología,
+  endocrinología, nefrología, oftalmología, ecocardiograma).
+- Variantes de código unidas: `*PYM02RIA-37`, `PYM02R`, `PYM02RIAS`, `PYMRIA04` → PYMxxRIA (asesorías
+  VIH, preservativos, mama, próstata); `*DI0001-1` → DI0001-1; `9062491` → 906249.
+- **Demanda inducida completa**: cada curso de vida con sus 6 subcódigos (DI0001-1…6, …, DI0006-1…6) y
+  el código sin subcódigo; DI0007, DI0008, DI0009 (incl. educación familiar DI0009-1) y DI00011 con
+  todos los subcódigos que reportan. Salud mental con I11412 (estilos de vida saludable) y los PM
+  (PM00011, PM00012, PM00013, PM0009). PyM con autoexamen de mama (PYM05RIA) y solicitud de mamografía
+  (PYM07RIA); RCV con relación proteinuria/creatinuria (PYM00RIA).
+- Grupo final **«OTROS CÓDIGOS DE PyM REPORTADOS (no están en la matriz 3280)»**: los DI/PM/PYM/I1 que
+  vienen en los RIPS y no tienen actividad, para que no se pierda ninguno.
+- **Agrupación (reglas del usuario: es frecuencia de uso, no evaluación)**: cursos de vida solo por
+  **edad** (antes Z108 metía al paciente en jóvenes, adultez y vejez a la vez); el diagnóstico solo arma
+  las rutas **RCV y materna/prenatal**; cada registro cuenta en todos los programas que le apliquen,
+  **sin finalidad, sin valor único y sin quitar duplicados**. DM + HTA = pacientes con las dos. IVE
+  (O04), parto (O60–O84, Z37, Z38, P) y posparto (Z39, O85–O92, Z38, P) por su propio diagnóstico, para
+  que no repitan a todas las embarazadas.
+- **Contratos de medicamentos (MD, MDC, MD-RCV): solo medicamentos**, en unidades.
+- Medicamentos de la forma asistencial: se cuentan también los repetidos (mismo paciente, código y
+  fecha).
+- **Sin filas vacías**: en pantalla y en Excel solo salen las actividades con registros en lo que se
+  está viendo (DNT sigue igual).
+- El tipo «MD» ya no incluye los contratos «MD-RCV» (mismo tipo que en pantalla).
+
 ## 0.13.0 — 2026-11-24
 - **Frecuencia de uso para todos los tipos de contrato** y opción **TODOS (toda la EPS)**. Cada tipo se
   cuenta como en su aplicación:

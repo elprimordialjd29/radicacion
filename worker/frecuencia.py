@@ -46,6 +46,12 @@ ARCHIVO_RIPS = {"consultas": "Consultas", "procedimientos": "Procedimientos", "m
                 "otrosServicios": "Otros servicios"}
 
 
+def tipo_contrato(contrato):
+    """Tipo del contrato igual que en la pantalla (tipoDe): «MD-RCV-20001-…» → MD-RCV, «PMS-44001-…» → PMS."""
+    m = re.match(r"^[A-Z]+(?:-[A-Z]+)?(?=-\d)", str(contrato or "").upper())
+    return m.group(0) if m else ""
+
+
 def departamento(contrato):
     m = re.match(r"^[A-Z]+(?:-[A-Z]+)*-(\d{2})\d{3}-", contrato or "")
     return DEPARTAMENTOS.get(m.group(1), f"Dpto {m.group(1)}") if m else "—"
@@ -286,6 +292,8 @@ class Frecuencia:
             return "dx"
         if t == "TODOS":
             return "todos"
+        if t.split("-")[0] in ("MD", "MDC"):   # contratos de medicamentos (incl. MD-RCV): solo medicamentos
+            return "med"
         return "3280" if t in TIPOS_3280 or "RCV" in t.split("-") else "asis"
 
     def _archivos_contrato(self, con, contrato, anio, meses, regimen):
@@ -314,13 +322,13 @@ class Frecuencia:
             res["motor"] = "dx"
             return res
         t = tipo.upper()
-        contratos = [c for c in contratos_meta if t == "TODOS" or c["contrato"].upper().startswith(t + "-")]
+        contratos = [c for c in contratos_meta if t == "TODOS" or tipo_contrato(c["contrato"]) == t]
         tareas, faltan = [], []
         with closing(sqlite3.connect(hist)) as con:
             for c in contratos:
                 rutas = self._archivos_contrato(con, c["contrato"], anio, meses, regimen)
                 firma = "|".join(f"{r}:{os.stat(r).st_mtime_ns}:{os.stat(r).st_size}" for r in sorted(rutas))
-                clave = hashlib.sha1(f"{motor}|{self.M.VERSION}|{c['contrato']}|{firma}".encode()).hexdigest()[:24]
+                clave = hashlib.sha1(f"{motor}|{self.M.VERSIONES.get(motor, 1)}|{c['contrato']}|{firma}".encode()).hexdigest()[:24]
                 out = self.cache / f"c_{motor}_{clave}.json"
                 tareas.append((c, rutas, out))
                 if rutas and not out.exists():
@@ -405,33 +413,48 @@ class Frecuencia:
         M = self.M
         ahora = datetime.now().astimezone().isoformat(timespec="seconds")
         if motor == "3280":
-            progs = M.CFG3280["programas"]
+            progs = M.PROGS_3280
             etiqueta = {p["id"]: p.get("nombre") or p["id"] for p in progs}
-            cfg = M.CFG3280["actividades_base"]
-            rutas = M.CFG3280.get("rutas_diag", {})
+            etiqueta[M.OTROS_PYM] = "OTROS CÓDIGOS DE PyM REPORTADOS (no están en la matriz 3280)"
+            cfg = M.ACTS_3280
+            rutas = {k: re.sub(r"^[^\w]+\s*", "", v.get("label", k)) for k, v in M.CFG3280.get("rutas_diag", {}).items()}
+            rutas.update({k: v.get("label", k) for k, v in M.COR3280.get("rutas", {}).items()})
+            rutas["DM_HTA"] = "diabetes e hipertensión (las dos)"
             grupos, acts, info = [], [], {}
+            con_datos = lambda k: any(total["act"].get(k, []))
             for p in progs:
-                claves = [f"{p['id']}|{aid}" for aid in p["actividades"] if aid in cfg]
-                if not total["pg"].get(p["id"]) and not any(any(total["act"].get(k, [])) for k in claves):
+                # solo actividades con registros (no se muestran filas vacías)
+                aids = [aid for aid in p["actividades"] if aid in cfg and con_datos(f"{p['id']}|{aid}")]
+                if not aids:
                     continue
                 gr = etiqueta[p["id"]]
                 grupos.append(gr)
                 ap = M.grupos_programa(p)
                 if p.get("aplica_a"):
-                    info[gr] = "Pacientes con diagnóstico de: " + ", ".join(
-                        re.sub(r"^[^\w]+\s*", "", rutas.get(x, {}).get("label", x)) for x in ap)
+                    info[gr] = "Pacientes con diagnóstico de: " + ", ".join(rutas.get(x, x) for x in ap)
                 else:
                     info[gr] = f"Pacientes de {p.get('edad_min', 0)} a {p.get('edad_max', 200)} años" if p["id"] not in M.CVS \
                         else f"Curso de vida por edad: {p.get('edad_min', 0)}–{p.get('edad_max', 200)} años"
-                for aid in p["actividades"]:
-                    a = cfg.get(aid)
-                    if not a:
-                        continue
-                    cups = ", ".join(a.get("cups", [])) or ("Medicamento: " + ", ".join(a.get("nombres") or a.get("busqueda_nombre") or []))
-                    acts.append({"grupo": gr, "codigo": aid, "cups_txt": cups, "descripciones": [a.get("descripcion", aid)],
+                for aid in aids:
+                    a = cfg[aid]
+                    partes = []
+                    if a.get("cups"):
+                        partes.append(", ".join(a["cups"]))
+                    if a.get("nombres") or a.get("busqueda_nombre"):
+                        partes.append("Medicamento: " + ", ".join(a.get("nombres") or a.get("busqueda_nombre")))
+                    acts.append({"grupo": gr, "codigo": aid, "cups_txt": " · ".join(partes), "descripciones": [a.get("descripcion", aid)],
                                  "criterio": ARCHIVO_RIPS.get(a.get("archivo"), a.get("archivo", ""))})
+            extra = sorted(((v[0], k.split("|", 1)[1]) for k, v in total["act"].items()
+                            if k.startswith(M.OTROS_PYM + "|") and any(v)), reverse=True)
+            if extra:
+                gr = etiqueta[M.OTROS_PYM]
+                grupos.append(gr)
+                info[gr] = "Códigos de promoción y mantenimiento (DI, PM, PYM, I1…) que vienen en los RIPS y no tienen actividad en la matriz; se cuentan en todos los pacientes"
+                for _, cod in extra:
+                    acts.append({"grupo": gr, "codigo": cod, "cups_txt": cod,
+                                 "descripciones": [nombres.get(cod) or "Código sin nombre en el RIPS"], "criterio": "Código reportado"})
             return ({"grupos": grupos, "actividades": acts, "sin_codigo": [], "diagnosticos": [], "grupos_info": info,
-                     "actualizado": ahora, "por": "matriz 3280 (sencilla)",
+                     "actualizado": ahora, "por": "matriz 3280 (frecuencia de uso)",
                      "etiquetas": {"criterio": "Archivo RIPS", "pacientes_grupo": "Pacientes del grupo",
                                    "todos": "Contar en todos los pacientes"}},
                     lambda k: etiqueta.get(k.split("|", 1)[0], k.split("|", 1)[0]) + "|" + k.split("|", 1)[1])
@@ -449,7 +472,8 @@ class Frecuencia:
                 nom = M.NOMBRE_CUPS.get(cod) or nombres.get(cod, "")   # primero la descripción oficial (matriz 3280)
                 acts.append({"grupo": gr, "codigo": cod, "descripciones": [nom] if nom else [], "criterio": secc.get(cod, "")})
         return ({"grupos": grupos, "actividades": acts, "sin_codigo": [], "diagnosticos": [], "grupos_info": {},
-                 "actualizado": ahora, "por": "Evaluación Asistencial" if motor == "asis" else "todos los RIPS",
+                 "actualizado": ahora, "por": {"asis": "Evaluación Asistencial", "med": "solo medicamentos"}.get(motor, "todos los RIPS"),
                  "etiquetas": {"criterio": "Archivo RIPS" if motor == "todos" else None,
-                               "pacientes_grupo": "Pacientes con este servicio", "todos": None}},
+                               "pacientes_grupo": "Pacientes con medicamentos" if motor == "med" else "Pacientes con este servicio",
+                               "todos": None, "veces": "unid." if motor == "med" else None}},
                 lambda k: k)

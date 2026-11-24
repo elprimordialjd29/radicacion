@@ -375,7 +375,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.13.0</div>
+          <div class="usr-ver">Radicación cápita · v0.13.1</div>
         </div>
       </div>
     </div>
@@ -1394,10 +1394,11 @@ let frTipo = 'DNT', frNivel = 'contrato', frSoloDx = false, FR = null, frClave =
 const DEPTOS = { '05': 'ANTIOQUIA', '08': 'ATLÁNTICO', 11: 'BOGOTÁ', 13: 'BOLÍVAR', 20: 'CESAR', 23: 'CÓRDOBA', 44: 'LA GUAJIRA', 47: 'MAGDALENA', 54: 'NORTE DE SANTANDER', 70: 'SUCRE' };
 const deptoDe = (contrato) => { const m = String(contrato || '').match(/^[A-Z]+(?:-[A-Z]+)*-(\d{2})\d{3}-/); return m ? (DEPTOS[m[1]] || 'Dpto ' + m[1]) : '—'; };
 const deptoMuni = (muni) => deptoDe((D.contratos.find((c) => (c.municipio || '—') === muni) || {}).contrato);
-// tipo de contrato → cómo se cuenta (igual que en el servidor): catálogo cargado (DNT…), matriz 3280
-// (PMS, RCV), TODOS (toda la EPS) y los demás como la Evaluación Cápita Asistencial
-const MOTOR_TXT = { dx: 'catálogo de CUPS y diagnósticos', 3280: 'matriz 3280 (sencilla)', asis: 'Evaluación Asistencial', todos: 'todos los RIPS de la EPS' };
-const motorDe = (t) => (FRCAT && FRCAT[t] ? 'dx' : t === 'TODOS' ? 'todos' : t === 'PMS' || t.split('-').includes('RCV') ? '3280' : 'asis');
+// tipo de contrato → cómo se cuenta (igual que en el servidor): catálogo cargado (DNT…), TODOS (toda la EPS),
+// medicamentos (MD, MDC, MD-RCV: solo medicamentos), matriz 3280 (PMS, RCV) y los demás como la Evaluación Asistencial
+const MOTOR_TXT = { dx: 'catálogo de CUPS y diagnósticos', 3280: 'matriz 3280 (frecuencia de uso)', asis: 'Evaluación Asistencial', todos: 'todos los RIPS de la EPS', med: 'solo medicamentos' };
+const motorDe = (t) => (FRCAT && FRCAT[t] ? 'dx' : t === 'TODOS' ? 'todos' : ['MD', 'MDC'].includes(t.split('-')[0]) ? 'med'
+  : t === 'PMS' || t.split('-').includes('RCV') ? '3280' : 'asis');
 const contratosDeTipo = (t) => (t === 'TODOS' ? D.contratos.length : D.contratos.filter((c) => tipoDe(c.contrato) === t).length);
 let frFiltro = '';
 async function renderFrecuencia(lista, mesesTodos) {
@@ -1430,7 +1431,7 @@ function pintarFrecuencia(lista, meses, tipos) {
       <h2 class="rp-titulo">${esDx ? 'CUPS y diagnósticos reportados' : motor === '3280' ? 'Actividades de la matriz 3280 reportadas' : 'CUPS reportados'} en los RIPS · ${esc(nomTipo)}</h2>
       <div class="sub">${periodoTxt()} (meses de atención) · ${st.reg ? 'régimen ' + st.reg : 'RS + RC'} · se cuenta con: <b>${esc(MOTOR_TXT[motor] || motor)}</b>${esDx && FR?.catalogo?.actualizado ? ` · catálogo cargado ${fmtFecha(FR.catalogo.actualizado)}${FR.catalogo.por ? ' por ' + esc(FR.catalogo.por) : ''}` : ''}</div></div>
     <div class="rp-acciones">
-      <select id="frTipo" title="Tipo de contrato">${[...tipos, 'TODOS'].map((t) => `<option value="${esc(t)}" ${t === frTipo ? 'selected' : ''}>${t === 'TODOS' ? 'TODOS (toda la EPS)' : esc(t) + ' · ' + esc({ dx: 'catálogo', 3280: '3280', asis: 'asistencial' }[motorDe(t)])}</option>`).join('')}</select>
+      <select id="frTipo" title="Tipo de contrato">${[...tipos, 'TODOS'].map((t) => `<option value="${esc(t)}" ${t === frTipo ? 'selected' : ''}>${t === 'TODOS' ? 'TODOS (toda la EPS)' : esc(t) + ' · ' + esc({ dx: 'catálogo', 3280: '3280', asis: 'asistencial', med: 'medicamentos' }[motorDe(t)])}</option>`).join('')}</select>
       ${FR && !FR.sin_catalogo && !FR.error && !FR.calculando && puede('descargar_reportes') ? '<button class="btn sm" id="frExcel">⬇ Excel</button>' : ''}
       ${admin ? '<button class="btn sm" id="frCargar">⬆ Cargar CUPS y diagnósticos</button>' : ''}
     </div></section>`;
@@ -1473,7 +1474,7 @@ function pintarFrecuencia(lista, meses, tipos) {
   const celda = (v, k, base) => {
     if (!v[i0]) return `<td class="num ${columnas[k]?.nivel === 'total' ? 'fr-tot' : ''}"><span class="fr-cero">—</span></td>`;
     const pct = base ? Math.min(100, v[i1] / base * 100) : 0;
-    return `<td class="num ${columnas[k]?.nivel === 'total' ? 'fr-tot' : ''}"><span class="fr-n">${fmtN(v[i0])}</span><span class="fr-veces">veces</span>
+    return `<td class="num ${columnas[k]?.nivel === 'total' ? 'fr-tot' : ''}"><span class="fr-n">${fmtN(v[i0])}</span><span class="fr-veces">${esc(et.veces || 'veces')}</span>
       <small>${fmtN(v[i1])} ${palPac} · ${pct.toFixed(0)}%</small><span class="fr-cob"><i style="width:${pct}%"></i></span></td>`;
   };
   const dxChips = (gr) => dxDe(gr).map((d) => `<span class="fr-dx">${esc(d)}</span>`).join('');
@@ -1485,8 +1486,10 @@ function pintarFrecuencia(lista, meses, tipos) {
   };
   const SEV = ['fr-s1', 'fr-s2', 'fr-s3'];
   const sumaCol = (g, gr) => act.filter((a) => !gr || (a.grupo || 'GENERAL') === gr).reduce((t, a) => t + ((g.actividades[kA(a)] || [])[i0] || 0), 0);
+  // sin filas vacías: solo las actividades con registros en lo que se está viendo (DNT queda como estaba)
+  const conDato = (a) => esDx || columnas.some((g) => (g.actividades[kA(a)] || [])[i0]);
   const bloques = gruposCat.map((gr) => {
-    const as = act.filter((a) => (a.grupo || 'GENERAL') === gr);
+    const as = act.filter((a) => (a.grupo || 'GENERAL') === gr && conDato(a));
     if (!as.length) return '';
     const sin = (FR.catalogo.sin_codigo || []).filter((x) => x.grupo === gr).map((x) => x.descripcion);
     const ig = gruposCat.indexOf(gr);
@@ -1508,7 +1511,8 @@ function pintarFrecuencia(lista, meses, tipos) {
     + `<tr class="rp-total"><td colspan="2">Subtotal ${esc(grupo)} (pacientes distintos ≈ suma)</td>${columnas.map((g) => `<td class="num">${fmtN(ds.reduce((t, d) => t + ((g.diagnosticos[d.codigo] || [])[0] || 0), 0))}</td>`).join('')}</tr>`).join('');
   const AYUDA = {
     dx: `cada grupo empieza con los <b>niños en ese grupo</b> (los que tienen un diagnóstico del grupo en el mes; si tienen de dos grupos, cuentan en el más severo). Debajo, cada CUPS: <b>veces</b> que se reportó en los RIPS de esos niños, cuántos <b>niños</b> lo recibieron y qué <b>%</b> del grupo es (barra).`,
-    3280: `cada <b>programa</b> de la matriz 3280 empieza con sus pacientes: por <b>curso de vida</b> (edad a la última atención del mes) o por <b>diagnóstico de ruta</b> (embarazo, DM, HTA…). Debajo, cada actividad: <b>veces</b> que se reportaron sus CUPS en los RIPS de esos pacientes (cada registro cuenta; sin exigir finalidad ni valor único), cuántos <b>pacientes</b> y qué <b>%</b> del programa.`,
+    3280: `frecuencia de uso, no evaluación. Cada <b>programa</b> de la matriz 3280 empieza con sus pacientes: los de <b>curso de vida</b> por la edad (a la última atención del mes) y los de <b>RCV y materna</b> por el diagnóstico (DM, HTA, embarazo, preconcepción). Debajo, cada actividad: <b>veces</b> que vino su CUPS en los RIPS de esos pacientes (cada registro cuenta, aunque se repita o el paciente esté en varios programas; sin finalidad ni valor único), cuántos <b>pacientes</b> y qué <b>%</b> del programa. Solo se muestran las actividades con registros; al final, los códigos de PyM que reportan y la matriz no trae.`,
+    med: `contratos de <b>medicamentos</b> (MD, MDC, MD-RCV): solo se cuentan los medicamentos del RIPS, igual que la <b>Evaluación Cápita Asistencial</b>: cada medicamento suma la <b>cantidad</b> dispensada (unidades). Debajo de cada código: unidades, pacientes y %.`,
     asis: `igual que la <b>Evaluación Cápita Asistencial</b>: cada CUPS va a su <b>tipo de servicio</b>; consultas y procedimientos cuentan cada registro; medicamentos y otros servicios cuentan la <b>cantidad</b>. Cada tipo empieza con los pacientes que tuvieron ese servicio; debajo, cada código: veces, pacientes y %.`,
     todos: `<b>todos los códigos</b> reportados en los RIPS, agrupados por <b>tipo de servicio</b> (mapa de la Evaluación Asistencial) o, si no está en el mapa, por el archivo RIPS donde vino. Cada registro cuenta una vez.`,
   };
@@ -1644,12 +1648,12 @@ async function exportarFrecuenciaExcel() {
   const colPac = todos ? 'Pacientes que lo recibieron' : esDx ? 'Niños que lo recibieron' : 'Pacientes que lo recibieron';
   const colPct = todos ? '% de los atendidos' : esDx ? '% del grupo' : '% del grupo';
   const f = [['Departamento', 'Municipio', 'Contrato', 'Prestador', colGrupo, ...(colCrit ? [colCrit] : []), colBase,
-    motor === '3280' || esDx ? 'Actividad' : 'Descripción', motor === '3280' || esDx ? 'CUPS' : 'Código', 'Veces', colPac, colPct]];
+    motor === '3280' || esDx ? 'Actividad' : 'Descripción', motor === '3280' || esDx ? 'CUPS' : 'Código', motor === 'med' ? 'Unidades' : 'Veces', colPac, colPct]];
   for (const g of filasG) for (const a of FR.catalogo.actividades) {
     const gr = a.grupo || 'GENERAL', v = g.actividades[`${gr}|${a.codigo}`] || [0, 0, 0, 0];
     const base = todos ? g.pacientes : ((g.pacientes_grupo || {})[gr] || 0);
     const veces = todos ? v[2] : v[0], ninos = todos ? v[3] : v[1];
-    if (!esDx && motor !== '3280' && !veces) continue;   // asistencial / TODOS: solo los códigos que el contrato reportó
+    if (!esDx && !veces) continue;   // sin filas vacías: solo lo que el contrato reportó (DNT queda como estaba)
     f.push([...ubic(g), gr, ...(colCrit ? [esDx ? dxG(gr) : (a.criterio || '')] : []), base,
       (a.descripciones || []).join(' / '), a.cups_txt || a.codigo, veces, ninos, pct(ninos, base)]);
   }
