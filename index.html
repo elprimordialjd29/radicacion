@@ -111,6 +111,7 @@ tr:hover td { background: var(--surface-2); }
 .fr-tabla td small, .fr-tabla th small { display: block; font-size: 11px; color: var(--ink-3); font-weight: 400; } .fr-tabla tr.fr-grupo td { background: var(--surface-2); border-top: 2px solid var(--border); } .fr-tabla tr.fr-grupo small { display: block; font-weight: 400; }
 .fr-tabla .fr-tot, .rp-tabla.fr-tabla tbody tr td.fr-tot { background: color-mix(in srgb, var(--accent) 9%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
 .fr-mod { display: block; margin-top: 3px; font-size: 11px; color: var(--ink-3); }
+.recarga { font-size: 11px; font-weight: 600; color: var(--warn, #b7791f); background: color-mix(in srgb, currentColor 12%, transparent); border-radius: 6px; padding: 1px 5px; margin: 0 2px; white-space: nowrap; }
 .fr-tabla td.num { min-width: 118px; vertical-align: top; } .fr-n { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; } .fr-veces { font-size: 11px; color: var(--ink-3); margin-left: 4px; }
 .fr-cob { display: block; height: 4px; border-radius: 2px; background: var(--surface-2); margin: 4px 0 0 auto; width: 90px; overflow: hidden; } .fr-cob i { display: block; height: 100%; background: var(--accent); }
 .fr-dx { display: inline-block; font: 600 11px ui-monospace, monospace; color: var(--ink-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 10px; margin: 1px 2px 1px 0; } .fr-dxs { white-space: normal; max-width: 150px; }
@@ -376,7 +377,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.14.4</div>
+          <div class="usr-ver">Radicación cápita · v0.14.5</div>
         </div>
       </div>
     </div>
@@ -540,8 +541,17 @@ function preparar() {
     ((D.idxAt[r.contrato] ??= {})[a + '-' + m] ??= []).push(r);
   }
   // si el prestador volvió a cargar el RIPS del mismo mes y régimen y el SIE deja las dos radicaciones vigentes,
-  // vale solo el ÚLTIMO cargue (fecha de recepción más reciente; si empatan, el número de recepción mayor)
-  const claveCargue = (r) => String(r.fecha_recepcion || '') + '|' + String(r.recepcion || '').replace(/\D/g, '').padStart(12, '0');
+  // vale solo el ÚLTIMO cargue: el número de recepción RIPS más alto (el SIE lo asigna en orden al cargar; la
+  // «Fecha Recepción» puede quedar vieja cuando se vuelve a cargar el RIPS de la misma factura)
+  const claveCargue = (r) => String(r.recepcion || '').replace(/\D/g, '').padStart(12, '0') + '|' + String(r.fecha_recepcion || '');
+  // cargues que el SIE ya no muestra como radicados (el prestador los anuló o los volvió a cargar)
+  D.noVigIdx = {};                                // contrato -> 'anio-mesCápita' -> [registros NO VIGENTE]
+  for (const r of D.no_vigentes || []) {
+    if (!r.periodo_mes) continue;
+    ((D.noVigIdx[r.contrato] ??= {})[(r.periodo_anio || '') + '-' + r.periodo_mes] ??= []).push(r);
+  }
+  // primera consulta del bot: lo que vio ese día ya estaba cargado antes (su fecha de cargue es la de recepción)
+  D.inicioBot = [...D.registros, ...(D.no_vigentes || [])].map((r) => String(r.primera_vez || '')).filter(Boolean).sort()[0] || '';
   for (const porMes of Object.values(D.idxAt)) {
     for (const [k, lista] of Object.entries(porMes)) {
       const ult = {};
@@ -601,6 +611,22 @@ function unificado(c, meses) {
     const ms = con(rg), tip = `Un solo RIPS ${rg} con las atenciones de ${ms.map((m) => MESES_L[m - 1]).join(', ')}`;
     return `<span class="lin"><span class="rg">${rg}</span><span class="dl"><a href="${url(rg, 'txt')}" title="${tip} (TXT)">TXT</a><a href="${url(rg, 'json')}" title="${tip} (JSON)">JSON</a></span></span>`;
   }).join('')}</div>`;
+}
+// fecha del CARGUE del RIPS: la de recepción del SIE, salvo que el bot lo haya visto aparecer después (volvieron a cargar
+// el RIPS de una factura ya radicada y el SIE le dejó la fecha vieja): entonces, cuando el bot lo detectó
+const _dia = (f) => String(f || '').slice(0, 10).replace(/\//g, '-');
+function fechaCargue(r) {
+  const rec = _dia(r.fecha_recepcion), vis = _dia(r.primera_vez);
+  const tardio = vis && rec && vis > rec && (new Date(vis) - new Date(rec)) > 2 * 864e5 && String(r.primera_vez) > (D.inicioBot.slice(0, 10) + 'T23:59');
+  return tardio ? { f: vis, detectado: true } : { f: rec, detectado: false };
+}
+const ddmm = (f) => (f ? `${f.slice(8, 10)}/${f.slice(5, 7)}` : '');
+// cargues anteriores del mismo mes de cápita y régimen (anulados o con número de recepción menor)
+function cargesPrevios(r) {
+  const k = r.periodo_anio + '-' + r.periodo_mes, num = (x) => +String(x.recepcion || '').replace(/\D/g, '') || 0;
+  const viejosNv = (D.noVigIdx[r.contrato]?.[k] || []).filter((x) => (x.regimen || 'RS') === (r.regimen || 'RS') && num(x) < num(r)
+    && (!x.fuente || /^(CONSULTAS|OTROS)/.test(x.fuente)));
+  return [...(r._reemplaza || []), ...viejosNv];
 }
 function botonesRips(contrato, anio, mes, regimen, por = 'capita') {
   if (!puede('descargar_rips')) return '';
@@ -800,15 +826,23 @@ function renderTabla(lista, meses) {
           for (const r of regs) (porReg[r.regimen || 'RS'] ??= []).push(r);
           const lineas = Object.keys(porReg).sort((a, b) => (a === 'RS' ? -1 : 1)).map((rg) => {
             const l = porReg[rg], us = l.reduce((x, r) => x + (r.n_usuarios || 0), 0), sv = l.reduce((x, r) => x + (r.n_servicios || 0), 0);
-            const viejos = l.flatMap((r) => r._reemplaza || []);
-            const tip = `${rg} · atenciones de ${MESES_L[m - 1]}: ${fmtN(us)} usuarios, ${fmtN(sv)} servicios · RIPS de la factura ${l.map((r) => r.factura || r.recepcion).join(', ')} (radicada ${l.map((r) => String(r.fecha_recepcion || '').slice(0, 10)).join(', ')})${viejos.length ? ` · último cargue: reemplaza ${viejos.map((r) => `${r.factura || r.recepcion} (${String(r.fecha_recepcion || '').slice(0, 10)})`).join(', ')}` : ''}`;
-            return `<span class="lin" data-tip="${esc(tip)}"><span class="st ok"><i>✓</i> ${fmtN(us)}</span><span class="rg">${rg}</span>${botonesRips(c.contrato, st.anio, m, rg, 'atencion')}</span>`;
+            const viejos = l.flatMap(cargesPrevios), fc = fechaCargue(l[0]);
+            const tip = `${rg} · atenciones de ${MESES_L[m - 1]}: ${fmtN(us)} usuarios, ${fmtN(sv)} servicios · último cargue: recepción ${l.map((r) => r.recepcion).join(', ')} de la factura ${l.map((r) => r.factura || '—').join(', ')}, ${fc.detectado ? `cargado (detectado por el bot) el ${fc.f}; la factura se radicó el ${_dia(l[0].fecha_recepcion)}` : `cargado el ${fc.f}`}${viejos.length ? ` · volvió a cargar: reemplaza ${viejos.map((r) => `recepción ${r.recepcion} (${fmtN(r.n_usuarios || 0)} usuarios, cargada ${_dia(r.fecha_recepcion)}${r.ultima_vez ? `, dejó de estar radicada el ${_dia(r.ultima_vez)}` : ''})`).join('; ')}` : ''}`;
+            const marca = viejos.length ? `<span class="recarga" title="Volvió a cargar: último cargue ${fc.f}">↻ ${ddmm(fc.f)}</span>` : '';
+            return `<span class="lin" data-tip="${esc(tip)}"><span class="st ok"><i>✓</i> ${fmtN(us)}</span><span class="rg">${rg}</span>${marca}${botonesRips(c.contrato, st.anio, m, rg, 'atencion')}</span>`;
           });
           fila.push(Object.entries(porReg).map(([rg, l]) => `${rg}: ${l.reduce((x, r) => x + (r.n_usuarios || 0), 0)} usuarios / ${l.reduce((x, r) => x + (r.n_servicios || 0), 0)} servicios`).join(' · '));
           return `<td><div class="celda">${mesCel}${lineas.join('')}</div></td>`;
         }
         if (!vigente(c, st.anio, m)) { fila.push('Fuera de vigencia'); return `<td><div class="celda">${mesCel}<span class="st na">—</span></div></td>`; }
         if (atencionEnPlazo(m)) { fila.push('En plazo'); return `<td><div class="celda">${mesCel}<span class="st nc" title="Su RIPS llega con la cápita de ${MESES_L[m % 12]}, aún en plazo">⏳</span></div></td>`; }
+        const capK = (m === 12 ? st.anio + 1 : st.anio) + '-' + (m === 12 ? 1 : m + 1);
+        const anulados = (D.noVigIdx[c.contrato]?.[capK] || []).filter((x) => (!st.reg || x.regimen === st.reg) && /^(CONSULTAS|OTROS)/.test(x.fuente || ''));
+        if (anulados.length) {
+          const tipA = `RIPS con atenciones de ${MESES_L[m - 1]} anulado en el SIE y aún sin nuevo cargue: ${anulados.map((x) => `${x.regimen || 'RS'} recepción ${x.recepcion} (${fmtN(x.n_usuarios || 0)} usuarios, cargada ${_dia(x.fecha_recepcion)}, dejó de estar radicada el ${_dia(x.ultima_vez)})`).join('; ')}`;
+          fila.push('Anulado sin nuevo cargue');
+          return `<td><div class="celda">${mesCel}<span class="st no" data-tip="${esc(tipA)}"><i>✕</i> Anulado · sin nuevo cargue</span></div></td>`;
+        }
         fila.push('Sin RIPS'); return `<td><div class="celda">${mesCel}<span class="st no" title="No hay RIPS con atenciones de ${MESES_L[m - 1]}"><i>✕</i> Sin RIPS</span></div></td>`;
       }).join('');
       filasCsv.push(fila);

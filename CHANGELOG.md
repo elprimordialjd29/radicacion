@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.5 — 2026-11-24
+- **Último cargue = número de recepción RIPS más alto** (orden real de carga en el SIE). La «Fecha Recepción»
+  puede quedar vieja: al volver a cargar el RIPS de una factura ya radicada, el SIE le deja la fecha original
+  (KANKUAMA: recepción 608497 cargada en noviembre con fecha 19 oct, misma factura FCKS567).
+- Pantalla de RIPS: **fecha del último cargue** (la de recepción o, si el bot vio el cargue después, la
+  fecha en que lo detectó), marca **«↻ dd/mm»** cuando el mes se volvió a cargar (la ayuda dice qué cargue
+  reemplazó, sus usuarios y cuándo dejó de estar radicado) y **«✕ Anulado · sin nuevo cargue»** cuando el
+  RIPS del mes se anuló en el SIE y aún no lo vuelven a cargar (en vez de «Sin RIPS»).
+- El bot envía al tablero, de los cargues que quedaron NO VIGENTE, el año, la fuente, la factura, usuarios y
+  servicios.
+
 ## 0.14.4 — 2026-11-24
 - **RIPS: siempre el último cargue.** Si un prestador vuelve a cargar el RIPS del mismo mes y régimen, el
   bot (12:00 m y 12:00 a. m.) ya baja la radicación nueva y marca la anterior «NO VIGENTE» cuando el SIE la

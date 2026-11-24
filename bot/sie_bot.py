@@ -773,8 +773,8 @@ def armar_dashboard(meta, ultima):
         "factura, n_usuarios, n_servicios, meses_rips "
         "FROM registros WHERE estado NOT LIKE 'NO VIGENTE%' ORDER BY contrato, periodo_anio, periodo_mes")]
     no_vig = [dict(r) for r in con.execute(
-        "SELECT contrato, recepcion, regimen, valor, periodo_mes, fecha_recepcion, ultima_vez FROM registros "
-        "WHERE estado LIKE 'NO VIGENTE%'")]
+        "SELECT contrato, recepcion, regimen, valor, periodo_anio, periodo_mes, fecha_recepcion, primera_vez, ultima_vez, "
+        "fuente, factura, n_usuarios, n_servicios FROM registros WHERE estado LIKE 'NO VIGENTE%'")]
     cons = [dict(r) for r in con.execute("SELECT * FROM consultas")]
     corr = [dict(r) for r in con.execute("SELECT * FROM corridas ORDER BY fecha DESC LIMIT 30")]
     con.close()

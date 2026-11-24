@@ -50,14 +50,15 @@ ARCHIVO_RIPS = {"consultas": "Consultas", "procedimientos": "Procedimientos", "m
 
 
 def _clave_cargue(f):
-    """(fecha de recepción, número de recepción) para ordenar cargues: f = (recepcion, regimen, fecha_recepcion, …)."""
-    return (str(f[2] or ""), int(re.sub(r"\D", "", str(f[0])) or 0))
+    """Orden de los cargues: f = (recepcion, regimen, fecha_recepcion, …). Manda el NÚMERO DE RECEPCIÓN RIPS, que el SIE
+    asigna en orden al cargar (la «Fecha Recepción» puede quedar vieja: al volver a cargar el RIPS de una misma factura
+    el SIE le deja la fecha de la radicación original); la fecha solo desempata."""
+    return (int(re.sub(r"\D", "", str(f[0])) or 0), str(f[2] or ""))
 
 
 def ultimos_por_regimen(filas):
     """Regla del usuario: si un prestador vuelve a cargar el RIPS del mismo mes y régimen y el SIE deja las dos
-    radicaciones vigentes, se usa solo el ÚLTIMO cargue (fecha de recepción más reciente; si empatan, el número de
-    recepción mayor). Devuelve una fila por régimen."""
+    radicaciones vigentes, se usa solo el ÚLTIMO cargue (número de recepción RIPS más alto). Una fila por régimen."""
     mejor = {}
     for f in filas:
         rg = f[1] or ""
