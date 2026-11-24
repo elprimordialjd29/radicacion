@@ -46,7 +46,7 @@ TOKEN = os.getenv("WORKER_TOKEN", "")
 sys.path.insert(0, str(BOT))
 import rips_json  # noqa: E402  (convertidor plano → JSON Res. 2275)
 from seguridad import Seguridad, enviar_correo  # noqa: E402
-from frecuencia import Frecuencia  # noqa: E402
+from frecuencia import Frecuencia, ultimos_por_regimen  # noqa: E402
 PY = str(BOT / ".venv" / "bin" / "python")
 
 app = FastAPI(title="Radicación worker", docs_url=None, redoc_url=None)
@@ -580,21 +580,21 @@ def rips(contrato: str, anio: int, mes: str = "", regimen: str = "", formato: st
     if por == "atencion":
         # por MES DE LAS ATENCIONES del RIPS (modelo vencido: mes de cápita - 1); excluye los RIPS en cero
         a_cap, m_cap = (anio + 1, 1) if mes == 12 else (anio, mes + 1)
-        sql = ("SELECT recepcion, regimen FROM registros WHERE contrato=? AND periodo_anio=? AND periodo_mes=? "
-               "AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%') AND estado NOT LIKE 'NO VIGENTE%'")
+        sql = ("SELECT recepcion, regimen, fecha_recepcion FROM registros WHERE contrato=? AND periodo_anio=? "
+               "AND periodo_mes=? AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%') AND estado NOT LIKE 'NO VIGENTE%'")
         params = [contrato, a_cap, m_cap]
     else:
-        sql = ("SELECT recepcion, regimen FROM registros WHERE contrato=? AND periodo_anio=? AND periodo_mes=? "
-               "AND estado NOT LIKE 'NO VIGENTE%'")
+        sql = ("SELECT recepcion, regimen, fecha_recepcion FROM registros WHERE contrato=? AND periodo_anio=? "
+               "AND periodo_mes=? AND estado NOT LIKE 'NO VIGENTE%'")
         params = [contrato, anio, mes]
     if regimen:
         sql += " AND regimen=?"
         params.append(regimen.upper())
     with closing(sqlite3.connect(hist)) as con:
-        filas = con.execute(sql + " ORDER BY recepcion", params).fetchall()
+        filas = ultimos_por_regimen(con.execute(sql, params).fetchall())   # si volvió a cargar: solo el último
     carpeta = BOT / "descargas" / "soportes" / _limpio(contrato)
     archivos = []
-    for recepcion, reg in filas:
+    for recepcion, reg, _ in filas:
         encontrados = sorted(carpeta.glob(f"{_limpio(recepcion)}__*"))
         if encontrados:
             archivos.append((recepcion, reg or "", encontrados[0]))
@@ -647,11 +647,11 @@ def _rips_unificado(contrato, anio, meses, regimen, formato, hist):
     with closing(sqlite3.connect(hist)) as con:
         for m in lista:   # mes de atención m → viene en la cápita de m+1
             a_cap, m_cap = (anio + 1, 1) if m == 12 else (anio, m + 1)
-            filas = con.execute(
-                "SELECT recepcion FROM registros WHERE contrato=? AND periodo_anio=? AND periodo_mes=? AND regimen=? "
-                "AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%') AND estado NOT LIKE 'NO VIGENTE%' "
-                "ORDER BY recepcion", (contrato, a_cap, m_cap, regimen)).fetchall()
-            for (rec,) in filas:
+            filas = ultimos_por_regimen(con.execute(   # si volvió a cargar ese mes: solo el último cargue
+                "SELECT recepcion, regimen, fecha_recepcion FROM registros WHERE contrato=? AND periodo_anio=? "
+                "AND periodo_mes=? AND regimen=? AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%') "
+                "AND estado NOT LIKE 'NO VIGENTE%'", (contrato, a_cap, m_cap, regimen)).fetchall())
+            for rec, _, _ in filas:
                 enc = sorted(carpeta.glob(f"{_limpio(rec)}__*"))
                 if enc:
                     textos.append(rips_json.leer_archivo(enc[0]))

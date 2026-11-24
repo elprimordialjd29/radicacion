@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.4 — 2026-11-24
+- **RIPS: siempre el último cargue.** Si un prestador vuelve a cargar el RIPS del mismo mes y régimen, el
+  bot (12:00 m y 12:00 a. m.) ya baja la radicación nueva y marca la anterior «NO VIGENTE» cuando el SIE la
+  quita (verificado: KANKUAMA PMS-20001-2026-8 re-radicó abril–julio RS el 10–11 nov). Nuevo: cuando el SIE
+  deja **las dos radicaciones vigentes**, la pantalla de RIPS, la descarga TXT/JSON (mes y unificado) y la
+  frecuencia de uso usan **solo la última** (fecha de recepción más reciente; si empatan, la recepción mayor).
+  Hoy aplica a PMS-44078-2026-48 (cápita abril RC: 477209 reemplaza 475952) y PMS-44560-2026-59 (cápita julio
+  RS: 474852 reemplaza 472815). En la celda, la ayuda dice qué cargue reemplazó. Los valores radicados del
+  reporte no cambian (siguen lo que el SIE tiene radicado; los posibles duplicados se marcan aparte).
+
 ## 0.14.3 — 2026-11-24
 - Frecuencia de uso: el **periodo** del Excel (fila «Periodo», nombre del archivo) y de la pantalla es el de
   los meses de atención que **sí tienen RIPS radicados**, no «todos los meses»: p. ej. «marzo a septiembre de

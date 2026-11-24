@@ -49,6 +49,23 @@ ARCHIVO_RIPS = {"consultas": "Consultas", "procedimientos": "Procedimientos", "m
                 "otrosServicios": "Otros servicios"}
 
 
+def _clave_cargue(f):
+    """(fecha de recepción, número de recepción) para ordenar cargues: f = (recepcion, regimen, fecha_recepcion, …)."""
+    return (str(f[2] or ""), int(re.sub(r"\D", "", str(f[0])) or 0))
+
+
+def ultimos_por_regimen(filas):
+    """Regla del usuario: si un prestador vuelve a cargar el RIPS del mismo mes y régimen y el SIE deja las dos
+    radicaciones vigentes, se usa solo el ÚLTIMO cargue (fecha de recepción más reciente; si empatan, el número de
+    recepción mayor). Devuelve una fila por régimen."""
+    mejor = {}
+    for f in filas:
+        rg = f[1] or ""
+        if rg not in mejor or _clave_cargue(f) > _clave_cargue(mejor[rg]):
+            mejor[rg] = f
+    return [mejor[k] for k in sorted(mejor)]
+
+
 def tipo_contrato(contrato):
     """Tipo del contrato igual que en la pantalla (tipoDe): «MD-RCV-20001-…» → MD-RCV, «PMS-44001-…» → PMS."""
     m = re.match(r"^[A-Z]+(?:-[A-Z]+)?(?=-\d)", str(contrato or "").upper())
@@ -227,13 +244,14 @@ class Frecuencia:
             for contrato, meta in contratos.items():
                 for m in meses:   # mes de atención m → cápita m+1
                     a_cap, m_cap = (anio + 1, 1) if m == 12 else (anio, m + 1)
-                    sql = ("SELECT recepcion, regimen FROM registros WHERE contrato=? AND periodo_anio=? AND periodo_mes=? "
-                           "AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%') AND estado NOT LIKE 'NO VIGENTE%'")
+                    sql = ("SELECT recepcion, regimen, fecha_recepcion FROM registros WHERE contrato=? AND periodo_anio=? "
+                           "AND periodo_mes=? AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%') "
+                           "AND estado NOT LIKE 'NO VIGENTE%'")
                     params = [contrato, a_cap, m_cap]
                     if regimen:
                         sql += " AND regimen=?"
                         params.append(regimen)
-                    for rec, reg in con.execute(sql, params).fetchall():
+                    for rec, reg, _ in ultimos_por_regimen(con.execute(sql, params).fetchall()):   # último cargue
                         enc = sorted((carpeta / limpio(contrato)).glob(f"{limpio(rec)}__*"))
                         if not enc:
                             continue
@@ -308,13 +326,13 @@ class Frecuencia:
         rutas = []
         for m in meses:   # mes de atención m → cápita m+1 (sin los RIPS en cero)
             a_cap, m_cap = (anio + 1, 1) if m == 12 else (anio, m + 1)
-            sql = ("SELECT recepcion FROM registros WHERE contrato=? AND periodo_anio=? AND periodo_mes=? "
-                   "AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%') AND estado NOT LIKE 'NO VIGENTE%'")
+            sql = ("SELECT recepcion, regimen, fecha_recepcion FROM registros WHERE contrato=? AND periodo_anio=? "
+                   "AND periodo_mes=? AND (fuente LIKE 'CONSULTAS%' OR fuente LIKE 'OTROS%') AND estado NOT LIKE 'NO VIGENTE%'")
             params = [contrato, a_cap, m_cap]
             if regimen:
                 sql += " AND regimen=?"
                 params.append(regimen)
-            for (rec,) in con.execute(sql + " ORDER BY recepcion", params).fetchall():
+            for rec, _, _ in ultimos_por_regimen(con.execute(sql, params).fetchall()):   # solo el último cargue
                 enc = sorted(carpeta.glob(f"{limpio(rec)}__*"))
                 if enc:
                     rutas.append(str(enc[0]))

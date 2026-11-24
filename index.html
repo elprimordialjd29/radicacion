@@ -376,7 +376,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.14.3</div>
+          <div class="usr-ver">Radicación cápita · v0.14.4</div>
         </div>
       </div>
     </div>
@@ -538,6 +538,17 @@ function preparar() {
     if (!r.periodo_anio || !r.periodo_mes || !/^(CONSULTAS|OTROS)/.test(r.fuente || '')) continue;
     const a = r.periodo_mes === 1 ? r.periodo_anio - 1 : r.periodo_anio, m = r.periodo_mes === 1 ? 12 : r.periodo_mes - 1;
     ((D.idxAt[r.contrato] ??= {})[a + '-' + m] ??= []).push(r);
+  }
+  // si el prestador volvió a cargar el RIPS del mismo mes y régimen y el SIE deja las dos radicaciones vigentes,
+  // vale solo el ÚLTIMO cargue (fecha de recepción más reciente; si empatan, el número de recepción mayor)
+  const claveCargue = (r) => String(r.fecha_recepcion || '') + '|' + String(r.recepcion || '').replace(/\D/g, '').padStart(12, '0');
+  for (const porMes of Object.values(D.idxAt)) {
+    for (const [k, lista] of Object.entries(porMes)) {
+      const ult = {};
+      for (const r of lista) { const rg = r.regimen || 'RS'; if (!ult[rg] || claveCargue(r) > claveCargue(ult[rg])) ult[rg] = r; }
+      for (const r of Object.values(ult)) r._reemplaza = lista.filter((x) => (x.regimen || 'RS') === (r.regimen || 'RS') && x !== r);
+      porMes[k] = Object.values(ult);
+    }
   }
   D.cons = {};                                    // contrato|anio-mes -> {RS: consulta, RC: consulta}
   for (const c of D.consultas || []) (D.cons[c.contrato + '|' + c.anio + '-' + c.mes] ??= {})[c.regimen || 'RS'] = c;
@@ -789,7 +800,8 @@ function renderTabla(lista, meses) {
           for (const r of regs) (porReg[r.regimen || 'RS'] ??= []).push(r);
           const lineas = Object.keys(porReg).sort((a, b) => (a === 'RS' ? -1 : 1)).map((rg) => {
             const l = porReg[rg], us = l.reduce((x, r) => x + (r.n_usuarios || 0), 0), sv = l.reduce((x, r) => x + (r.n_servicios || 0), 0);
-            const tip = `${rg} · atenciones de ${MESES_L[m - 1]}: ${fmtN(us)} usuarios, ${fmtN(sv)} servicios · RIPS de la factura ${l.map((r) => r.factura || r.recepcion).join(', ')} (radicada ${l.map((r) => String(r.fecha_recepcion || '').slice(0, 10)).join(', ')})`;
+            const viejos = l.flatMap((r) => r._reemplaza || []);
+            const tip = `${rg} · atenciones de ${MESES_L[m - 1]}: ${fmtN(us)} usuarios, ${fmtN(sv)} servicios · RIPS de la factura ${l.map((r) => r.factura || r.recepcion).join(', ')} (radicada ${l.map((r) => String(r.fecha_recepcion || '').slice(0, 10)).join(', ')})${viejos.length ? ` · último cargue: reemplaza ${viejos.map((r) => `${r.factura || r.recepcion} (${String(r.fecha_recepcion || '').slice(0, 10)})`).join(', ')}` : ''}`;
             return `<span class="lin" data-tip="${esc(tip)}"><span class="st ok"><i>✓</i> ${fmtN(us)}</span><span class="rg">${rg}</span>${botonesRips(c.contrato, st.anio, m, rg, 'atencion')}</span>`;
           });
           fila.push(Object.entries(porReg).map(([rg, l]) => `${rg}: ${l.reduce((x, r) => x + (r.n_usuarios || 0), 0)} usuarios / ${l.reduce((x, r) => x + (r.n_servicios || 0), 0)} servicios`).join(' · '));
