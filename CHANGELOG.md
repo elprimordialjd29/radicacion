@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.11 — 2026-11-24
+- Excel de frecuencia de uso: vuelve el **bloque de datos del reporte arriba de cada hoja** (título,
+  periodo, régimen, margen, plazo, corte de datos, generado por y fuente), como en la primera versión;
+  la tabla empieza en la fila 10 con sus filtros y queda fija al desplazarse.
+
 ## 0.12.10 — 2026-11-24
 - Excel de frecuencia de uso: solo filas de contratos (sin filas «TOTAL / TODOS LOS PRESTADORES»).
   Cada niño se cuenta dentro de su contrato, así que la suma de los contratos da el total

@@ -374,7 +374,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.12.10</div>
+          <div class="usr-ver">Radicación cápita · v0.12.11</div>
         </div>
       </div>
     </div>
@@ -1604,10 +1604,10 @@ async function exportarFrecuenciaExcel() {
     const veces = todos ? v[2] : v[0], ninos = todos ? v[3] : v[1];
     f.push([...ubic(g), gr, dxG(gr), base, a.descripciones.join(' / '), a.codigo, veces, ninos, pct(ninos, base)]);
   }
-  hojaListaFmt(wb, 'Frecuencia CUPS', f, [14, 18, 19, 30, 30, 24, 12, 52, 17, 10, 14, 10]);
+  hojaListaFmt(wb, 'Frecuencia CUPS', f, [22, 18, 19, 30, 30, 24, 12, 52, 17, 10, 14, 10], cabecera(`Frecuencia de uso ${FR.tipo} — CUPS`));
   const d = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'CIE-10', 'Niños con el diagnóstico', 'Atenciones']];
   for (const g of filasG) for (const x of FR.catalogo.diagnosticos) { const v = g.diagnosticos[x.codigo] || [0, 0]; d.push([...ubic(g), x.grupo, x.codigo, v[0], v[1]]); }
-  hojaListaFmt(wb, 'Diagnósticos', d, [14, 18, 19, 30, 30, 10, 14, 12]);
+  hojaListaFmt(wb, 'Diagnósticos', d, [22, 18, 19, 30, 30, 10, 14, 12], cabecera(`Frecuencia de uso ${FR.tipo} — diagnósticos`));
   await descargarExcelJS(wb, `Frecuencia_${FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}${todos ? '_todos_los_pacientes' : ''}.xlsx`);
 }
 $('#vistaFrecuencia').addEventListener('click', (e) => {
@@ -1923,17 +1923,21 @@ async function libExcelJS() {
   });
   return (EXCELJSlib = window.ExcelJS);
 }
-// agrega una hoja en formato lista: encabezado en la fila 1, fijo al desplazarse, en negrilla con fondo, y filtros
-function hojaListaFmt(wb, nombre, filas, anchos) {
-  const ws = wb.addWorksheet(nombre, { views: [{ state: 'frozen', ySplit: 1 }] });
-  ws.columns = filas[0].map((h, i) => ({ header: h, width: (anchos || [])[i] || 14 }));
-  filas.slice(1).forEach((f) => ws.addRow(f));
-  const cab = ws.getRow(1);
+// agrega una hoja en formato lista: arriba el bloque de datos del reporte (título, periodo, régimen…),
+// debajo la tabla con su fila de títulos fija al desplazarse, en negrilla con fondo, y filtros
+function hojaListaFmt(wb, nombre, filas, anchos, encabezado = []) {
+  const n0 = encabezado.length + 1;   // fila de títulos de la tabla
+  const ws = wb.addWorksheet(nombre, { views: [{ state: 'frozen', ySplit: n0 }] });
+  filas[0].forEach((h, i) => { ws.getColumn(i + 1).width = (anchos || [])[i] || 14; });
+  encabezado.forEach((f) => ws.addRow(f));
+  if (encabezado.length) ws.getRow(1).font = { bold: true, size: 13 };
+  filas.forEach((f) => ws.addRow(f));
+  const cab = ws.getRow(n0);
   cab.font = { bold: true, color: { argb: 'FFFFFFFF' } };
   cab.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
   cab.alignment = { vertical: 'middle', wrapText: true };
   cab.height = 32;
-  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: filas[0].length } };
+  ws.autoFilter = { from: { row: n0, column: 1 }, to: { row: n0, column: filas[0].length } };
   return ws;
 }
 async function descargarExcelJS(wb, nombre) {
