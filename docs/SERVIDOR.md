@@ -80,7 +80,9 @@ actividades o grupos de un programa). Al cambiar el cálculo, subir `VERSIONES` 
 se recalcule solo ese motor.
 
 Los nombres de CUPS de las pantallas asistencial, medicamentos y TODOS salen de
-`worker/config/cups_nombres.json` (se puede editar; no requiere recalcular).
+`worker/config/cups_nombres.json` (se puede editar; no requiere recalcular). Los «CUPS SIN CLASIFICAR» de
+TODOS usan `worker/config/cups_nombres_web.json` (tabla CUPSRips de SISPRO). `GET /frecuencia` acepta
+`modalidad=01…09` (modalidadGrupoServicioTecSal).
 
 ## Consultas programadas y reintentos
 - `radicacion-programada.timer` lanza una consulta completa (todos los contratos, RS y RC,

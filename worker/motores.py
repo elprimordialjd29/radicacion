@@ -28,7 +28,7 @@ import rips_json  # noqa: E402
 
 VERSION = 1
 # versión del cálculo por motor (cambiarla invalida solo la caché de ese motor)
-VERSIONES = {"asis": 2, "todos": 4, "3280": 3, "med": 2}
+VERSIONES = {"asis": 3, "todos": 5, "3280": 4, "med": 3}
 CFG3280 = json.loads((DIR / "config" / "res3280_cups.json").read_text(encoding="utf-8"))
 COR3280 = json.loads((DIR / "config" / "res3280_correcciones.json").read_text(encoding="utf-8"))
 ASIS = json.loads((DIR / "config" / "asistencial_cups.json").read_text(encoding="utf-8"))
@@ -90,6 +90,28 @@ def normalizar_codigo(cod, conocidos=CONOCIDOS):
 _ARCH_NOMBRES = DIR / "config" / "cups_nombres.json"
 CUPS_NOMBRES = json.loads(_ARCH_NOMBRES.read_text(encoding="utf-8"))["nombres"] if _ARCH_NOMBRES.exists() else {}
 SIN_NOMBRE = "Sin nombre en las matrices"
+# nombres oficiales (tabla CUPSRips de SISPRO) solo para los CUPS sin clasificar de TODOS
+_ARCH_WEB = DIR / "config" / "cups_nombres_web.json"
+_WEB = json.loads(_ARCH_WEB.read_text(encoding="utf-8")) if _ARCH_WEB.exists() else {}
+CUPS_NOMBRES_WEB, CUPS_NO_EXISTEN = _WEB.get("nombres", {}), set(_WEB.get("no_existen", []))
+
+# modalidad de realización (campo modalidadGrupoServicioTecSal de consultas y procedimientos)
+MODALIDADES = {"01": "Intramural", "02": "Extramural unidad móvil", "03": "Extramural domiciliaria",
+               "04": "Extramural jornada de salud", "06": "Telemedicina interactiva",
+               "07": "Telemedicina no interactiva", "08": "Telemedicina telexperticia", "09": "Telemedicina telemonitoreo"}
+
+
+def modalidad(v):
+    v = str(v or "").strip()
+    v = v.zfill(2) if v.isdigit() and len(v) == 1 else v
+    return v if v in MODALIDADES else ""
+
+
+def _sumar_mod(destino, clave, mod, pac, n=1):
+    """destino[clave][mod][pac] += n (solo registros con modalidad)."""
+    if mod:
+        d = destino.setdefault(clave, {}).setdefault(mod, {})
+        d[pac] = d.get(pac, 0) + n
 
 # descripciones de las actividades 3280 (respaldo cuando el CUPS no está en el catálogo de nombres)
 NOMBRE_CUPS = {}
@@ -135,7 +157,7 @@ def _paciente_at(partes):
 
 
 def registros_asistencial(texto):
-    """Lista de (cups, paciente, tipo, nombre), igual que el procesamiento TXT de la Evaluación Asistencial."""
+    """Lista de (cups, paciente, tipo, nombre, modalidad), igual que el procesamiento TXT de la Evaluación Asistencial."""
     get_tipo = CUPS_TIPO.get
     lineas = re.split(r"\r?\n", texto)
     regs, at_lineas = [], set()
@@ -162,9 +184,9 @@ def registros_asistencial(texto):
         if pac == "SIN_ID" or len(pac) < 3:
             continue
         at_lineas.add(li)
-        regs.extend([(cups_at, pac, get_tipo(cups_at) or "TAB", nombre)] * cantidad)
+        regs.extend([(cups_at, pac, get_tipo(cups_at) or "TAB", nombre, "")] * cantidad)
 
-    seccion, en_at, en_urg = "", False, False
+    seccion, en_at, en_urg, sub = "", False, False, ""
     for li, raw in enumerate(lineas):
         if li in at_lineas:
             continue
@@ -186,6 +208,8 @@ def registros_asistencial(texto):
             continue
         if any(t in U for t in ("ARCHIVO-RIPS-CT", "ARCHIVO-RIPS-AC", "ARCHIVO-RIPS-AP", "CONSULTAS", "PROCEDIMIENTOS")):
             seccion, en_at, en_urg = "SERVICIOS", False, False
+            sub = "PROCEDIMIENTOS" if ("PROCEDIMIENTOS" in U or "ARCHIVO-RIPS-AP" in U) else \
+                "CONSULTAS" if ("CONSULTAS" in U or "ARCHIVO-RIPS-AC" in U) else ""
             continue
         if "\t" in l and len(l.split("\t")) >= 3:
             partes = [x.strip() for x in l.split("\t")]
@@ -216,7 +240,7 @@ def registros_asistencial(texto):
             fecha = (mp[6] or "").split(" ")[0].split("T")[0] or _fecha_linea(l)
             cantidad = max(1, _parse_int(mp[16] or "1") or 1)
             # frecuencia de uso: se cuenta todo, también si se repite paciente+código+fecha (la evaluación no lo repite)
-            regs.extend([(cod, pac, "MEDICAMENTOS", nombre)] * cantidad)
+            regs.extend([(cod, pac, "MEDICAMENTOS", nombre, "")] * cantidad)
             continue
         if en_urg:
             up = [x.strip() for x in re.sub(r"\|+$", "", l).split(",")]
@@ -224,7 +248,7 @@ def registros_asistencial(texto):
                 continue
             pid = _normalizar_id(up[2] or "")
             if pid and len(pid) >= 3:
-                regs.append(("URGBC", pid, "URGENCIAS BC", "Urgencias Baja Complejidad"))
+                regs.append(("URGBC", pid, "URGENCIAS BC", "Urgencias Baja Complejidad", ""))
             continue
         if en_at:
             if len(partes) < 4 or re.match(r"^bill|^productid|^tipo|^clientid", partes[0], re.I):
@@ -247,7 +271,7 @@ def registros_asistencial(texto):
             pac = _paciente_at(partes)
             if pac == "SIN_ID" or len(pac) < 3:
                 continue
-            regs.extend([(cups, pac, get_tipo(cups) or "OTROS SERVICIOS", nombre)] * cantidad)
+            regs.extend([(cups, pac, get_tipo(cups) or "OTROS SERVICIOS", nombre, "")] * cantidad)
             continue
         m = re.search(r"\b([0-9][0-9A-Za-z]{5})\b", l, re.A)
         if not m:
@@ -270,27 +294,32 @@ def registros_asistencial(texto):
             pac = _paciente_at(partes)
             if pac == "SIN_ID" or len(pac) < 3:
                 continue
-            regs.extend([(cups, pac, get_tipo(cups) or "OTROS SERVICIOS", nombre)] * cantidad)
+            regs.extend([(cups, pac, get_tipo(cups) or "OTROS SERVICIOS", nombre, "")] * cantidad)
             continue
         tipo = get_tipo(cups)
         if not tipo:
             continue
         mp_ = re.search(r"\b(?:CC|TI|RC|CE|PA|PE|CN|MS)-?\d{4,15}\b|\b\d{6,15}\b", l, re.A)
         pac = _normalizar_id(mp_.group(0) if mp_ else "SIN_ID") or "SIN_ID"
-        regs.append((cups, pac, tipo, ""))
+        # modalidad: en consultas va después del CUPS; en procedimientos, después de la vía de ingreso
+        k = next((i for i, x in enumerate(partes) if x.strip().upper() == cups), -1)
+        salto = 1 if sub == "CONSULTAS" else 2 if sub == "PROCEDIMIENTOS" else 0
+        mod = modalidad(partes[k + salto]) if k >= 0 and salto and k + salto < len(partes) else ""
+        regs.append((cups, pac, tipo, "", mod))
     return regs
 
 
 def resumen_asistencial(ruta):
-    """{'t': {tipo: {cups: {paciente: n}}}, 'n': {cups: nombre}} de un soporte."""
+    """{'t': {tipo: {cups: {paciente: n}}}, 'tm': {'tipo|cups': {modalidad: {paciente: n}}}, 'n': {cups: nombre}}."""
     texto = _leer(ruta, "utf-8")   # la Evaluación Asistencial lee el TXT como UTF-8
-    t, n = {}, {}
-    for cups, pac, tipo, nombre in registros_asistencial(texto):
+    t, tm, n = {}, {}, {}
+    for cups, pac, tipo, nombre, mod in registros_asistencial(texto):
         d = t.setdefault(tipo, {}).setdefault(cups, {})
         d[pac] = d.get(pac, 0) + 1
+        _sumar_mod(tm, f"{tipo}|{cups}", mod, pac)
         if nombre and cups not in n:
             n[cups] = nombre
-    return {"t": t, "n": n}
+    return {"t": t, "tm": tm, "n": n}
 
 
 # ══════════════════════════════════════════════════════════════════ TODOS
@@ -330,9 +359,10 @@ _CAMPO_COD = {"CONSULTAS": "codConsulta", "PROCEDIMIENTOS": "codProcedimiento", 
 
 
 def resumen_todos(ruta):
-    """{'c': {codigo: {paciente: n}}, 's': {codigo: sección}, 'n': {codigo: nombre}}: cada registro del RIPS."""
+    """{'c': {codigo: {paciente: n}}, 'cm': {codigo: {modalidad: {paciente: n}}}, 's': {codigo: sección},
+    'n': {codigo: nombre}}: cada registro del RIPS."""
     sec = rips_json.leer_plano(rips_json.leer_archivo(ruta))
-    c, s, n = {}, {}, {}
+    c, cm, s, n = {}, {}, {}, {}
     for nombre_sec, etiqueta in _SECCION_TODOS.items():
         lineas = sec.get(nombre_sec, [])
         if not lineas or nombre_sec not in rips_json.SERVICIOS:
@@ -353,11 +383,12 @@ def resumen_todos(ruta):
                 continue
             d = c.setdefault(cod, {})
             d[pac] = d.get(pac, 0) + 1
+            _sumar_mod(cm, cod, modalidad(reg.get("modalidadGrupoServicioTecSal")), pac)
             s.setdefault(cod, etiqueta)
             nom = (reg.get("nomTecnologiaSalud") or "").strip()
             if nom and cod not in n:
                 n[cod] = nom
-    return {"c": c, "s": s, "n": n}
+    return {"c": c, "cm": cm, "s": s, "n": n}
 
 
 # ══════════════════════════════════════════════════════════════════ 3280 (sencillo)
@@ -408,9 +439,11 @@ def _parsear_3280(texto):
 
     r = {}
     r["usuarios"] = [{"tipo": c(l, 0), "num": c(l, 1), "fnac": c(l, 3)} for l in raw.get("USUARIOS", []) if c(l, 1)]
-    r["consultas"] = [{"tipo": c(l, 1), "num": c(l, 2), "fecha": c(l, 4)[:10], "cups": cc(l, 6), "dx": c(l, 12).upper()}
+    r["consultas"] = [{"tipo": c(l, 1), "num": c(l, 2), "fecha": c(l, 4)[:10], "cups": cc(l, 6), "dx": c(l, 12).upper(),
+                       "mod": modalidad(c(l, 7))}
                       for l in raw.get("CONSULTAS", []) if c(l, 2) and cc(l, 6)]
-    r["procedimientos"] = [{"tipo": c(l, 1), "num": c(l, 2), "fecha": c(l, 4)[:10], "cups": cc(l, 7), "dx": c(l, 15).upper()}
+    r["procedimientos"] = [{"tipo": c(l, 1), "num": c(l, 2), "fecha": c(l, 4)[:10], "cups": cc(l, 7), "dx": c(l, 15).upper(),
+                            "mod": modalidad(c(l, 9))}
                            for l in raw.get("PROCEDIMIENTOS", []) if c(l, 2) and cc(l, 7)]
     r["medicamentos"] = [{"tipo": c(l, 1), "num": c(l, 2), "fecha": c(l, 6)[:10], "cups": cc(l, 10), "nombre": c(l, 11).upper()}
                          for l in raw.get("MEDICAMENTOS", []) if c(l, 2)]
@@ -477,7 +510,7 @@ for _p in PROGS_3280:
             AREA_3280.setdefault(str(_c).strip().upper(), _area_3280(_p["id"]))
 AREAS_3280 = ["MATRIZ 3280 · CURSOS DE VIDA (PyM)", "MATRIZ 3280 · RUTA MATERNO PERINATAL",
               "MATRIZ 3280 · RUTA CARDIOVASCULAR Y METABÓLICA", "MATRIZ 3280 · DEMANDA INDUCIDA Y SALUD MENTAL"]
-FUERA = "FUERA DE LAS MATRICES · "   # grupo aparte: no está en ninguna matriz ni catálogo
+FUERA = "CUPS SIN CLASIFICAR · "   # grupo aparte: no está en ninguna matriz ni catálogo
 OTROS_PYM = "OTROS_PYM"        # grupo final: códigos de PyM reportados que no están en la matriz
 PATRON_PYM = re.compile(r"^(DI|PM|PYM|I1)")
 
@@ -502,18 +535,19 @@ def resumen_3280(ruta):
     for gs in grupos.values():
         if {"DM", "HIPERTENSION"} <= gs:
             gs.add("DM_HTA")
-    acts, todos, pacs_prog = {}, {}, {}
+    acts, todos, pacs_prog, todos_m, acts_m = {}, {}, {}, {}, {}
     progs = [(p, set(grupos_programa(p))) for p in PROGS_3280]
     for p, aplica in progs:
         pacs_prog[p["id"]] = sorted(num for num, gs in grupos.items() if gs & aplica)
     # índice por código para no recorrer el RIPS por cada actividad
-    por_cod, extra, extra_nom = {}, {}, {}
+    por_cod, extra, extra_m, extra_nom = {}, {}, {}, {}
     for k in SERVICIOS_3280:
         for r in A[k]:
-            por_cod.setdefault(r["cups"], []).append(r["num"])
+            por_cod.setdefault(r["cups"], []).append((r["num"], r.get("mod", "")))
             if r["cups"] not in CUPS_3280 and PATRON_PYM.match(r["cups"]):
                 d = extra.setdefault(r["cups"], {})
                 d[r["num"]] = d.get(r["num"], 0) + 1
+                _sumar_mod(extra_m, r["cups"], r.get("mod", ""), r["num"])
                 if r.get("nombre") and r["cups"] not in extra_nom:
                     extra_nom[r["cups"]] = r["nombre"][:120]
     for aid, act in ACTS_3280.items():
@@ -521,10 +555,10 @@ def resumen_3280(ruta):
         kws = [str(x).strip().upper() for x in (act.get("nombres") or act.get("busqueda_nombre") or [])]
         if not cups and not kws:
             continue
-        nums = []
+        nums = []   # (paciente, modalidad)
         if act.get("archivo") == "medicamentos":
             # medicamentos: por el nombre (o por el código si la actividad trae códigos)
-            nums = [r["num"] for r in A["medicamentos"]
+            nums = [(r["num"], "") for r in A["medicamentos"]
                     if (r["cups"] in cups if cups else any(kw in r["nombre"] for kw in kws))]
         else:
             # el CUPS cuenta venga en consultas, procedimientos u otros servicios (hay prestadores que lo cambian
@@ -532,12 +566,13 @@ def resumen_3280(ruta):
             for cod in cups:
                 nums += por_cod.get(cod, [])
             if kws:
-                nums += [r["num"] for r in A["medicamentos"] if any(kw in r["nombre"] for kw in kws)]
+                nums += [(r["num"], "") for r in A["medicamentos"] if any(kw in r["nombre"] for kw in kws)]
         if not nums:
             continue
         d = todos.setdefault(aid, {})
-        for num in nums:
+        for num, mod in nums:
             d[num] = d.get(num, 0) + 1
+            _sumar_mod(todos_m, aid, mod, num)
     for p, aplica in progs:
         for aid in p["actividades"]:
             if aid not in todos:
@@ -545,7 +580,12 @@ def resumen_3280(ruta):
             d = {num: n for num, n in todos[aid].items() if grupos.get(num, set()) & aplica}
             if d:
                 acts[f"{p['id']}|{aid}"] = d
-    return {"a": acts, "t": todos, "g": {k: v for k, v in pacs_prog.items() if v}, "x": extra, "xn": extra_nom}
+            for mod, dm in todos_m.get(aid, {}).items():
+                dm = {num: n for num, n in dm.items() if grupos.get(num, set()) & aplica}
+                if dm:
+                    acts_m.setdefault(f"{p['id']}|{aid}", {})[mod] = dm
+    return {"a": acts, "t": todos, "am": acts_m, "tm": todos_m, "g": {k: v for k, v in pacs_prog.items() if v},
+            "x": extra, "xm": extra_m, "xn": extra_nom}
 
 
 # ══════════════════════════════════════════════════════════════════ por contrato
@@ -570,13 +610,21 @@ def _sumar(destino, origen):
         destino[pac] = destino.get(pac, 0) + n
 
 
+def _sumar_mods(destino, origen):
+    """destino[clave][mod] += origen[clave][mod] ({paciente: n})."""
+    for k, por_mod in origen.items():
+        for mod, d in por_mod.items():
+            _sumar(destino.setdefault(k, {}).setdefault(mod, {}), d)
+
+
 def resultado_contrato(motor, archivos, cache_dir):
     """Junta los resúmenes de los archivos del contrato.
     act[clave] = [veces, pacientes] (asis/todos) o [veces grupo, pacientes grupo, veces todos, pacientes todos] (3280);
-    pg[grupo] = pacientes distintos del grupo; n = nombres; s = sección de cada código."""
-    act, pg, nombres, secc, pacientes = {}, {}, {}, {}, set()
+    pg[grupo] = pacientes distintos del grupo; n = nombres; s = sección de cada código;
+    mod[modalidad] = {act, pg} solo con los registros de esa modalidad (consultas y procedimientos)."""
+    act, pg, nombres, secc, pacientes, por_mod = {}, {}, {}, {}, set(), {}
     if motor == "3280":
-        a, t, g, x = {}, {}, {}, {}
+        a, t, g, x, am, tm, xm = {}, {}, {}, {}, {}, {}, {}
         for ruta in archivos:
             r = resumen_archivo(motor, ruta, cache_dir)
             for k, d in r["a"].items():
@@ -588,6 +636,9 @@ def resultado_contrato(motor, archivos, cache_dir):
                 pacientes.update(lst)
             for k, d in r.get("x", {}).items():
                 _sumar(x.setdefault(k, {}), d)
+            _sumar_mods(am, r.get("am", {}))
+            _sumar_mods(tm, r.get("tm", {}))
+            _sumar_mods(xm, r.get("xm", {}))
             nombres.update({k: v for k, v in r.get("xn", {}).items() if k not in nombres})
         for k, d in a.items():
             aid = k.split("|", 1)[1]
@@ -607,8 +658,20 @@ def resultado_contrato(motor, archivos, cache_dir):
             pac_x.update(d)
         if pac_x:
             pg[OTROS_PYM] = len(pac_x)
+        # por modalidad (los grupos de pacientes del programa no cambian)
+        for p in PROGS_3280:
+            for aid in p["actividades"]:
+                k = f"{p['id']}|{aid}"
+                for mod, dt in tm.get(aid, {}).items():
+                    dg = am.get(k, {}).get(mod, {})
+                    por_mod.setdefault(mod, {"act": {}, "pg": {}})["act"][k] = \
+                        [sum(dg.values()), len(dg), sum(dt.values()), len(dt)]
+        for cod, mods in xm.items():
+            for mod, d in mods.items():
+                por_mod.setdefault(mod, {"act": {}, "pg": {}})["act"][f"{OTROS_PYM}|{cod}"] = \
+                    [sum(d.values()), len(d), sum(d.values()), len(d)]
     else:
-        por_tipo, cods = {}, {}
+        por_tipo, cods, cods_m = {}, {}, {}
         catalogos = catalogos_cargados(cache_dir) if motor == "todos" else {}
         for ruta in archivos:
             r = resumen_archivo("asis" if motor == "med" else motor, ruta, cache_dir)
@@ -618,12 +681,16 @@ def resultado_contrato(motor, archivos, cache_dir):
                         continue
                     for cod, pacs in d.items():
                         _sumar(cods.setdefault(f"{tipo}|{cod}", {}), pacs)
+                _sumar_mods(cods_m, {k: v for k, v in r.get("tm", {}).items()
+                                     if motor != "med" or k.startswith("MEDICAMENTOS|")})
                 nombres.update({k: v for k, v in r["n"].items() if k not in nombres})
             else:
                 for cod, pacs in r["c"].items():
                     sec = r["s"].get(cod, "")
                     tipo = tipo_todos(cod, sec, catalogos)
                     _sumar(cods.setdefault(f"{tipo}|{cod}", {}), pacs)
+                    if cod in r.get("cm", {}):
+                        _sumar_mods(cods_m, {f"{tipo}|{cod}": r["cm"][cod]})
                     secc.setdefault(cod, sec)
                 nombres.update({k: v for k, v in r["n"].items() if k not in nombres})
         for k, d in cods.items():
@@ -632,4 +699,12 @@ def resultado_contrato(motor, archivos, cache_dir):
             por_tipo.setdefault(tipo, set()).update(d)
             pacientes.update(d)
         pg = {k: len(v) for k, v in por_tipo.items()}
-    return {"act": act, "pg": pg, "n": nombres, "s": secc, "pac": len(pacientes), "arch": len(archivos)}
+        for k, mods in cods_m.items():
+            tipo = k.split("|", 1)[0]
+            for mod, d in mods.items():
+                pm = por_mod.setdefault(mod, {"act": {}, "pg": {}, "_p": {}})
+                pm["act"][k] = [sum(d.values()), len(d)]
+                pm["_p"].setdefault(tipo, set()).update(d)
+        for pm in por_mod.values():
+            pm["pg"] = {t: len(v) for t, v in pm.pop("_p", {}).items()}
+    return {"act": act, "pg": pg, "n": nombres, "s": secc, "pac": len(pacientes), "arch": len(archivos), "mod": por_mod}

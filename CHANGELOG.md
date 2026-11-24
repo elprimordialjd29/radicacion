@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.14.0 — 2026-11-24
+- **Modalidad de realización** en la frecuencia de uso (PMS, RCV, asistenciales y TODOS), del campo
+  `modalidadGrupoServicioTecSal` de consultas y procedimientos, siempre con su **descripción**:
+  Intramural, Extramural unidad móvil, Extramural domiciliaria, Extramural jornada de salud,
+  Telemedicina interactiva, no interactiva, telexperticia y telemonitoreo.
+  - Debajo de cada actividad, en gris, cuántas veces se hizo en cada modalidad (total).
+  - Selector «Todas las modalidades / …» para ver solo una; el Excel trae la columna «Modalidad» y el
+    nombre del archivo la incluye. Medicamentos y otros servicios no traen modalidad en el RIPS.
+- TODOS: el grupo aparte ahora se llama **«CUPS SIN CLASIFICAR · Consultas / Procedimientos / Otros
+  servicios»** y sus nombres salen de la **tabla oficial CUPS de SISPRO** (CUPSRips, consultada el
+  2026-11-24; `worker/config/cups_nombres_web.json`, 379 CUPS). Los 24 códigos que no existen en esa
+  tabla (p. ej. 123456, 039145, 089020) dicen «Código que no existe en la tabla CUPS (SISPRO)».
+  Los clasificados siguen con los nombres de las matrices.
+
 ## 0.13.3 — 2026-11-24
 - **Frecuencia de uso TODOS (toda la EPS) clasificada solo con las matrices** (sin buscar afuera): cada
   código va a su **tipo de servicio de la Evaluación Asistencial** (asistencias, especialidades,

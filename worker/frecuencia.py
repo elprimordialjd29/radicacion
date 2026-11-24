@@ -317,7 +317,7 @@ class Frecuencia:
                     rutas.append(str(enc[0]))
         return rutas
 
-    def solicitar(self, tipo, anio, meses, regimen, contratos_meta, hist, encolar=True):
+    def solicitar(self, tipo, anio, meses, regimen, contratos_meta, hist, encolar=True, modalidad=""):
         """Resultado listo o, si falta calcular contratos, {'calculando': True, 'hechos', 'total'} (se calcula aparte)."""
         motor = self.motor_de(tipo)
         if motor == "dx":
@@ -345,7 +345,7 @@ class Frecuencia:
                 self._encolar(motor, faltan)
             return {"tipo": t, "motor": motor, "calculando": True, "total": len(tareas),
                     "hechos": len(tareas) - len(faltan)}
-        return self._agregar(motor, t, anio, meses, regimen, tareas)
+        return self._agregar(motor, t, anio, meses, regimen, tareas, modalidad)
 
     def _encolar(self, motor, tareas):
         with self._cola_lock:
@@ -377,9 +377,10 @@ class Frecuencia:
                 with self._cola_lock:
                     self._en_curso.difference_update(x["out"] for x in tareas)
 
-    def _agregar(self, motor, tipo, anio, meses, regimen, tareas):
+    def _agregar(self, motor, tipo, anio, meses, regimen, tareas, modalidad=""):
         vacio = {"act": {}, "pg": {}, "n": {}, "s": {}, "pac": 0, "arch": 0}
-        G, nombres, secc, errores = {}, {}, {}, []
+        modalidad = modalidad if modalidad in self.M.MODALIDADES else ""
+        G, nombres, secc, errores, mods_total = {}, {}, {}, [], {}
         orden = {"contrato": 0, "municipio": 1, "departamento": 2, "total": 3}
         for c, rutas, out in tareas:
             r = json.loads(out.read_text(encoding="utf-8")) if rutas and out.exists() else vacio
@@ -390,6 +391,15 @@ class Frecuencia:
                 nombres.setdefault(k, v)
             for k, v in r.get("s", {}).items():
                 secc.setdefault(k, v)
+            # modalidad: cada código con cuántas veces vino por modalidad (para marcarlo en la fila del total)
+            for mod, rm in r.get("mod", {}).items():
+                for k, v in rm.get("act", {}).items():
+                    acc = mods_total.setdefault(k, {}).setdefault(mod, [0] * len(v))
+                    for i, x in enumerate(v):
+                        acc[i] += x
+            if modalidad:   # solo los registros de esa modalidad (la población de cada programa 3280 no cambia)
+                rm = r.get("mod", {}).get(modalidad, {})
+                r = dict(r, act=rm.get("act", {}), pg=r["pg"] if motor == "3280" else rm.get("pg", {}))
             for nivel, nombre in (("contrato", c["contrato"]), ("municipio", c.get("municipio") or "—"),
                                   ("departamento", departamento(c["contrato"])), ("total", f"Total {tipo}")):
                 g = G.setdefault((nivel, nombre), {"nivel": nivel, "nombre": nombre, "act": {}, "pg": {}, "pac": 0, "arch": 0})
@@ -412,7 +422,9 @@ class Frecuencia:
             salida.append({"nivel": g["nivel"], "nombre": g["nombre"], "archivos": g["arch"], "pacientes": g["pac"],
                            "pacientes_dx": g["pac"], "actividades": act, "pacientes_grupo": pg, "diagnosticos": {},
                            **({"prestador": g["prestador"], "municipio": g["municipio"]} if g["nivel"] == "contrato" else {})})
+        mods = {renombre(k): {m: v for m, v in d.items()} for k, d in mods_total.items()}
         return {"tipo": tipo, "motor": motor, "anio": anio, "meses": meses, "regimen": regimen or "RS+RC",
+                "modalidad": modalidad, "modalidades": self.M.MODALIDADES, "mods": mods,
                 "catalogo": cat, "grupos": salida, "contratos_tipo": len(tareas), "errores": errores[:20]}
 
     def _catalogo_motor(self, motor, total, nombres, secc):
@@ -486,15 +498,20 @@ class Frecuencia:
         acts, info = [], {}
         for gr in grupos:
             if gr.startswith(M.FUERA):
-                info[gr] = ("Códigos que no están en la matriz 3280, ni en la Evaluación Asistencial (asistencias, "
-                            "especialidades, complementarias, PAI…), ni en los catálogos cargados")
+                info[gr] = ("CUPS que no están en la matriz 3280, ni en la Evaluación Asistencial (asistencias, "
+                            "especialidades, complementarias, PAI…), ni en los catálogos cargados; nombre oficial de la "
+                            "tabla CUPS de SISPRO")
             elif gr.startswith("MATRIZ 3280"):
                 info[gr] = "Códigos de la matriz 3280 que no están en la Evaluación Asistencial"
             elif gr.startswith("CATÁLOGO "):
                 info[gr] = "Códigos del catálogo cargado que no están en las otras matrices"
             for _, cod in sorted(por_tipo[gr], reverse=True):
-                nom = (M.CUPS_NOMBRES.get(cod) or M.NOMBRE_CUPS.get(cod) or nom_cat.get(cod) or nombres.get(cod)
-                       or NOMBRES_SECCION.get(cod) or ("Medicamento sin nombre en el RIPS" if gr == "MEDICAMENTOS" else M.SIN_NOMBRE))
+                if gr.startswith(M.FUERA):   # sin clasificar: nombre oficial de SISPRO (o el que trae el RIPS)
+                    nom = (M.CUPS_NOMBRES.get(cod) or M.CUPS_NOMBRES_WEB.get(cod) or nombres.get(cod)
+                           or ("Código que no existe en la tabla CUPS (SISPRO)" if cod in M.CUPS_NO_EXISTEN else M.SIN_NOMBRE))
+                else:
+                    nom = (M.CUPS_NOMBRES.get(cod) or M.NOMBRE_CUPS.get(cod) or nom_cat.get(cod) or nombres.get(cod)
+                           or NOMBRES_SECCION.get(cod) or ("Medicamento sin nombre en el RIPS" if gr == "MEDICAMENTOS" else M.SIN_NOMBRE))
                 acts.append({"grupo": gr, "codigo": cod, "descripciones": [nom], "criterio": secc.get(cod, "")})
         return ({"grupos": grupos, "actividades": acts, "sin_codigo": [], "diagnosticos": [], "grupos_info": info,
                  "actualizado": ahora, "por": {"asis": "Evaluación Asistencial", "med": "solo medicamentos"}.get(motor, "todos los RIPS"),

@@ -416,7 +416,7 @@ def frecuencia_guardar(tipo: str, c: CatalogoFrec, x_token: str = Header("")):
 
 
 @app.get("/frecuencia")
-def frecuencia(tipo: str, anio: int, meses: str, regimen: str = "", x_token: str = Header("")):
+def frecuencia(tipo: str, anio: int, meses: str, regimen: str = "", modalidad: str = "", x_token: str = Header("")):
     auth(x_token)
     try:
         lista = sorted({int(m) for m in meses.split(",") if m.strip()})
@@ -429,7 +429,7 @@ def frecuencia(tipo: str, anio: int, meses: str, regimen: str = "", x_token: str
     if not hist.exists():
         raise HTTPException(404, "Sin historial")
     meta = json.loads(CATALOGO.read_text(encoding="utf-8")) if CATALOGO.exists() else []
-    return FREC.solicitar(tipo, anio, lista, regimen, meta, hist)
+    return FREC.solicitar(tipo, anio, lista, regimen, meta, hist, modalidad=modalidad.strip())
 
 
 def _meses_activos(anio):

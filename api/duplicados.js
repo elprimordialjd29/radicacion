@@ -2,7 +2,7 @@
 //   GET /api/duplicados               → facturas duplicadas: resumen y pares (permiso ver_reporte)
 //   GET /api/duplicados?excel=1       → Excel con detalle de servicios repetidos (datos de pacientes:
 //                                        permiso descargar_rips)
-//   GET /api/frecuencia?tipo&anio&meses&regimen → frecuencia de uso de CUPS y diagnósticos (ver_reporte)
+//   GET /api/frecuencia?tipo&anio&meses&regimen&modalidad → frecuencia de uso de CUPS y diagnósticos (ver_reporte)
 //   GET /api/frecuencia-catalogo      → catálogos de CUPS/diagnósticos por tipo de contrato (ver_reporte)
 //   PUT /api/frecuencia-catalogo?tipo=DNT {actividades, diagnosticos} → cargar catálogo (admin_usuarios)
 // (vercel.json reescribe /api/frecuencia y /api/frecuencia-catalogo hacia aquí con ?accion=…)
@@ -15,8 +15,8 @@ const json = (res, r, t) => res.status(r.status).setHeader('Content-Type', 'appl
 
 async function frecuencia(req, res) {
   if (!(await requiere(req, res, 'ver_reporte'))) return;
-  const { tipo = '', anio = '', meses = '', regimen = '' } = req.query;
-  const r = await worker('/frecuencia?' + new URLSearchParams({ tipo, anio, meses, regimen }), { signal: AbortSignal.timeout(55000) });
+  const { tipo = '', anio = '', meses = '', regimen = '', modalidad = '' } = req.query;
+  const r = await worker('/frecuencia?' + new URLSearchParams({ tipo, anio, meses, regimen, modalidad }), { signal: AbortSignal.timeout(55000) });
   return json(res, r, await r.text());
 }
 

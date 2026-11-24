@@ -110,6 +110,7 @@ tr:hover td { background: var(--surface-2); }
 .usr-ver { padding: 6px 12px 2px; font-size: 11px; color: var(--ink-3); border-top: 1px solid var(--border); margin-top: 4px; }
 .fr-tabla td small, .fr-tabla th small { display: block; font-size: 11px; color: var(--ink-3); font-weight: 400; } .fr-tabla tr.fr-grupo td { background: var(--surface-2); border-top: 2px solid var(--border); } .fr-tabla tr.fr-grupo small { display: block; font-weight: 400; }
 .fr-tabla .fr-tot, .rp-tabla.fr-tabla tbody tr td.fr-tot { background: color-mix(in srgb, var(--accent) 9%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.fr-mod { display: block; margin-top: 3px; font-size: 11px; color: var(--ink-3); }
 .fr-tabla td.num { min-width: 118px; vertical-align: top; } .fr-n { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; } .fr-veces { font-size: 11px; color: var(--ink-3); margin-left: 4px; }
 .fr-cob { display: block; height: 4px; border-radius: 2px; background: var(--surface-2); margin: 4px 0 0 auto; width: 90px; overflow: hidden; } .fr-cob i { display: block; height: 100%; background: var(--accent); }
 .fr-dx { display: inline-block; font: 600 11px ui-monospace, monospace; color: var(--ink-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 10px; margin: 1px 2px 1px 0; } .fr-dxs { white-space: normal; max-width: 150px; }
@@ -375,7 +376,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.13.3</div>
+          <div class="usr-ver">Radicación cápita · v0.14.0</div>
         </div>
       </div>
     </div>
@@ -1400,17 +1401,21 @@ const MOTOR_TXT = { dx: 'catálogo de CUPS y diagnósticos', 3280: 'matriz 3280 
 const motorDe = (t) => (FRCAT && FRCAT[t] ? 'dx' : t === 'TODOS' ? 'todos' : ['MD', 'MDC'].includes(t.split('-')[0]) ? 'med'
   : t === 'PMS' || t.split('-').includes('RCV') ? '3280' : 'asis');
 const contratosDeTipo = (t) => (t === 'TODOS' ? D.contratos.length : D.contratos.filter((c) => tipoDe(c.contrato) === t).length);
-let frFiltro = '';
+let frFiltro = '', frModalidad = '';
+// modalidad de realización (campo modalidadGrupoServicioTecSal): se muestra la descripción, no el número
+const MODALIDADES = { '01': 'Intramural', '02': 'Extramural unidad móvil', '03': 'Extramural domiciliaria', '04': 'Extramural jornada de salud',
+  '06': 'Telemedicina interactiva', '07': 'Telemedicina no interactiva', '08': 'Telemedicina telexperticia', '09': 'Telemedicina telemonitoreo' };
+const conModalidad = (m) => ['3280', 'asis', 'todos'].includes(m);
 async function renderFrecuencia(lista, mesesTodos) {
   const meses = selMeses(mesesTodos);
   const tipos = [...new Set(D.contratos.map((c) => tipoDe(c.contrato)))].sort();
-  const clave = [frTipo, st.anio, meses.join(','), st.reg].join('|');
+  const clave = [frTipo, st.anio, meses.join(','), st.reg, frModalidad].join('|');
   if (clave !== frClave && !frCargando) {
     frCargando = true; frClave = clave;
     if (!FR?.calculando) $('#vistaFrecuencia').innerHTML = `<div class="card"><p class="muted">⏳ Contando CUPS en los RIPS de ${esc(frTipo === 'TODOS' ? 'toda la EPS' : frTipo)}…</p></div>`;
     try {
       const [{ r, j }, cat] = await Promise.all([
-        pedirJSON('/api/frecuencia?' + new URLSearchParams({ tipo: frTipo, anio: st.anio, meses: meses.join(','), regimen: st.reg || '' })),
+        pedirJSON('/api/frecuencia?' + new URLSearchParams({ tipo: frTipo, anio: st.anio, meses: meses.join(','), regimen: st.reg || '', modalidad: conModalidad(motorDe(frTipo)) ? frModalidad : '' })),
         FRCAT ? Promise.resolve(FRCAT) : pedirJSON('/api/frecuencia-catalogo').then((x) => x.j)]);
       if (!r.ok) throw new Error(j.error || j.detail || r.status);
       FR = j; FRCAT = cat;
@@ -1478,9 +1483,14 @@ function pintarFrecuencia(lista, meses, tipos) {
       <small>${fmtN(v[i1])} ${palPac} · ${pct.toFixed(0)}%</small><span class="fr-cob"><i style="width:${pct}%"></i></span></td>`;
   };
   const dxChips = (gr) => dxDe(gr).map((d) => `<span class="fr-dx">${esc(d)}</span>`).join('');
+  const marcaMod = (a) => {
+    if (frModalidad || !FR.mods) return '';
+    const m = Object.entries(FR.mods[kA(a)] || {}).map(([c, v]) => [c, v[i0] || 0]).filter(([, n]) => n).sort((x, y) => y[1] - x[1]);
+    return m.length ? `<small class="fr-mod">${m.map(([c, n]) => `${esc(MODALIDADES[c] || c)} ${fmtN(n)}`).join(' · ')}</small>` : '';
+  };
   const filaAct = (a) => {
     const q = norm([a.codigo, a.cups_txt, ...(a.descripciones || [])].join(' '));
-    return `<tr class="fr-act" data-q="${esc(q)}"><td class="wrap fr-desc">${esc((a.descripciones || []).join(' / ') || '—')}</td><td><span class="fr-cups">${esc(a.cups_txt || a.codigo)}</span></td>
+    return `<tr class="fr-act" data-q="${esc(q)}"><td class="wrap fr-desc">${esc((a.descripciones || []).join(' / ') || '—')}${marcaMod(a)}</td><td><span class="fr-cups">${esc(a.cups_txt || a.codigo)}</span></td>
       ${colCrit ? `<td class="fr-dxs">${esDx ? dxChips(a.grupo || 'GENERAL') : esc(a.criterio || '')}</td>` : ''}
       ${columnas.map((g, k) => celda(g.actividades[kA(a)] || [0, 0, 0, 0], k, baseCob(g, a.grupo || 'GENERAL'))).join('')}</tr>`;
   };
@@ -1514,7 +1524,7 @@ function pintarFrecuencia(lista, meses, tipos) {
     3280: `frecuencia de uso, no evaluación. Cada <b>programa</b> de la matriz 3280 empieza con sus pacientes: los de <b>curso de vida</b> por la edad (a la última atención del mes) y los de <b>RCV y materna</b> por el diagnóstico (DM, HTA, embarazo, preconcepción). Debajo, cada actividad: <b>veces</b> que vino su CUPS en los RIPS de esos pacientes (cada registro cuenta, aunque se repita o el paciente esté en varios programas; sin finalidad ni valor único), cuántos <b>pacientes</b> y qué <b>%</b> del programa. Solo se muestran las actividades con registros; al final, los códigos de PyM que reportan y la matriz no trae.`,
     med: `contratos de <b>medicamentos</b> (MD, MDC, MD-RCV): solo se cuentan los medicamentos del RIPS, igual que la <b>Evaluación Cápita Asistencial</b>: cada medicamento suma la <b>cantidad</b> dispensada (unidades). Debajo de cada código: unidades, pacientes y %.`,
     asis: `igual que la <b>Evaluación Cápita Asistencial</b>: cada CUPS va a su <b>tipo de servicio</b>; consultas y procedimientos cuentan cada registro; medicamentos y otros servicios cuentan la <b>cantidad</b>. Cada tipo empieza con los pacientes que tuvieron ese servicio; debajo, cada código: veces, pacientes y %.`,
-    todos: `<b>todos los códigos</b> reportados en los RIPS de la EPS, clasificados solo con las matrices: <b>tipo de servicio de la Evaluación Asistencial</b> (asistencias, especialidades, complementarias, PAI, TAB, urgencias, hospitalización, medicamentos), <b>áreas de la matriz 3280</b> (cursos de vida, materna, RCV, demanda inducida) y los <b>catálogos cargados</b> (DNT…), con el nombre que traen. Lo que no está en ninguna va aparte, al final: <b>«FUERA DE LAS MATRICES»</b> por archivo RIPS. Cada registro cuenta.`,
+    todos: `<b>todos los códigos</b> reportados en los RIPS de la EPS, clasificados solo con las matrices: <b>tipo de servicio de la Evaluación Asistencial</b> (asistencias, especialidades, complementarias, PAI, TAB, urgencias, hospitalización, medicamentos), <b>áreas de la matriz 3280</b> (cursos de vida, materna, RCV, demanda inducida) y los <b>catálogos cargados</b> (DNT…), con el nombre que traen. Los CUPS que no están en ninguna van aparte, al final: <b>«CUPS SIN CLASIFICAR»</b> por archivo RIPS, con el nombre oficial de la tabla CUPS de SISPRO. Cada registro cuenta.`,
   };
   const nAct = act.filter((a) => (ref?.actividades[kA(a)] || [])[i0]).length;
   $('#vistaFrecuencia').innerHTML = cab + `
@@ -1531,9 +1541,11 @@ function pintarFrecuencia(lista, meses, tipos) {
         <input type="search" id="frBuscar" class="fr-buscar" placeholder="Buscar CUPS o actividad" value="${esc(frFiltro)}">
         ${buscando ? `<span class="sub">Solo «${esc(st.texto)}» · borra la búsqueda para ver el total</span>`
           : `<span class="seg" id="frNivel">${[['departamento', 'Departamento'], ['municipio', 'Municipio'], ['contrato', 'Contrato']].map(([v, t]) => `<button data-v="${v}" aria-pressed="${frNivel === v}">${t}</button>`).join('')}</span>`}
+        ${conModalidad(motor) ? `<select id="frModalidad" title="Modalidad de realización (consultas y procedimientos)"><option value="">Todas las modalidades</option>${Object.entries(MODALIDADES).map(([c, d]) => `<option value="${c}" ${c === frModalidad ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>` : ''}
         ${conTodos ? `<label class="chk" title="Sin marcar: cada CUPS se cuenta solo en los pacientes de su grupo. Marcado: en todos los pacientes del RIPS."><input type="checkbox" id="frSoloDx" ${frSoloDx ? 'checked' : ''}> ${esc(et.todos || 'Contar en todos los pacientes')}</label>` : ''}
       </span></div>
     <div class="fr-ayuda"><b>Cómo leer:</b> ${AYUDA[motor] || ''}
+      ${conModalidad(motor) ? (frModalidad ? ` <b>Modalidad: ${esc(MODALIDADES[frModalidad])}</b>: solo cuentan consultas y procedimientos hechos en esa modalidad (medicamentos y otros servicios no la traen en el RIPS).` : ' Debajo de cada actividad, en gris, cuántas veces se hizo en cada <b>modalidad</b> (intramural, extramural, telemedicina); con el selector se ve una sola.') : ''}
       ${buscando ? '' : ` Cada columna es un ${frNivel}; la última, <b>Total</b>, suma todos los contratos.`}</div>
     ${(FR.errores || []).length ? `<p class="u-msg err">No se pudieron leer algunos RIPS: ${FR.errores.map(esc).join(' · ')}</p>` : ''}
     <div class="tbl-wrap"><table class="rp-tabla fr-tabla"><thead><tr><th>${motor === '3280' ? 'Actividad' : esDx ? 'Actividad' : 'Descripción'}</th><th>${motor === '3280' ? 'CUPS' : esDx ? 'CUPS' : 'Código'}</th>${colCrit ? `<th>${esc(colCrit)}</th>` : ''}${columnas.map((g) => `<th class="num">${nomCol(g)}</th>`).join('')}</tr></thead><tbody>
@@ -1647,25 +1659,26 @@ async function exportarFrecuenciaExcel() {
   const colBase = todos ? 'Pacientes atendidos' : esDx ? 'Niños en el grupo' : (et.pacientes_grupo || 'Pacientes del grupo');
   const colPac = todos ? 'Pacientes que lo recibieron' : esDx ? 'Niños que lo recibieron' : 'Pacientes que lo recibieron';
   const colPct = todos ? '% de los atendidos' : esDx ? '% del grupo' : '% del grupo';
-  const f = [['Departamento', 'Municipio', 'Contrato', 'Prestador', colGrupo, ...(colCrit ? [colCrit] : []), colBase,
+  const modTxt = conModalidad(motor) ? (FR.modalidad ? MODALIDADES[FR.modalidad] || FR.modalidad : 'Todas las modalidades') : null;
+  const f = [['Departamento', 'Municipio', 'Contrato', 'Prestador', ...(modTxt ? ['Modalidad'] : []), colGrupo, ...(colCrit ? [colCrit] : []), colBase,
     motor === '3280' || esDx ? 'Actividad' : 'Descripción', motor === '3280' || esDx ? 'CUPS' : 'Código', motor === 'med' ? 'Unidades' : 'Veces', colPac, colPct]];
   for (const g of filasG) for (const a of FR.catalogo.actividades) {
     const gr = a.grupo || 'GENERAL', v = g.actividades[`${gr}|${a.codigo}`] || [0, 0, 0, 0];
     const base = todos ? g.pacientes : ((g.pacientes_grupo || {})[gr] || 0);
     const veces = todos ? v[2] : v[0], ninos = todos ? v[3] : v[1];
     if (!esDx && !veces) continue;   // sin filas vacías: solo lo que el contrato reportó (DNT queda como estaba)
-    f.push([...ubic(g), gr, ...(colCrit ? [esDx ? dxG(gr) : (a.criterio || '')] : []), base,
+    f.push([...ubic(g), ...(modTxt ? [modTxt] : []), gr, ...(colCrit ? [esDx ? dxG(gr) : (a.criterio || '')] : []), base,
       (a.descripciones || []).join(' / '), a.cups_txt || a.codigo, veces, ninos, pct(ninos, base)]);
   }
   hojaListaFmt(wb, motor === '3280' ? 'Frecuencia actividades' : 'Frecuencia CUPS', f,
-    [22, 18, 19, 30, 34, ...(colCrit ? [22] : []), 14, 52, 18, 10, 14, 10],
+    [22, 18, 19, 30, ...(modTxt ? [24] : []), 34, ...(colCrit ? [22] : []), 14, 52, 18, 10, 14, 10],
     cabecera(`Frecuencia de uso ${FR.tipo === 'TODOS' ? 'toda la EPS' : FR.tipo} — ${MOTOR_TXT[motor] || motor}`));
   if ((FR.catalogo.diagnosticos || []).length) {
     const d = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'CIE-10', 'Niños con el diagnóstico', 'Atenciones']];
     for (const g of filasG) for (const x of FR.catalogo.diagnosticos) { const v = g.diagnosticos[x.codigo] || [0, 0]; d.push([...ubic(g), x.grupo, x.codigo, v[0], v[1]]); }
     hojaListaFmt(wb, 'Diagnósticos', d, [22, 18, 19, 30, 30, 10, 14, 12], cabecera(`Frecuencia de uso ${FR.tipo} — diagnósticos`));
   }
-  await descargarExcelJS(wb, `Frecuencia_${FR.tipo === 'TODOS' ? 'EPS' : FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}${todos ? '_todos_los_pacientes' : ''}.xlsx`);
+  await descargarExcelJS(wb, `Frecuencia_${FR.tipo === 'TODOS' ? 'EPS' : FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}${todos ? '_todos_los_pacientes' : ''}${FR.modalidad ? '_' + (MODALIDADES[FR.modalidad] || FR.modalidad).replace(/\s+/g, '_') : ''}.xlsx`);
 }
 $('#vistaFrecuencia').addEventListener('click', (e) => {
   const nv = e.target.closest('#frNivel [data-v]'); if (nv) { frNivel = nv.dataset.v; render(); return; }
@@ -1678,6 +1691,7 @@ $('#vistaFrecuencia').addEventListener('input', (e) => {
 $('#vistaFrecuencia').addEventListener('change', (e) => {
   if (e.target.id === 'frTipo') { frTipo = e.target.value; frNivel = contratosDeTipo(frTipo) > 12 ? 'departamento' : 'contrato'; frSoloDx = false; render(); }
   if (e.target.id === 'frSoloDx') { frSoloDx = e.target.checked; render(); }
+  if (e.target.id === 'frModalidad') { frModalidad = e.target.value; render(); }
 });
 function cerrarDetalle() { $('#modal').hidden = true; document.body.style.overflow = ''; }
 $('#modal').addEventListener('click', (e) => {
