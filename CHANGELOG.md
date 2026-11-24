@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.3 — 2026-11-24
+- Frecuencia de uso: el **periodo** del Excel (fila «Periodo», nombre del archivo) y de la pantalla es el de
+  los meses de atención que **sí tienen RIPS radicados**, no «todos los meses»: p. ej. «marzo a septiembre de
+  2026 (meses de atención con RIPS radicados)»; si hay huecos, «marzo a mayo y julio de 2026». El servidor
+  devuelve `meses_datos` en `/frecuencia`.
+
 ## 0.14.2 — 2026-11-24
 - Excel de frecuencia **solo con la cantidad de actividades** (frecuencia de uso): se quitan «Pacientes con
   este servicio» / «Pacientes del programa» (base del %), «Pacientes que lo recibieron» y el %, que no se

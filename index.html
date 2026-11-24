@@ -376,7 +376,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.14.2</div>
+          <div class="usr-ver">Radicación cápita · v0.14.3</div>
         </div>
       </div>
     </div>
@@ -641,6 +641,18 @@ var render = function () {
 }
 
 const selMeses = (meses) => (st.meses.length ? [...st.meses].sort((a, b) => a - b) : meses);
+// meses de atención con RIPS radicados → «marzo a septiembre de 2026» (tramos seguidos; «marzo a mayo y julio de 2026»)
+function periodoDatos(meses, anio) {
+  const m = [...new Set(meses || [])].map(Number).sort((a, b) => a - b);
+  if (!m.length) return '';
+  const tramos = [];
+  for (const x of m) { const t = tramos[tramos.length - 1]; if (t && x === t[1] + 1) t[1] = x; else tramos.push([x, x]); }
+  const n = (x) => MESES_L[x - 1].toLowerCase();
+  const txt = tramos.map(([a, b]) => (a === b ? n(a) : `${n(a)} a ${n(b)}`));
+  const r = (txt.length > 1 ? txt.slice(0, -1).join(', ') + ' y ' + txt[txt.length - 1] : txt[0]) + ' de ' + anio;
+  return r[0].toUpperCase() + r.slice(1);
+}
+const periodoFrec = () => (FR?.meses_datos?.length ? periodoDatos(FR.meses_datos, FR.anio || st.anio) : periodoTxt());
 function periodoTxt() {
   const m = [...st.meses].sort((a, b) => a - b);
   if (!m.length) return 'todos los meses ' + st.anio;
@@ -1434,7 +1446,7 @@ function pintarFrecuencia(lista, meses, tipos) {
   const nomTipo = frTipo === 'TODOS' ? 'toda la EPS' : frTipo;
   const cab = `<section class="rp-cab card"><div><div class="rp-kicker">Frecuencia de uso</div>
       <h2 class="rp-titulo">${esDx ? 'CUPS y diagnósticos reportados' : motor === '3280' ? 'Actividades de la matriz 3280 reportadas' : 'CUPS reportados'} en los RIPS · ${esc(nomTipo)}</h2>
-      <div class="sub">${periodoTxt()} (meses de atención) · ${st.reg ? 'régimen ' + st.reg : 'RS + RC'} · se cuenta con: <b>${esc(MOTOR_TXT[motor] || motor)}</b>${esDx && FR?.catalogo?.actualizado ? ` · catálogo cargado ${fmtFecha(FR.catalogo.actualizado)}${FR.catalogo.por ? ' por ' + esc(FR.catalogo.por) : ''}` : ''}</div></div>
+      <div class="sub">${FR?.meses_datos?.length ? periodoFrec() + ' (meses de atención con RIPS radicados)' : periodoTxt() + ' (meses de atención)'} · ${st.reg ? 'régimen ' + st.reg : 'RS + RC'} · se cuenta con: <b>${esc(MOTOR_TXT[motor] || motor)}</b>${esDx && FR?.catalogo?.actualizado ? ` · catálogo cargado ${fmtFecha(FR.catalogo.actualizado)}${FR.catalogo.por ? ' por ' + esc(FR.catalogo.por) : ''}` : ''}</div></div>
     <div class="rp-acciones">
       <select id="frTipo" title="Tipo de contrato">${[...tipos, 'TODOS'].map((t) => `<option value="${esc(t)}" ${t === frTipo ? 'selected' : ''}>${t === 'TODOS' ? 'TODOS (toda la EPS)' : esc(t) + ' · ' + esc({ dx: 'catálogo', 3280: '3280', asis: 'asistencial', med: 'medicamentos' }[motorDe(t)])}</option>`).join('')}</select>
       ${FR && !FR.sin_catalogo && !FR.error && !FR.calculando && puede('descargar_reportes') ? '<button class="btn sm" id="frExcel">⬇ Excel</button>' : ''}
@@ -1714,13 +1726,14 @@ async function exportarFrecuenciaExcel() {
   }
   hojaListaFmt(wb, motor === '3280' ? 'Frecuencia actividades' : 'Frecuencia CUPS', f,
     [22, 18, 19, 30, ...(modTxt ? [24] : []), 34, ...(colCrit ? [22] : []), ...(conBase ? [14] : []), 52, 18, 12, ...(conPac ? [14, 10] : [])],
-    cabecera(`Frecuencia de uso ${FR.tipo === 'TODOS' ? 'toda la EPS' : FR.tipo} — ${MOTOR_TXT[motor] || motor}`, NOTA[motor]));
+    cabecera(`Frecuencia de uso ${FR.tipo === 'TODOS' ? 'toda la EPS' : FR.tipo} — ${MOTOR_TXT[motor] || motor}`, NOTA[motor],
+      `${periodoFrec()} (meses de atención con RIPS radicados)`));
   if ((FR.catalogo.diagnosticos || []).length) {
     const d = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'CIE-10', 'Niños con el diagnóstico', 'Atenciones']];
     for (const g of filasG) for (const x of FR.catalogo.diagnosticos) { const v = g.diagnosticos[x.codigo] || [0, 0]; d.push([...ubic(g), x.grupo, x.codigo, v[0], v[1]]); }
-    hojaListaFmt(wb, 'Diagnósticos', d, [22, 18, 19, 30, 30, 10, 14, 12], cabecera(`Frecuencia de uso ${FR.tipo} — diagnósticos`));
+    hojaListaFmt(wb, 'Diagnósticos', d, [22, 18, 19, 30, 30, 10, 14, 12], cabecera(`Frecuencia de uso ${FR.tipo} — diagnósticos`, null, `${periodoFrec()} (meses de atención con RIPS radicados)`));
   }
-  await descargarExcelJS(wb, `Frecuencia_${FR.tipo === 'TODOS' ? 'EPS' : FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}${todos ? '_todos_los_pacientes' : ''}${FR.modalidad ? '_' + (MODALIDADES[FR.modalidad] || FR.modalidad).replace(/\s+/g, '_') : ''}.xlsx`);
+  await descargarExcelJS(wb, `Frecuencia_${FR.tipo === 'TODOS' ? 'EPS' : FR.tipo}_${periodoFrec().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}${todos ? '_todos_los_pacientes' : ''}${FR.modalidad ? '_' + (MODALIDADES[FR.modalidad] || FR.modalidad).replace(/\s+/g, '_') : ''}.xlsx`);
 }
 $('#vistaFrecuencia').addEventListener('click', (e) => {
   const nv = e.target.closest('#frNivel [data-v]'); if (nv) { frNivel = nv.dataset.v; render(); return; }
@@ -2094,9 +2107,9 @@ function filasMensuales(As) {
   }
   return f;
 }
-function cabecera(titulo, nota) {
+function cabecera(titulo, nota, periodo) {
   // siempre 8 filas + 1 vacía (la tabla empieza en la fila 10); con «nota», la última fila explica las columnas
-  return [[titulo], ['Periodo', periodoTxt()], ['Régimen', st.reg || 'RS + RC'], ['Margen aceptable', `±${repMargen}%`],
+  return [[titulo], ['Periodo', periodo || periodoTxt()], ['Régimen', st.reg || 'RS + RC'], ['Margen aceptable', `±${repMargen}%`],
     ['Plazo de radicación', `${repPlazo} mes(es)`], ['Corte de datos', new Date(D.generado).toLocaleString('es-CO')],
     ['Generado por', `${YO?.nombre || ''} (${YO?.usuario || ''}) · ${new Date().toLocaleString('es-CO')}`],
     nota ? ['Cómo leer', nota] : ['Fuente', 'SIE Dusakawi · Consulta Recepción (Valor AF, Radicado, Capita RS/RC) · Valor contrato: CONTRATOS_CAPITADOS_2026'], []];

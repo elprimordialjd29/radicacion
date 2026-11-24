@@ -222,6 +222,7 @@ class Frecuencia:
 
         carpeta = self.bot / "descargas" / "soportes"
         limpio = lambda x: re.sub(r"[^A-Za-z0-9._-]", "_", str(x)).strip("_") or "sin_nombre"
+        meses_con = set()
         with closing(sqlite3.connect(hist)) as con:
             for contrato, meta in contratos.items():
                 for m in meses:   # mes de atención m → cápita m+1
@@ -236,6 +237,7 @@ class Frecuencia:
                         enc = sorted((carpeta / limpio(contrato)).glob(f"{limpio(rec)}__*"))
                         if not enc:
                             continue
+                        meses_con.add(m)
                         R = self._resumen(enc[0])
                         pref = f"{contrato}|"   # un paciente es distinto en cada contrato
                         # cada paciente queda en el grupo MÁS SEVERO de sus diagnósticos del catálogo en ese RIPS
@@ -286,7 +288,7 @@ class Frecuencia:
                 s["prestador"], s["municipio"] = c.get("prestador", ""), c.get("municipio", "")
         return {"tipo": tipo, "anio": anio, "meses": meses, "regimen": regimen or "RS+RC",
                 "catalogo": {"grupos": orden_g, **{k: cat.get(k) for k in ("actividades", "sin_codigo", "diagnosticos", "actualizado", "por")}},
-                "grupos": salida, "contratos_tipo": len(contratos)}
+                "grupos": salida, "contratos_tipo": len(contratos), "meses_datos": sorted(meses_con)}
 
     # ══════════════════════════════════════════ tipos sin catálogo: motores 3280, asistencial y TODOS
     def motor_de(self, tipo):
@@ -299,7 +301,8 @@ class Frecuencia:
             return "med"
         return "3280" if t in TIPOS_3280 or "RCV" in t.split("-") else "asis"
 
-    def _archivos_contrato(self, con, contrato, anio, meses, regimen):
+    def _archivos_contrato(self, con, contrato, anio, meses, regimen, meses_con=None):
+        """RIPS del contrato en esos meses de atención; si se pasa «meses_con», anota los meses que sí trajeron RIPS."""
         carpeta = self.bot / "descargas" / "soportes" / re.sub(r"[^A-Za-z0-9._-]", "_", contrato).strip("_")
         limpio = lambda x: re.sub(r"[^A-Za-z0-9._-]", "_", str(x)).strip("_") or "sin_nombre"
         rutas = []
@@ -315,6 +318,8 @@ class Frecuencia:
                 enc = sorted(carpeta.glob(f"{limpio(rec)}__*"))
                 if enc:
                     rutas.append(str(enc[0]))
+                    if meses_con is not None:
+                        meses_con.add(m)
         return rutas
 
     def solicitar(self, tipo, anio, meses, regimen, contratos_meta, hist, encolar=True, modalidad=""):
@@ -326,14 +331,14 @@ class Frecuencia:
             return res
         t = tipo.upper()
         contratos = [c for c in contratos_meta if t == "TODOS" or tipo_contrato(c["contrato"]) == t]
-        tareas, faltan = [], []
+        tareas, faltan, meses_con = [], [], set()
         # TODOS también clasifica con los catálogos cargados: si cambian, se recalcula
         extra = ""
         if motor == "todos" and self.ruta_cat.exists():
             extra = str(self.ruta_cat.stat().st_mtime_ns)
         with closing(sqlite3.connect(hist)) as con:
             for c in contratos:
-                rutas = self._archivos_contrato(con, c["contrato"], anio, meses, regimen)
+                rutas = self._archivos_contrato(con, c["contrato"], anio, meses, regimen, meses_con)
                 firma = "|".join(f"{r}:{os.stat(r).st_mtime_ns}:{os.stat(r).st_size}" for r in sorted(rutas))
                 clave = hashlib.sha1(f"{motor}|{self.M.VERSIONES.get(motor, 1)}|{c['contrato']}|{firma}|{extra}".encode()).hexdigest()[:24]
                 out = self.cache / f"c_{motor}_{clave}.json"
@@ -345,7 +350,9 @@ class Frecuencia:
                 self._encolar(motor, faltan)
             return {"tipo": t, "motor": motor, "calculando": True, "total": len(tareas),
                     "hechos": len(tareas) - len(faltan)}
-        return self._agregar(motor, t, anio, meses, regimen, tareas, modalidad)
+        res = self._agregar(motor, t, anio, meses, regimen, tareas, modalidad)
+        res["meses_datos"] = sorted(meses_con)   # meses de atención que sí tienen RIPS radicados
+        return res
 
     def _encolar(self, motor, tareas):
         with self._cola_lock:
