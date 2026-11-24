@@ -79,6 +79,9 @@ reportan y la matriz no trae), `rutas` (IVE, parto, posparto por diagnóstico) y
 actividades o grupos de un programa). Al cambiar el cálculo, subir `VERSIONES` en `motores.py` para que
 se recalcule solo ese motor.
 
+Los nombres de CUPS de las pantallas asistencial, medicamentos y TODOS salen de
+`worker/config/cups_nombres.json` (se puede editar; no requiere recalcular).
+
 ## Consultas programadas y reintentos
 - `radicacion-programada.timer` lanza una consulta completa (todos los contratos, RS y RC,
   enero → mes actual) a las **12:00 m y 12:00 a. m. hora Colombia**, como usuario `programada`.

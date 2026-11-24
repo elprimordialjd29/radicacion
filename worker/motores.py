@@ -85,7 +85,13 @@ def normalizar_codigo(cod, conocidos=CONOCIDOS):
     return c
 
 
-# descripciones conocidas de CUPS (para mostrar algo en consultas/procedimientos, que el RIPS no nombra)
+# nombres oficiales de CUPS (archivos de la EPS) para asistencial, medicamentos y TODOS: el RIPS no nombra
+# las consultas ni los procedimientos
+_ARCH_NOMBRES = DIR / "config" / "cups_nombres.json"
+CUPS_NOMBRES = json.loads(_ARCH_NOMBRES.read_text(encoding="utf-8"))["nombres"] if _ARCH_NOMBRES.exists() else {}
+SIN_NOMBRE = "Sin nombre en el catálogo de CUPS"
+
+# descripciones de las actividades 3280 (respaldo cuando el CUPS no está en el catálogo de nombres)
 NOMBRE_CUPS = {}
 for _a in ACTS_3280.values():
     for _c in _a.get("cups", []):

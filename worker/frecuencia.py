@@ -469,8 +469,10 @@ class Frecuencia:
         acts = []
         for gr in grupos:
             for _, cod in sorted(por_tipo[gr], reverse=True):
-                nom = M.NOMBRE_CUPS.get(cod) or nombres.get(cod, "")   # primero la descripción oficial (matriz 3280)
-                acts.append({"grupo": gr, "codigo": cod, "descripciones": [nom] if nom else [], "criterio": secc.get(cod, "")})
+                # nombre oficial del CUPS (catálogo de la EPS) → nombre que trae el RIPS (medicamentos, otros
+                # servicios, traslados) → descripción de la actividad 3280; nunca en blanco
+                nom = M.CUPS_NOMBRES.get(cod) or nombres.get(cod) or M.NOMBRE_CUPS.get(cod) or M.SIN_NOMBRE
+                acts.append({"grupo": gr, "codigo": cod, "descripciones": [nom], "criterio": secc.get(cod, "")})
         return ({"grupos": grupos, "actividades": acts, "sin_codigo": [], "diagnosticos": [], "grupos_info": {},
                  "actualizado": ahora, "por": {"asis": "Evaluación Asistencial", "med": "solo medicamentos"}.get(motor, "todos los RIPS"),
                  "etiquetas": {"criterio": "Archivo RIPS" if motor == "todos" else None,

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.2 — 2026-11-24
+- Frecuencia de uso asistencial (ASE, ASB, EB, CMP, PAI), medicamentos y TODOS: **las descripciones ya no
+  salen en blanco**. El RIPS no trae el nombre de consultas ni procedimientos; ahora se toma del nuevo
+  `worker/config/cups_nombres.json` (439 CUPS con su nombre oficial, sacados de los archivos de la EPS
+  «VALORES POR SERVICIO Y CUPS» y «CAPITA DE RECUPERACION DE LA SALUD»; vacunas PAI y traslados por su
+  tipo de servicio). Orden: nombre oficial del CUPS → nombre que trae el RIPS → descripción 3280 → «Sin
+  nombre en el catálogo de CUPS». Ej.: 890101 «ATENCION (VISITA) DOMICILIARIA, POR MEDICINA GENERAL»,
+  890401 «INTERCONSULTA POR MEDICINA GENERAL», 890301 «CONSULTA DE CONTROL O DE SEGUIMIENTO POR MEDICINA
+  GENERAL». La matriz 3280 no cambia.
+
 ## 0.13.1 — 2026-11-24
 - **Frecuencia de uso: que crucen todas las actividades.** La copia de la matriz 3280 traía CUPS que
   ningún prestador reporta (glicemia 903901/904332, colesterol 903902…, citología 910101…, 59
