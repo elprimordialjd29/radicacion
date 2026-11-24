@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.6 — 2026-11-24
+- Excel de frecuencia de uso rehecho en **formato lista**: una fila por contrato × CUPS (y por
+  municipio, departamento y total, con la columna Nivel), columnas fijas (departamento, municipio,
+  contrato, prestador, grupo, actividad, CUPS, DX, niños del grupo, veces, niños, % del grupo, veces y
+  pacientes en todos), encabezado en la fila 1 con **filtros**. Hojas: Frecuencia CUPS, Diagnósticos,
+  Resumen e Info (datos del reporte y cómo leerlo).
+
 ## 0.12.5 — 2026-11-24
 - Frecuencia de uso: la columna **Total** pasa al final; cada columna de contrato muestra número de
   contrato, prestador, **municipio y departamento** (y la de municipio, su departamento). El Excel

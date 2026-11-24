@@ -374,7 +374,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.12.5</div>
+          <div class="usr-ver">Radicación cápita · v0.12.6</div>
         </div>
       </div>
     </div>
@@ -1581,21 +1581,51 @@ async function leerExcelCatalogo(archivo) {
   }
   return { act: act.join('\n'), dx: dx.join('\n'), nAct: act.length, nDx: dx.length, grupos: [...grupos] };
 }
+// Excel en formato de LISTA (una fila por contrato × CUPS), con encabezado en la fila 1 y filtros:
+// fácil de filtrar por contrato, municipio, departamento, grupo o CUPS y de usar en tablas dinámicas.
+function hojaLista(X, filas, anchos) {
+  const ws = hoja(X, filas, anchos);
+  ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: filas.length - 1, c: filas[0].length - 1 } }) };
+  return ws;
+}
 async function exportarFrecuenciaExcel() {
   const X = await libXlsx(); if (!FR?.grupos) return;
   const wb = X.utils.book_new();
-  const cols = [...FR.grupos.filter((g) => g.nivel !== 'total'), ...FR.grupos.filter((g) => g.nivel === 'total')];   // total al final
-  const nom = (g) => (g.nivel === 'total' ? g.nombre : g.nivel === 'contrato' ? `${g.nombre} (${g.municipio || ''}, ${deptoDe(g.nombre)})` : `${g.nivel}: ${g.nombre}`);
+  const NIVEL = { contrato: 'Contrato', municipio: 'Municipio', departamento: 'Departamento', total: 'Total' };
+  const orden = { contrato: 0, municipio: 1, departamento: 2, total: 3 };
+  const cols = [...FR.grupos].sort((a, b) => orden[a.nivel] - orden[b.nivel]);   // contratos primero, total al final
+  const ubic = (g) => g.nivel === 'contrato' ? { dep: deptoDe(g.nombre), mun: g.municipio || '', con: g.nombre, pre: g.prestador || '' }
+    : g.nivel === 'municipio' ? { dep: deptoMuni(g.nombre), mun: g.nombre, con: '', pre: '' }
+    : g.nivel === 'departamento' ? { dep: g.nombre, mun: '', con: '', pre: '' } : { dep: 'TODOS', mun: 'TODOS', con: 'TODOS', pre: '' };
   const dxG = (gr) => FR.catalogo.diagnosticos.filter((d) => d.grupo === gr).map((d) => d.codigo).join(', ');
-  const act = [['Grupo', 'Actividad', 'CUPS', 'DX que corresponde', ...cols.flatMap((g) => [`${nom(g)} · veces (pacientes del grupo)`, `${nom(g)} · pacientes del grupo`, `${nom(g)} · veces (todos)`, `${nom(g)} · pacientes (todos)`])],
-    ...FR.catalogo.actividades.map((a) => [a.grupo || 'GENERAL', a.descripciones.join(' / '), a.codigo, dxG(a.grupo || 'GENERAL'), ...cols.flatMap((g) => g.actividades[`${a.grupo || 'GENERAL'}|${a.codigo}`] || [0, 0, 0, 0])])];
-  X.utils.book_append_sheet(wb, hoja(X, [...cabecera(`Frecuencia de uso ${FR.tipo} — CUPS`), ...act], [28, 50, 16, 26]), 'CUPS');
-  const dx = [['Grupo', 'CIE-10', ...cols.flatMap((g) => [`${nom(g)} · pacientes`, `${nom(g)} · atenciones`])],
-    ...FR.catalogo.diagnosticos.map((d) => [d.grupo, d.codigo, ...cols.flatMap((g) => g.diagnosticos[d.codigo] || [0, 0])])];
-  X.utils.book_append_sheet(wb, hoja(X, [...cabecera(`Frecuencia de uso ${FR.tipo} — diagnósticos`), ...dx], [34, 10]), 'Diagnósticos');
-  const ubic = (g) => g.nivel === 'contrato' ? [g.municipio || '', deptoDe(g.nombre)] : g.nivel === 'municipio' ? [g.nombre, deptoMuni(g.nombre)] : g.nivel === 'departamento' ? ['', g.nombre] : ['', ''];
-  X.utils.book_append_sheet(wb, hoja(X, [['Nivel', 'Contrato / nombre', 'Prestador', 'Municipio', 'Departamento', 'RIPS leídos', 'Pacientes', 'Pacientes con dx del catálogo'],
-    ...cols.map((g) => [g.nivel, g.nombre, g.prestador || '', ...ubic(g), g.archivos, g.pacientes, g.pacientes_dx])], [14, 26, 36, 20, 16, 12, 12, 16]), 'Resumen');
+  const pct = (a, b) => (b ? +(a / b * 100).toFixed(1) : 0);
+  // 1. Frecuencia de CUPS
+  const f = [['Nivel', 'Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'Actividad', 'CUPS', 'DX que corresponde',
+    'Niños en el grupo', 'Veces (niños del grupo)', 'Niños que lo recibieron', '% del grupo', 'Veces (todos los pacientes)', 'Pacientes (todos)']];
+  for (const g of cols) {
+    const u = ubic(g);
+    for (const a of FR.catalogo.actividades) {
+      const gr = a.grupo || 'GENERAL', v = g.actividades[`${gr}|${a.codigo}`] || [0, 0, 0, 0], ng = (g.pacientes_grupo || {})[gr] || 0;
+      f.push([NIVEL[g.nivel], u.dep, u.mun, u.con, u.pre, gr, a.descripciones.join(' / '), a.codigo, dxG(gr), ng, v[0], v[1], pct(v[1], ng), v[2], v[3]]);
+    }
+  }
+  X.utils.book_append_sheet(wb, hojaLista(X, f, [12, 14, 18, 18, 28, 30, 50, 16, 22, 12, 14, 14, 10, 16, 14]), 'Frecuencia CUPS');
+  // 2. Diagnósticos
+  const d = [['Nivel', 'Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'CIE-10', 'Niños con el diagnóstico', 'Atenciones']];
+  for (const g of cols) {
+    const u = ubic(g);
+    for (const x of FR.catalogo.diagnosticos) { const v = g.diagnosticos[x.codigo] || [0, 0]; d.push([NIVEL[g.nivel], u.dep, u.mun, u.con, u.pre, x.grupo, x.codigo, v[0], v[1]]); }
+  }
+  X.utils.book_append_sheet(wb, hojaLista(X, d, [12, 14, 18, 18, 28, 30, 10, 14, 12]), 'Diagnósticos');
+  // 3. Resumen por contrato / municipio / departamento / total
+  const gruposCat = FR.catalogo.grupos || [];
+  const r = [['Nivel', 'Departamento', 'Municipio', 'Contrato', 'Prestador', 'RIPS leídos', 'Pacientes atendidos', 'Pacientes con dx del catálogo', ...gruposCat.map((x) => 'Niños: ' + x)]];
+  for (const g of cols) { const u = ubic(g); r.push([NIVEL[g.nivel], u.dep, u.mun, u.con, u.pre, g.archivos, g.pacientes, g.pacientes_dx, ...gruposCat.map((x) => (g.pacientes_grupo || {})[x] || 0)]); }
+  X.utils.book_append_sheet(wb, hojaLista(X, r, [12, 14, 18, 18, 28, 10, 12, 14, ...gruposCat.map(() => 16)]), 'Resumen');
+  // 4. Datos del reporte
+  X.utils.book_append_sheet(wb, hoja(X, [...cabecera(`Frecuencia de uso ${FR.tipo}`),
+    ['Cómo leer', 'Cada CUPS de un grupo se cuenta en los niños con diagnóstico de ese grupo en el mes (si tienen de dos grupos, en el más severo). «Todos los pacientes» = sin filtrar por diagnóstico.'],
+    ['Filtrar', 'Usa los filtros de la fila 1: Nivel = Contrato para ver cada contrato; Nivel = Total para el total del tipo de contrato.']], [22, 110]), 'Info');
   descargarLibro(X, wb, `Frecuencia_${FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}.xlsx`);
 }
 $('#vistaFrecuencia').addEventListener('click', (e) => {
