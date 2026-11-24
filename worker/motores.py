@@ -28,7 +28,7 @@ import rips_json  # noqa: E402
 
 VERSION = 1
 # versión del cálculo por motor (cambiarla invalida solo la caché de ese motor)
-VERSIONES = {"asis": 2, "todos": 3, "3280": 3, "med": 2}
+VERSIONES = {"asis": 2, "todos": 4, "3280": 3, "med": 2}
 CFG3280 = json.loads((DIR / "config" / "res3280_cups.json").read_text(encoding="utf-8"))
 COR3280 = json.loads((DIR / "config" / "res3280_correcciones.json").read_text(encoding="utf-8"))
 ASIS = json.loads((DIR / "config" / "asistencial_cups.json").read_text(encoding="utf-8"))
@@ -89,7 +89,7 @@ def normalizar_codigo(cod, conocidos=CONOCIDOS):
 # las consultas ni los procedimientos
 _ARCH_NOMBRES = DIR / "config" / "cups_nombres.json"
 CUPS_NOMBRES = json.loads(_ARCH_NOMBRES.read_text(encoding="utf-8"))["nombres"] if _ARCH_NOMBRES.exists() else {}
-SIN_NOMBRE = "Sin nombre en el catálogo de CUPS"
+SIN_NOMBRE = "Sin nombre en las matrices"
 
 # descripciones de las actividades 3280 (respaldo cuando el CUPS no está en el catálogo de nombres)
 NOMBRE_CUPS = {}
@@ -299,6 +299,32 @@ _SECCION_TODOS = {"CONSULTAS": "Consultas", "PROCEDIMIENTOS": "Procedimientos", 
 _TIPO_POR_SECCION = {"Consultas": "CONSULTAS (otros códigos)", "Procedimientos": "PROCEDIMIENTOS (otros códigos)",
                      "Medicamentos": "MEDICAMENTOS", "Otros servicios": "OTROS SERVICIOS", "Urgencias": "URGENCIAS",
                      "Hospitalización": "HOSPITALIZACIÓN"}
+# urgencias y hospitalización son tipos de servicio de la Evaluación Asistencial
+_TIPO_ASIS_SECCION = {"Urgencias": "URGENCIAS BC", "Hospitalización": "HOSP BAJA COMPLEJIDAD", "Medicamentos": "MEDICAMENTOS"}
+
+
+def catalogos_cargados(cache_dir):
+    """{código: 'CATÁLOGO DNT'…} de los catálogos que cargó el usuario (worker_datos/frecuencia_catalogo.json)."""
+    ruta = Path(cache_dir).parent / "frecuencia_catalogo.json"
+    try:
+        cat = json.loads(ruta.read_text(encoding="utf-8")) if ruta.exists() else {}
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for tipo, c in sorted(cat.items()):
+        for a in c.get("actividades", []):
+            out.setdefault(str(a.get("codigo", "")).strip().upper(), f"CATÁLOGO {tipo}")
+    return out
+
+
+def tipo_todos(cod, seccion, catalogos):
+    """Clasificación de TODOS con lo que hay en las matrices (sin buscar afuera): medicamentos; tipo de servicio de la
+    Evaluación Asistencial (asistencias, especialidades, complementarias, PAI…); área de la matriz 3280; catálogo
+    cargado (DNT…); y lo que no está en ninguna, aparte por archivo RIPS."""
+    if seccion in _TIPO_ASIS_SECCION:
+        return _TIPO_ASIS_SECCION[seccion]
+    return (CUPS_TIPO.get(cod) or AREA_3280.get(cod) or catalogos.get(cod)
+            or FUERA + (seccion or "otros").upper())
 _CAMPO_COD = {"CONSULTAS": "codConsulta", "PROCEDIMIENTOS": "codProcedimiento", "MEDICAMENTOS": "codTecnologiaSalud",
               "OTROS": "codTecnologiaSalud"}
 
@@ -431,6 +457,27 @@ def _rutas(dx):
 
 
 SERVICIOS_3280 = ("consultas", "procedimientos", "otrosServicios")
+
+
+def _area_3280(pid):
+    if pid in CVS:
+        return "MATRIZ 3280 · CURSOS DE VIDA (PyM)"
+    if pid.startswith("RUTA_MATERNA"):
+        return "MATRIZ 3280 · RUTA MATERNO PERINATAL"
+    if pid.startswith("RCV"):
+        return "MATRIZ 3280 · RUTA CARDIOVASCULAR Y METABÓLICA"
+    return "MATRIZ 3280 · DEMANDA INDUCIDA Y SALUD MENTAL"
+
+
+# TODOS: código → área de la matriz 3280 donde aparece primero (para los que no están en el mapa asistencial)
+AREA_3280 = {}
+for _p in PROGS_3280:
+    for _aid in _p["actividades"]:
+        for _c in ACTS_3280[_aid].get("cups", []):
+            AREA_3280.setdefault(str(_c).strip().upper(), _area_3280(_p["id"]))
+AREAS_3280 = ["MATRIZ 3280 · CURSOS DE VIDA (PyM)", "MATRIZ 3280 · RUTA MATERNO PERINATAL",
+              "MATRIZ 3280 · RUTA CARDIOVASCULAR Y METABÓLICA", "MATRIZ 3280 · DEMANDA INDUCIDA Y SALUD MENTAL"]
+FUERA = "FUERA DE LAS MATRICES · "   # grupo aparte: no está en ninguna matriz ni catálogo
 OTROS_PYM = "OTROS_PYM"        # grupo final: códigos de PyM reportados que no están en la matriz
 PATRON_PYM = re.compile(r"^(DI|PM|PYM|I1)")
 
@@ -562,6 +609,7 @@ def resultado_contrato(motor, archivos, cache_dir):
             pg[OTROS_PYM] = len(pac_x)
     else:
         por_tipo, cods = {}, {}
+        catalogos = catalogos_cargados(cache_dir) if motor == "todos" else {}
         for ruta in archivos:
             r = resumen_archivo("asis" if motor == "med" else motor, ruta, cache_dir)
             if motor in ("asis", "med"):
@@ -574,7 +622,7 @@ def resultado_contrato(motor, archivos, cache_dir):
             else:
                 for cod, pacs in r["c"].items():
                     sec = r["s"].get(cod, "")
-                    tipo = CUPS_TIPO.get(cod) or _TIPO_POR_SECCION.get(sec, "OTROS")
+                    tipo = tipo_todos(cod, sec, catalogos)
                     _sumar(cods.setdefault(f"{tipo}|{cod}", {}), pacs)
                     secc.setdefault(cod, sec)
                 nombres.update({k: v for k, v in r["n"].items() if k not in nombres})

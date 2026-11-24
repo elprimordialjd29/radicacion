@@ -375,7 +375,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.13.2</div>
+          <div class="usr-ver">Radicación cápita · v0.13.3</div>
         </div>
       </div>
     </div>
@@ -1514,7 +1514,7 @@ function pintarFrecuencia(lista, meses, tipos) {
     3280: `frecuencia de uso, no evaluación. Cada <b>programa</b> de la matriz 3280 empieza con sus pacientes: los de <b>curso de vida</b> por la edad (a la última atención del mes) y los de <b>RCV y materna</b> por el diagnóstico (DM, HTA, embarazo, preconcepción). Debajo, cada actividad: <b>veces</b> que vino su CUPS en los RIPS de esos pacientes (cada registro cuenta, aunque se repita o el paciente esté en varios programas; sin finalidad ni valor único), cuántos <b>pacientes</b> y qué <b>%</b> del programa. Solo se muestran las actividades con registros; al final, los códigos de PyM que reportan y la matriz no trae.`,
     med: `contratos de <b>medicamentos</b> (MD, MDC, MD-RCV): solo se cuentan los medicamentos del RIPS, igual que la <b>Evaluación Cápita Asistencial</b>: cada medicamento suma la <b>cantidad</b> dispensada (unidades). Debajo de cada código: unidades, pacientes y %.`,
     asis: `igual que la <b>Evaluación Cápita Asistencial</b>: cada CUPS va a su <b>tipo de servicio</b>; consultas y procedimientos cuentan cada registro; medicamentos y otros servicios cuentan la <b>cantidad</b>. Cada tipo empieza con los pacientes que tuvieron ese servicio; debajo, cada código: veces, pacientes y %.`,
-    todos: `<b>todos los códigos</b> reportados en los RIPS, agrupados por <b>tipo de servicio</b> (mapa de la Evaluación Asistencial) o, si no está en el mapa, por el archivo RIPS donde vino. Cada registro cuenta una vez.`,
+    todos: `<b>todos los códigos</b> reportados en los RIPS de la EPS, clasificados solo con las matrices: <b>tipo de servicio de la Evaluación Asistencial</b> (asistencias, especialidades, complementarias, PAI, TAB, urgencias, hospitalización, medicamentos), <b>áreas de la matriz 3280</b> (cursos de vida, materna, RCV, demanda inducida) y los <b>catálogos cargados</b> (DNT…), con el nombre que traen. Lo que no está en ninguna va aparte, al final: <b>«FUERA DE LAS MATRICES»</b> por archivo RIPS. Cada registro cuenta.`,
   };
   const nAct = act.filter((a) => (ref?.actividades[kA(a)] || [])[i0]).length;
   $('#vistaFrecuencia').innerHTML = cab + `

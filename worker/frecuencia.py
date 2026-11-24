@@ -42,6 +42,9 @@ VERSION_CACHE = 1
 # tipos de contrato que se cuentan con la matriz 3280 (versión sencilla); TODOS = toda la EPS;
 # los demás, como la Evaluación Cápita Asistencial; un tipo con catálogo cargado usa su catálogo (p. ej. DNT)
 TIPOS_3280 = {"PMS", "RCV"}
+# registros de los archivos de urgencias y hospitalización del RIPS (no traen código de servicio)
+NOMBRES_SECCION = {"URGENCIAS": "Atención de urgencias (archivo de urgencias del RIPS)",
+                   "HOSPITALIZACION": "Hospitalización (archivo de hospitalización del RIPS)"}
 ARCHIVO_RIPS = {"consultas": "Consultas", "procedimientos": "Procedimientos", "medicamentos": "Medicamentos",
                 "otrosServicios": "Otros servicios"}
 
@@ -324,11 +327,15 @@ class Frecuencia:
         t = tipo.upper()
         contratos = [c for c in contratos_meta if t == "TODOS" or tipo_contrato(c["contrato"]) == t]
         tareas, faltan = [], []
+        # TODOS también clasifica con los catálogos cargados: si cambian, se recalcula
+        extra = ""
+        if motor == "todos" and self.ruta_cat.exists():
+            extra = str(self.ruta_cat.stat().st_mtime_ns)
         with closing(sqlite3.connect(hist)) as con:
             for c in contratos:
                 rutas = self._archivos_contrato(con, c["contrato"], anio, meses, regimen)
                 firma = "|".join(f"{r}:{os.stat(r).st_mtime_ns}:{os.stat(r).st_size}" for r in sorted(rutas))
-                clave = hashlib.sha1(f"{motor}|{self.M.VERSIONES.get(motor, 1)}|{c['contrato']}|{firma}".encode()).hexdigest()[:24]
+                clave = hashlib.sha1(f"{motor}|{self.M.VERSIONES.get(motor, 1)}|{c['contrato']}|{firma}|{extra}".encode()).hexdigest()[:24]
                 out = self.cache / f"c_{motor}_{clave}.json"
                 tareas.append((c, rutas, out))
                 if rutas and not out.exists():
@@ -458,22 +465,38 @@ class Frecuencia:
                      "etiquetas": {"criterio": "Archivo RIPS", "pacientes_grupo": "Pacientes del grupo",
                                    "todos": "Contar en todos los pacientes"}},
                     lambda k: etiqueta.get(k.split("|", 1)[0], k.split("|", 1)[0]) + "|" + k.split("|", 1)[1])
-        # asistencial / todos: grupos = tipos de servicio; actividades = códigos reportados
+        # asistencial / todos: grupos = tipos de servicio (TODOS: + áreas 3280, catálogos y fuera de las matrices)
         por_tipo = {}
         for k, v in total["act"].items():
             tipo_s, cod = k.split("|", 1)
             if v[0] > 0:
                 por_tipo.setdefault(tipo_s, []).append((v[0], cod))
-        orden_t = {t: i for i, t in enumerate(M.ORDEN_TIPOS)}
-        grupos = sorted(por_tipo, key=lambda t: (orden_t.get(t, 999), t))
-        acts = []
+        orden = M.ORDEN_TIPOS + M.AREAS_3280
+        orden_t = {t: i for i, t in enumerate(orden)}
+        # primero los tipos de servicio y las áreas 3280; después los catálogos; al final lo que no está en las matrices
+        grupos = sorted(por_tipo, key=lambda t: (2 if t.startswith(M.FUERA) else 1 if t.startswith("CATÁLOGO ") else 0,
+                                                 orden_t.get(t, 999), t))
+        # nombres solo de las matrices: catálogo de CUPS de la EPS (asistencial) → actividad 3280 → catálogo cargado
+        # (DNT…) → nombre que trae el propio RIPS (medicamentos, otros servicios) → «Sin nombre en las matrices»
+        nom_cat = {}
+        for c in self.catalogo().values():
+            for a in c.get("actividades", []):
+                if a.get("descripciones"):
+                    nom_cat.setdefault(str(a["codigo"]).upper(), a["descripciones"][0])
+        acts, info = [], {}
         for gr in grupos:
+            if gr.startswith(M.FUERA):
+                info[gr] = ("Códigos que no están en la matriz 3280, ni en la Evaluación Asistencial (asistencias, "
+                            "especialidades, complementarias, PAI…), ni en los catálogos cargados")
+            elif gr.startswith("MATRIZ 3280"):
+                info[gr] = "Códigos de la matriz 3280 que no están en la Evaluación Asistencial"
+            elif gr.startswith("CATÁLOGO "):
+                info[gr] = "Códigos del catálogo cargado que no están en las otras matrices"
             for _, cod in sorted(por_tipo[gr], reverse=True):
-                # nombre oficial del CUPS (catálogo de la EPS) → nombre que trae el RIPS (medicamentos, otros
-                # servicios, traslados) → descripción de la actividad 3280; nunca en blanco
-                nom = M.CUPS_NOMBRES.get(cod) or nombres.get(cod) or M.NOMBRE_CUPS.get(cod) or M.SIN_NOMBRE
+                nom = (M.CUPS_NOMBRES.get(cod) or M.NOMBRE_CUPS.get(cod) or nom_cat.get(cod) or nombres.get(cod)
+                       or NOMBRES_SECCION.get(cod) or ("Medicamento sin nombre en el RIPS" if gr == "MEDICAMENTOS" else M.SIN_NOMBRE))
                 acts.append({"grupo": gr, "codigo": cod, "descripciones": [nom], "criterio": secc.get(cod, "")})
-        return ({"grupos": grupos, "actividades": acts, "sin_codigo": [], "diagnosticos": [], "grupos_info": {},
+        return ({"grupos": grupos, "actividades": acts, "sin_codigo": [], "diagnosticos": [], "grupos_info": info,
                  "actualizado": ahora, "por": {"asis": "Evaluación Asistencial", "med": "solo medicamentos"}.get(motor, "todos los RIPS"),
                  "etiquetas": {"criterio": "Archivo RIPS" if motor == "todos" else None,
                                "pacientes_grupo": "Pacientes con medicamentos" if motor == "med" else "Pacientes con este servicio",

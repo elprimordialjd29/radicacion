@@ -47,7 +47,7 @@ reportó y, debajo, pacientes distintos y % del grupo. El selector dice cómo se
 | MD, MDC, MD-RCV | Solo los **medicamentos** (unidades), como la Evaluación Asistencial | Medicamentos |
 | ASE, ASB, EB, CMP, PAI | Igual que la Evaluación Cápita Asistencial (mapa CUPS → tipo de servicio; medicamentos y otros servicios por cantidad, sin quitar repetidos) | Tipos de servicio |
 | DNT (o un tipo con catálogo cargado) | Catálogo de CUPS y diagnósticos por grupo | Grupos del catálogo |
-| TODOS | Todos los códigos de todos los RIPS de la EPS | Tipo de servicio o archivo RIPS |
+| TODOS | Todos los códigos de todos los RIPS de la EPS, clasificados solo con las matrices (Evaluación Asistencial: asistencias, especialidades, complementarias, PAI…; matriz 3280; catálogos cargados) | Tipo de servicio, área 3280, catálogo y, aparte, «FUERA DE LAS MATRICES» |
 
 Solo se muestran las actividades con registros (no salen filas vacías); con «Contar en todos los
 pacientes» aparecen también las que solo tienen registros fuera del grupo.

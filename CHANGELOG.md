@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.3 — 2026-11-24
+- **Frecuencia de uso TODOS (toda la EPS) clasificada solo con las matrices** (sin buscar afuera): cada
+  código va a su **tipo de servicio de la Evaluación Asistencial** (asistencias, especialidades,
+  complementarias —laboratorio, imágenes—, cada vacuna PAI, TAB, urgencias, hospitalización,
+  medicamentos), si no a su **área de la matriz 3280** (cursos de vida, materna, RCV, demanda inducida
+  y salud mental) y si no al **catálogo cargado** (DNT…), con el nombre que trae esa matriz. Lo que no
+  está en ninguna queda **aparte**, al final: «FUERA DE LAS MATRICES · Consultas / Procedimientos /
+  Otros servicios».
+- Nombres sin hueco: «Sin nombre en las matrices», «Medicamento sin nombre en el RIPS» y los registros de
+  urgencias y hospitalización con su nombre.
+
 ## 0.13.2 — 2026-11-24
 - Frecuencia de uso asistencial (ASE, ASB, EB, CMP, PAI), medicamentos y TODOS: **las descripciones ya no
   salen en blanco**. El RIPS no trae el nombre de consultas ni procedimientos; ahora se toma del nuevo
