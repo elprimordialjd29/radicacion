@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.8 — 2026-11-24
+- Excel de frecuencia de uso simplificado: solo hojas **Frecuencia CUPS** y **Diagnósticos**; sin columna
+  «Nivel» ni filas de municipio/departamento (se filtran por sus columnas); una fila por contrato y al
+  final las filas del **TOTAL** en negrilla. Se quitaron las hojas Resumen e Info.
+
 ## 0.12.7 — 2026-11-24
 - Excel de frecuencia de uso: **encabezado fijo** (la fila 1 queda visible al desplazarse), en negrilla
   con fondo azul y filtros; los nombres de los **prestadores** también en las filas de municipio,

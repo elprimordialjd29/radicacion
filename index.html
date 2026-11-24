@@ -374,7 +374,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.12.7</div>
+          <div class="usr-ver">Radicación cápita · v0.12.8</div>
         </div>
       </div>
     </div>
@@ -1586,47 +1586,27 @@ async function exportarFrecuenciaExcel() {
   if (!FR?.grupos) return;
   const E = await libExcelJS();
   const wb = new E.Workbook();
-  const NIVEL = { contrato: 'Contrato', municipio: 'Municipio', departamento: 'Departamento', total: 'Total' };
-  const orden = { contrato: 0, municipio: 1, departamento: 2, total: 3 };
-  const cols = [...FR.grupos].sort((a, b) => orden[a.nivel] - orden[b.nivel]);   // contratos primero, total al final
+  // una fila por contrato y, al final, el TOTAL del tipo de contrato (sin filas de municipio/departamento:
+  // esos se sacan filtrando las columnas Departamento y Municipio)
   const contratosG = FR.grupos.filter((g) => g.nivel === 'contrato');
-  const prestadores = (lst) => [...new Set(lst.map((g) => g.prestador).filter(Boolean))].sort().join(' · ');
-  const ubic = (g) => g.nivel === 'contrato' ? { dep: deptoDe(g.nombre), mun: g.municipio || '', con: g.nombre, pre: g.prestador || '' }
-    : g.nivel === 'municipio' ? { dep: deptoMuni(g.nombre), mun: g.nombre, con: 'VARIOS', pre: prestadores(contratosG.filter((c) => c.municipio === g.nombre)) }
-    : g.nivel === 'departamento' ? { dep: g.nombre, mun: 'VARIOS', con: 'VARIOS', pre: prestadores(contratosG.filter((c) => deptoDe(c.nombre) === g.nombre)) }
-    : { dep: 'TODOS', mun: 'TODOS', con: 'TODOS', pre: prestadores(contratosG) };
+  const total = FR.grupos.find((g) => g.nivel === 'total');
+  const filasG = [...contratosG, ...(total ? [total] : [])];
+  const ubic = (g) => g.nivel === 'contrato' ? [deptoDe(g.nombre), g.municipio || '', g.nombre, g.prestador || '']
+    : ['TODOS', 'TODOS', `TOTAL ${FR.tipo}`, 'TODOS LOS PRESTADORES'];
   const dxG = (gr) => FR.catalogo.diagnosticos.filter((d) => d.grupo === gr).map((d) => d.codigo).join(', ');
   const pct = (a, b) => (b ? +(a / b * 100).toFixed(1) : 0);
-  // 1. Frecuencia de CUPS
-  const f = [['Nivel', 'Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'Actividad', 'CUPS', 'DX que corresponde',
+  const f = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'Actividad', 'CUPS', 'DX que corresponde',
     'Niños en el grupo', 'Veces (niños del grupo)', 'Niños que lo recibieron', '% del grupo', 'Veces (todos los pacientes)', 'Pacientes (todos)']];
-  for (const g of cols) {
-    const u = ubic(g);
-    for (const a of FR.catalogo.actividades) {
-      const gr = a.grupo || 'GENERAL', v = g.actividades[`${gr}|${a.codigo}`] || [0, 0, 0, 0], ng = (g.pacientes_grupo || {})[gr] || 0;
-      f.push([NIVEL[g.nivel], u.dep, u.mun, u.con, u.pre, gr, a.descripciones.join(' / '), a.codigo, dxG(gr), ng, v[0], v[1], pct(v[1], ng), v[2], v[3]]);
-    }
+  for (const g of filasG) for (const a of FR.catalogo.actividades) {
+    const gr = a.grupo || 'GENERAL', v = g.actividades[`${gr}|${a.codigo}`] || [0, 0, 0, 0], ng = (g.pacientes_grupo || {})[gr] || 0;
+    f.push([...ubic(g), gr, a.descripciones.join(' / '), a.codigo, dxG(gr), ng, v[0], v[1], pct(v[1], ng), v[2], v[3]]);
   }
-  hojaListaFmt(wb, 'Frecuencia CUPS', f, [12, 14, 18, 19, 30, 30, 52, 17, 24, 12, 14, 14, 10, 16, 14]);
-  // 2. Diagnósticos
-  const d = [['Nivel', 'Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'CIE-10', 'Niños con el diagnóstico', 'Atenciones']];
-  for (const g of cols) {
-    const u = ubic(g);
-    for (const x of FR.catalogo.diagnosticos) { const v = g.diagnosticos[x.codigo] || [0, 0]; d.push([NIVEL[g.nivel], u.dep, u.mun, u.con, u.pre, x.grupo, x.codigo, v[0], v[1]]); }
-  }
-  hojaListaFmt(wb, 'Diagnósticos', d, [12, 14, 18, 19, 30, 30, 10, 14, 12]);
-  // 3. Resumen por contrato / municipio / departamento / total
-  const gruposCat = FR.catalogo.grupos || [];
-  const r = [['Nivel', 'Departamento', 'Municipio', 'Contrato', 'Prestador', 'RIPS leídos', 'Pacientes atendidos', 'Pacientes con dx del catálogo', ...gruposCat.map((x) => 'Niños: ' + x)]];
-  for (const g of cols) { const u = ubic(g); r.push([NIVEL[g.nivel], u.dep, u.mun, u.con, u.pre, g.archivos, g.pacientes, g.pacientes_dx, ...gruposCat.map((x) => (g.pacientes_grupo || {})[x] || 0)]); }
-  hojaListaFmt(wb, 'Resumen', r, [12, 14, 18, 19, 30, 10, 12, 14, ...gruposCat.map(() => 18)]);
-  // 4. Datos del reporte
-  const info = wb.addWorksheet('Info');
-  info.columns = [{ width: 24 }, { width: 110 }];
-  [...cabecera(`Frecuencia de uso ${FR.tipo}`),
-    ['Cómo leer', 'Cada CUPS de un grupo se cuenta en los niños con diagnóstico de ese grupo en el mes (si tienen de dos grupos, en el más severo). «Todos los pacientes» = sin filtrar por diagnóstico.'],
-    ['Filtrar', 'Usa los filtros de la fila 1: Nivel = Contrato para ver cada contrato; Nivel = Total para el total del tipo de contrato.']].forEach((x) => info.addRow(x));
-  info.getRow(1).font = { bold: true, size: 13 };
+  const wsC = hojaListaFmt(wb, 'Frecuencia CUPS', f, [14, 18, 19, 30, 30, 52, 17, 24, 12, 14, 14, 10, 16, 14]);
+  const d = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'CIE-10', 'Niños con el diagnóstico', 'Atenciones']];
+  for (const g of filasG) for (const x of FR.catalogo.diagnosticos) { const v = g.diagnosticos[x.codigo] || [0, 0]; d.push([...ubic(g), x.grupo, x.codigo, v[0], v[1]]); }
+  const wsD = hojaListaFmt(wb, 'Diagnósticos', d, [14, 18, 19, 30, 30, 10, 14, 12]);
+  // filas del total en negrilla para distinguirlas
+  for (const ws of [wsC, wsD]) ws.eachRow((row, n) => { if (n > 1 && String(row.getCell(3).value).startsWith('TOTAL')) row.font = { bold: true }; });
   await descargarExcelJS(wb, `Frecuencia_${FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}.xlsx`);
 }
 $('#vistaFrecuencia').addEventListener('click', (e) => {

@@ -5,7 +5,7 @@ SIE de Dusakawi EPSI. Para cada contrato capitado (RS y RC) identifica **qué pe
 radicados y cuáles faltan**, descarga los **soportes RIPS** y calcula el mes con las **fechas de
 atención que trae el RIPS**. Lo publica en un **tablero web** con usuarios y permisos.
 
-Versión actual: **0.12.7** (ver [CHANGELOG.md](CHANGELOG.md)).
+Versión actual: **0.12.8** (ver [CHANGELOG.md](CHANGELOG.md)).
 
 ```
  Usuarios ──► radicacion.vercel.app (Vercel)                    VPS Contabo (worker)
