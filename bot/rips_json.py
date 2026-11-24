@@ -164,8 +164,10 @@ def a_json(texto):
 
 
 def _es_dato(s):
+    """¿Es un registro? No lo son: líneas vacías, «   |», separadores «****|» ni los títulos de sección que el SIE
+    pone al inicio de USUARIOS y FACTURAS («****USUARIOS****|»): esos van una sola vez en el encabezado."""
     s = s.strip()
-    return bool(s) and s != "|" and not set(s) <= set("*|") and "FACTURAS*" not in s
+    return bool(s) and s != "|" and not set(s) <= set("*|") and not (s.startswith("*") and "," not in s)
 
 
 def _bloques(texto):

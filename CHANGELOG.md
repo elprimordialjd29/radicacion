@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.8 — 2026-11-24
+- **Unificado con el formato exacto del SIE.** El título «****USUARIOS****|» de cada mes quedaba en medio
+  de los usuarios (uno por mes unido). Ahora cada sección lleva marcador, línea en blanco y título una sola
+  vez, y después todos los registros de todos los meses en orden. Un solo mes «unificado» es idéntico byte
+  por byte al archivo del SIE; verificado en todos los contratos.
+
 ## 0.14.7 — 2026-11-24
 - **RIPS unificado (consolidado) con todo, igual al SIE.** Antes quitaba los usuarios repetidos entre meses
   (y dentro de un mes), así que sus usuarios no daban la suma de los meses (KANKUAMA abr–jun RS: 6.364 en vez
