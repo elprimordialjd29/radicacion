@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.2 — 2026-11-24
+- Excel de frecuencia **solo con la cantidad de actividades** (frecuencia de uso): se quitan «Pacientes con
+  este servicio» / «Pacientes del programa» (base del %), «Pacientes que lo recibieron» y el %, que no se
+  entendían. Queda: ubicación · contrato · prestador · modalidad · programa o tipo de servicio · actividad ·
+  CUPS · **Veces** (Unidades en medicamentos). La fila «Cómo leer» del encabezado lo explica. DNT no cambia.
+
 ## 0.14.1 — 2026-11-24
 - **Excel de frecuencia con la modalidad en cada fila**: con «Todas las modalidades», cada actividad de cada
   contrato sale en una fila por modalidad (Intramural, Extramural jornada de salud, unidad móvil,
