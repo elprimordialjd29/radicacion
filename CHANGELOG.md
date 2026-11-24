@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.10 — 2026-11-24
+- Excel de frecuencia de uso: solo filas de contratos (sin filas «TOTAL / TODOS LOS PRESTADORES»).
+  Cada niño se cuenta dentro de su contrato, así que la suma de los contratos da el total
+  (verificado: 55 de 55 CUPS y diagnósticos cuadran). En pantalla se mantiene la columna Total.
+
 ## 0.12.9 — 2026-11-24
 - Excel de frecuencia de uso sin columnas repetidas: un solo juego de cifras (Veces, Niños que lo
   recibieron, % del grupo), el mismo de la pantalla; si está marcado «Contar en todos los pacientes»

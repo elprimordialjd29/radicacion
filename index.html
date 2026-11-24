@@ -374,7 +374,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.12.9</div>
+          <div class="usr-ver">Radicación cápita · v0.12.10</div>
         </div>
       </div>
     </div>
@@ -1586,13 +1586,10 @@ async function exportarFrecuenciaExcel() {
   if (!FR?.grupos) return;
   const E = await libExcelJS();
   const wb = new E.Workbook();
-  // una fila por contrato y, al final, el TOTAL del tipo de contrato (sin filas de municipio/departamento:
-  // esos se sacan filtrando las columnas Departamento y Municipio)
-  const contratosG = FR.grupos.filter((g) => g.nivel === 'contrato');
-  const total = FR.grupos.find((g) => g.nivel === 'total');
-  const filasG = [...contratosG, ...(total ? [total] : [])];
-  const ubic = (g) => g.nivel === 'contrato' ? [deptoDe(g.nombre), g.municipio || '', g.nombre, g.prestador || '']
-    : ['TODOS', 'TODOS', `TOTAL ${FR.tipo}`, 'TODOS LOS PRESTADORES'];
+  // solo filas de contratos: cada niño se cuenta dentro de su contrato, así que la suma de los contratos
+  // (filtrando por departamento, municipio o prestador) da el total; no se agregan filas de total
+  const filasG = FR.grupos.filter((g) => g.nivel === 'contrato');
+  const ubic = (g) => [deptoDe(g.nombre), g.municipio || '', g.nombre, g.prestador || ''];
   const dxG = (gr) => FR.catalogo.diagnosticos.filter((d) => d.grupo === gr).map((d) => d.codigo).join(', ');
   const pct = (a, b) => (b ? +(a / b * 100).toFixed(1) : 0);
   // un solo juego de cifras, el mismo de la pantalla: por defecto en los niños del grupo; con «Contar en
@@ -1607,12 +1604,10 @@ async function exportarFrecuenciaExcel() {
     const veces = todos ? v[2] : v[0], ninos = todos ? v[3] : v[1];
     f.push([...ubic(g), gr, dxG(gr), base, a.descripciones.join(' / '), a.codigo, veces, ninos, pct(ninos, base)]);
   }
-  const wsC = hojaListaFmt(wb, 'Frecuencia CUPS', f, [14, 18, 19, 30, 30, 24, 12, 52, 17, 10, 14, 10]);
+  hojaListaFmt(wb, 'Frecuencia CUPS', f, [14, 18, 19, 30, 30, 24, 12, 52, 17, 10, 14, 10]);
   const d = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'CIE-10', 'Niños con el diagnóstico', 'Atenciones']];
   for (const g of filasG) for (const x of FR.catalogo.diagnosticos) { const v = g.diagnosticos[x.codigo] || [0, 0]; d.push([...ubic(g), x.grupo, x.codigo, v[0], v[1]]); }
-  const wsD = hojaListaFmt(wb, 'Diagnósticos', d, [14, 18, 19, 30, 30, 10, 14, 12]);
-  // filas del total en negrilla para distinguirlas
-  for (const ws of [wsC, wsD]) ws.eachRow((row, n) => { if (n > 1 && String(row.getCell(3).value).startsWith('TOTAL')) row.font = { bold: true }; });
+  hojaListaFmt(wb, 'Diagnósticos', d, [14, 18, 19, 30, 30, 10, 14, 12]);
   await descargarExcelJS(wb, `Frecuencia_${FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}${todos ? '_todos_los_pacientes' : ''}.xlsx`);
 }
 $('#vistaFrecuencia').addEventListener('click', (e) => {
