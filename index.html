@@ -113,7 +113,7 @@ tr:hover td { background: var(--surface-2); }
 .fr-tabla td.num { min-width: 118px; vertical-align: top; } .fr-n { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; } .fr-veces { font-size: 11px; color: var(--ink-3); margin-left: 4px; }
 .fr-cob { display: block; height: 4px; border-radius: 2px; background: var(--surface-2); margin: 4px 0 0 auto; width: 90px; overflow: hidden; } .fr-cob i { display: block; height: 100%; background: var(--accent); }
 .fr-dx { display: inline-block; font: 600 11px ui-monospace, monospace; color: var(--ink-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 10px; margin: 1px 2px 1px 0; } .fr-dxs { white-space: normal; max-width: 150px; }
-.fr-cero { color: var(--ink-3); } .fr-desc { max-width: 420px; } .fr-cups { font: 600 12px ui-monospace, monospace; background: var(--surface-2); padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+.fr-cero { color: var(--ink-3); } .fr-hc { font-weight: 650; white-space: nowrap; } .fr-desc { max-width: 420px; } .fr-cups { font: 600 12px ui-monospace, monospace; background: var(--surface-2); padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
 .fr-tabla tr.fr-grupo td { padding-top: 14px; } .fr-gnom { font-size: 14px; font-weight: 700; letter-spacing: .02em; } .fr-sin { color: var(--warning) !important; }
 .fr-tabla tr.fr-s1 td:first-child { box-shadow: inset 4px 0 0 var(--warning); } .fr-tabla tr.fr-s2 td:first-child { box-shadow: inset 4px 0 0 var(--serious, #e8833a); } .fr-tabla tr.fr-s3 td:first-child { box-shadow: inset 4px 0 0 var(--critical); }
 .fr-ayuda { background: var(--surface-2); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; color: var(--ink-2); line-height: 1.55; margin: 0 0 10px; }
@@ -374,7 +374,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.12.4</div>
+          <div class="usr-ver">Radicación cápita · v0.12.5</div>
         </div>
       </div>
     </div>
@@ -1389,6 +1389,10 @@ function mostrarModal(html) {
 // ---- Frecuencia de uso: cuántas veces se reportó cada CUPS (y diagnóstico) en los RIPS, según el
 // catálogo cargado para el tipo de contrato (DNT, PMS…). Total, departamento, municipio y contrato.
 let frTipo = 'DNT', frNivel = 'contrato', frSoloDx = false, FR = null, frClave = '', frCargando = false, FRCAT = null;
+// departamento según el código DIVIPOLA del número de contrato (DNT-44001 → 44 La Guajira)
+const DEPTOS = { '05': 'ANTIOQUIA', '08': 'ATLÁNTICO', 11: 'BOGOTÁ', 13: 'BOLÍVAR', 20: 'CESAR', 23: 'CÓRDOBA', 44: 'LA GUAJIRA', 47: 'MAGDALENA', 54: 'NORTE DE SANTANDER', 70: 'SUCRE' };
+const deptoDe = (contrato) => { const m = String(contrato || '').match(/^[A-Z]+-(\d{2})\d{3}-/); return m ? (DEPTOS[m[1]] || 'Dpto ' + m[1]) : '—'; };
+const deptoMuni = (muni) => deptoDe((D.contratos.find((c) => (c.municipio || '—') === muni) || {}).contrato);
 async function renderFrecuencia(lista, mesesTodos) {
   const meses = selMeses(mesesTodos);
   const tipos = [...new Set(D.contratos.map((c) => tipoDe(c.contrato)))].sort();
@@ -1433,7 +1437,7 @@ function pintarFrecuencia(lista, meses, tipos) {
   // con una búsqueda arriba (prestador o contrato) se muestra SOLO lo buscado: un valor por contrato, sin el total
   const buscando = !!st.texto && lista.length < D.contratos.length;
   if (buscando) cols = FR.grupos.filter((g) => g.nivel === 'contrato' && visibles.has(g.nombre));
-  const columnas = buscando ? cols : [total, ...cols].filter(Boolean);
+  const columnas = buscando ? cols : [...cols, total].filter(Boolean);   // el total va al final
   const ref = columnas.length === 1 ? columnas[0] : total;   // de dónde salen las tarjetas de arriba
   // valores: [veces en pacientes del grupo, pacientes del grupo, veces en todos los pacientes, pacientes todos]
   const i0 = frSoloDx ? 2 : 0, i1 = frSoloDx ? 3 : 1;
@@ -1443,9 +1447,9 @@ function pintarFrecuencia(lista, meses, tipos) {
   // cobertura: de los pacientes del grupo (o de todos), cuántos recibieron la actividad
   const baseCob = (g, gr) => (frSoloDx ? g.pacientes : (g.pacientes_grupo || {})[gr]) || 0;
   const celda = (v, k, base) => {
-    if (!v[i0]) return `<td class="num ${k === 0 ? 'fr-tot' : ''}"><span class="fr-cero">—</span></td>`;
+    if (!v[i0]) return `<td class="num ${columnas[k]?.nivel === 'total' ? 'fr-tot' : ''}"><span class="fr-cero">—</span></td>`;
     const pct = base ? Math.min(100, v[i1] / base * 100) : 0;
-    return `<td class="num ${k === 0 ? 'fr-tot' : ''}"><span class="fr-n">${fmtN(v[i0])}</span><span class="fr-veces">veces</span>
+    return `<td class="num ${columnas[k]?.nivel === 'total' ? 'fr-tot' : ''}"><span class="fr-n">${fmtN(v[i0])}</span><span class="fr-veces">veces</span>
       <small>${fmtN(v[i1])} niños · ${pct.toFixed(0)}%</small><span class="fr-cob"><i style="width:${pct}%"></i></span></td>`;
   };
   const dxChips = (gr) => dxDe(gr).map((d) => `<span class="fr-dx">${esc(d)}</span>`).join('');
@@ -1465,13 +1469,14 @@ function pintarFrecuencia(lista, meses, tipos) {
       ${as.map(filaAct).join('')}
       <tr class="rp-total"><td colspan="3">Subtotal ${esc(gr)}</td>${columnas.map((g) => `<td class="num">${fmtN(sumaCol(g, gr))}</td>`).join('')}</tr>`;
   }).join('');
-  const nomCol = (g) => g.nivel === 'total' ? `<b>${esc(g.nombre)}</b><small>todos los contratos</small>` : g.nivel === 'contrato'
-    ? `<span class="lnk" title="${esc(g.prestador)}">${esc(g.nombre)}</span><small>${esc(g.prestador || '')}</small>` : esc(g.nombre);
+  const nomCol = (g) => g.nivel === 'total' ? `<b>${esc(g.nombre)}</b><small>todos los contratos</small>`
+    : g.nivel === 'contrato' ? `<span class="fr-hc">${esc(g.nombre)}</span><small>${esc(g.prestador || '')}</small><small>${esc(g.municipio || '')} · ${esc(deptoDe(g.nombre))}</small>`
+    : g.nivel === 'municipio' ? `${esc(g.nombre)}<small>${esc(deptoMuni(g.nombre))}</small>` : esc(g.nombre);
   // diagnósticos agrupados por su grupo (riesgo, moderada, severa…)
   const porGrupo = {};
   for (const d of FR.catalogo.diagnosticos) (porGrupo[d.grupo] ??= []).push(d);
   const filasDx = Object.entries(porGrupo).map(([grupo, ds]) => ds.map((d, n) => `<tr>${n === 0 ? `<td rowspan="${ds.length}" class="wrap"><b>${esc(grupo)}</b></td>` : ''}<td><b>${esc(d.codigo)}</b></td>
-      ${columnas.map((g, k) => { const v = g.diagnosticos[d.codigo] || [0, 0]; return `<td class="num ${k === 0 ? 'fr-tot' : ''} ${v[0] ? '' : 'muted'}">${fmtN(v[0])}<small>${v[0] ? fmtN(v[1]) + ' aten.' : ''}</small></td>`; }).join('')}</tr>`).join('')
+      ${columnas.map((g, k) => { const v = g.diagnosticos[d.codigo] || [0, 0]; return `<td class="num ${columnas[k]?.nivel === 'total' ? 'fr-tot' : ''} ${v[0] ? '' : 'muted'}">${fmtN(v[0])}<small>${v[0] ? fmtN(v[1]) + ' aten.' : ''}</small></td>`; }).join('')}</tr>`).join('')
     + `<tr class="rp-total"><td colspan="2">Subtotal ${esc(grupo)} (pacientes distintos ≈ suma)</td>${columnas.map((g) => `<td class="num">${fmtN(ds.reduce((t, d) => t + ((g.diagnosticos[d.codigo] || [])[0] || 0), 0))}</td>`).join('')}</tr>`).join('');
   $('#vistaFrecuencia').innerHTML = cab + `
   <div class="rv-kpis">
@@ -1489,7 +1494,7 @@ function pintarFrecuencia(lista, meses, tipos) {
       </span></div>
     <div class="fr-ayuda"><b>Cómo leer:</b> cada grupo empieza con los <b>niños en ese grupo</b> (los que tienen un diagnóstico del grupo en el mes; si tienen de dos grupos, cuentan en el más severo).
       Debajo, cada CUPS: <b>veces</b> que se reportó en los RIPS de esos niños, cuántos <b>niños</b> lo recibieron y qué <b>%</b> del grupo es (barra).
-      ${buscando ? '' : `La primera columna, <b>Total ${esc(frTipo)}</b>, suma todos los contratos; las demás son cada ${frNivel}.`}</div>
+      ${buscando ? '' : `Cada columna es un ${frNivel}; la última, <b>Total ${esc(frTipo)}</b>, suma todos los contratos.`}</div>
     <div class="tbl-wrap"><table class="rp-tabla fr-tabla"><thead><tr><th>Actividad</th><th>CUPS</th><th>DX que corresponde</th>${columnas.map((g) => `<th class="num">${nomCol(g)}</th>`).join('')}</tr></thead><tbody>
       ${bloques}
       <tr class="rp-total"><td colspan="3">Total actividades</td>${columnas.map((g) => `<td class="num">${fmtN(sumaCol(g))}</td>`).join('')}</tr>
@@ -1579,8 +1584,8 @@ async function leerExcelCatalogo(archivo) {
 async function exportarFrecuenciaExcel() {
   const X = await libXlsx(); if (!FR?.grupos) return;
   const wb = X.utils.book_new();
-  const cols = FR.grupos;
-  const nom = (g) => (g.nivel === 'total' ? g.nombre : `${g.nivel}: ${g.nombre}`);
+  const cols = [...FR.grupos.filter((g) => g.nivel !== 'total'), ...FR.grupos.filter((g) => g.nivel === 'total')];   // total al final
+  const nom = (g) => (g.nivel === 'total' ? g.nombre : g.nivel === 'contrato' ? `${g.nombre} (${g.municipio || ''}, ${deptoDe(g.nombre)})` : `${g.nivel}: ${g.nombre}`);
   const dxG = (gr) => FR.catalogo.diagnosticos.filter((d) => d.grupo === gr).map((d) => d.codigo).join(', ');
   const act = [['Grupo', 'Actividad', 'CUPS', 'DX que corresponde', ...cols.flatMap((g) => [`${nom(g)} · veces (pacientes del grupo)`, `${nom(g)} · pacientes del grupo`, `${nom(g)} · veces (todos)`, `${nom(g)} · pacientes (todos)`])],
     ...FR.catalogo.actividades.map((a) => [a.grupo || 'GENERAL', a.descripciones.join(' / '), a.codigo, dxG(a.grupo || 'GENERAL'), ...cols.flatMap((g) => g.actividades[`${a.grupo || 'GENERAL'}|${a.codigo}`] || [0, 0, 0, 0])])];
@@ -1588,8 +1593,9 @@ async function exportarFrecuenciaExcel() {
   const dx = [['Grupo', 'CIE-10', ...cols.flatMap((g) => [`${nom(g)} · pacientes`, `${nom(g)} · atenciones`])],
     ...FR.catalogo.diagnosticos.map((d) => [d.grupo, d.codigo, ...cols.flatMap((g) => g.diagnosticos[d.codigo] || [0, 0])])];
   X.utils.book_append_sheet(wb, hoja(X, [...cabecera(`Frecuencia de uso ${FR.tipo} — diagnósticos`), ...dx], [34, 10]), 'Diagnósticos');
-  X.utils.book_append_sheet(wb, hoja(X, [['Nivel', 'Nombre', 'Prestador', 'RIPS leídos', 'Pacientes', 'Pacientes con dx del catálogo'],
-    ...cols.map((g) => [g.nivel, g.nombre, g.prestador || '', g.archivos, g.pacientes, g.pacientes_dx])], [14, 30, 36, 12, 12, 16]), 'Resumen');
+  const ubic = (g) => g.nivel === 'contrato' ? [g.municipio || '', deptoDe(g.nombre)] : g.nivel === 'municipio' ? [g.nombre, deptoMuni(g.nombre)] : g.nivel === 'departamento' ? ['', g.nombre] : ['', ''];
+  X.utils.book_append_sheet(wb, hoja(X, [['Nivel', 'Contrato / nombre', 'Prestador', 'Municipio', 'Departamento', 'RIPS leídos', 'Pacientes', 'Pacientes con dx del catálogo'],
+    ...cols.map((g) => [g.nivel, g.nombre, g.prestador || '', ...ubic(g), g.archivos, g.pacientes, g.pacientes_dx])], [14, 26, 36, 20, 16, 12, 12, 16]), 'Resumen');
   descargarLibro(X, wb, `Frecuencia_${FR.tipo}_${periodoTxt().replace(/\s+/g, '_')}${st.reg ? '_' + st.reg : ''}.xlsx`);
 }
 $('#vistaFrecuencia').addEventListener('click', (e) => {

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.5 — 2026-11-24
+- Frecuencia de uso: la columna **Total** pasa al final; cada columna de contrato muestra número de
+  contrato, prestador, **municipio y departamento** (y la de municipio, su departamento). El Excel
+  también deja el total al final y agrega municipio y departamento en la hoja Resumen.
+
 ## 0.12.4 — 2026-11-23
 - Frecuencia de uso: si se busca un prestador o contrato, se muestra **solo su valor** (sin la columna
   del total de todos los contratos) y las tarjetas de arriba son de lo buscado; sin búsqueda se ve el
