@@ -195,20 +195,13 @@ def _bloques(texto):
 
 def unir_planos(textos):
     """Une varios planos del SIE (p. ej. julio + agosto + septiembre) en UNO con el mismo formato:
-    cada sección (USUARIOS, FACTURAS, CONSULTAS, PROCEDIMIENTOS…) trae las líneas de todos los meses.
-    USUARIOS sin repetir (tipo + número de documento); FACTURAS sin repetir; servicios todos, en orden."""
+    cada sección (USUARIOS, FACTURAS, CONSULTAS, PROCEDIMIENTOS…) trae TODAS las líneas de todos los meses, tal
+    cual las trae el SIE (sin quitar usuarios repetidos): los totales del unificado = la suma de los meses."""
     secciones = {}
     for t in textos:
         for b in _bloques(t):
-            s = secciones.setdefault(b["nombre"], {"marca": b["marca"], "pre": b["pre"], "datos": [], "vistos": set()})
-            for l in b["datos"]:
-                if b["nombre"] in ("USUARIOS", "FACTURAS"):
-                    c = _campos(l)
-                    clave = tuple(c[:2]) if b["nombre"] == "USUARIOS" else l.strip()
-                    if clave in s["vistos"]:
-                        continue
-                    s["vistos"].add(clave)
-                s["datos"].append(l)
+            s = secciones.setdefault(b["nombre"], {"marca": b["marca"], "pre": b["pre"], "datos": []})
+            s["datos"].extend(b["datos"])
     lineas = []
     for s in secciones.values():
         lineas += [s["marca"], *s["pre"], *s["datos"], s["marca"], "   |"]

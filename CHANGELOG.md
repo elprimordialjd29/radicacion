@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.7 — 2026-11-24
+- **RIPS unificado (consolidado) con todo, igual al SIE.** Antes quitaba los usuarios repetidos entre meses
+  (y dentro de un mes), así que sus usuarios no daban la suma de los meses (KANKUAMA abr–jun RS: 6.364 en vez
+  de 9.830). Ahora trae TODAS las líneas de cada mes tal cual el SIE: usuarios 9.830, consultas 10.183,
+  procedimientos 27.125, medicamentos 2.305, otros servicios 7.486 y 3 facturas = suma de abril, mayo y junio
+  (verificado línea por línea contra los planos bajados del SIE). El JSON unificado agrupa por factura.
+
 ## 0.14.6 — 2026-11-24
 - **Usuarios del RIPS idénticos al SIE.** El lector contaba como usuario la línea de título
   «****USUARIOS****|» que el SIE pone al inicio de la sección: todos los meses salían con 1 usuario de más
