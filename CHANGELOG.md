@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.1 — 2026-11-24
+- **Excel de frecuencia con la modalidad en cada fila**: con «Todas las modalidades», cada actividad de cada
+  contrato sale en una fila por modalidad (Intramural, Extramural jornada de salud, unidad móvil,
+  domiciliaria, Telemedicina…) con sus veces, pacientes y %; lo que el RIPS no trae con modalidad
+  (medicamentos y otros servicios) va en la fila «Sin modalidad (medicamentos y otros servicios)». La suma
+  de las filas da el total de la pantalla (PMS: 3.080.197).
+- Columna más clara: «Pacientes con este servicio» ahora es **«Pacientes atendidos en el tipo de
+  servicio»** (pacientes distintos con cualquier servicio de ese tipo: la base del %, por eso se repite en
+  los códigos del mismo tipo); en 3280, «Pacientes del programa». El % lleva el mismo nombre de su base y
+  el encabezado del Excel trae una fila «Cómo leer» que explica cada columna.
+
 ## 0.14.0 — 2026-11-24
 - **Modalidad de realización** en la frecuencia de uso (PMS, RCV, asistenciales y TODOS), del campo
   `modalidadGrupoServicioTecSal` de consultas y procedimientos, siempre con su **descripción**:

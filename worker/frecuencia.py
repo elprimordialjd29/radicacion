@@ -474,7 +474,7 @@ class Frecuencia:
                                  "descripciones": [nombres.get(cod) or "Código sin nombre en el RIPS"], "criterio": "Código reportado"})
             return ({"grupos": grupos, "actividades": acts, "sin_codigo": [], "diagnosticos": [], "grupos_info": info,
                      "actualizado": ahora, "por": "matriz 3280 (frecuencia de uso)",
-                     "etiquetas": {"criterio": "Archivo RIPS", "pacientes_grupo": "Pacientes del grupo",
+                     "etiquetas": {"criterio": "Archivo RIPS", "pacientes_grupo": "Pacientes del programa",
                                    "todos": "Contar en todos los pacientes"}},
                     lambda k: etiqueta.get(k.split("|", 1)[0], k.split("|", 1)[0]) + "|" + k.split("|", 1)[1])
         # asistencial / todos: grupos = tipos de servicio (TODOS: + áreas 3280, catálogos y fuera de las matrices)
@@ -516,6 +516,6 @@ class Frecuencia:
         return ({"grupos": grupos, "actividades": acts, "sin_codigo": [], "diagnosticos": [], "grupos_info": info,
                  "actualizado": ahora, "por": {"asis": "Evaluación Asistencial", "med": "solo medicamentos"}.get(motor, "todos los RIPS"),
                  "etiquetas": {"criterio": "Archivo RIPS" if motor == "todos" else None,
-                               "pacientes_grupo": "Pacientes con medicamentos" if motor == "med" else "Pacientes con este servicio",
+                               "pacientes_grupo": "Pacientes con medicamentos" if motor == "med" else "Pacientes atendidos en el tipo de servicio",
                                "todos": None, "veces": "unid." if motor == "med" else None}},
                 lambda k: k)
