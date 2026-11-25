@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.15.0 — 2026-11-25
+- **Modalidad en todas las categorías de la frecuencia de uso**, también **DNT** (catálogo): marca gris por
+  CUPS y selector de modalidad. Medicamentos (MD, MDC, MD-RCV) no traen modalidad en el RIPS: van en «Sin
+  modalidad».
+- **Excel con una columna de veces por cada modalidad** (Intramural, Extramural unidad móvil, domiciliaria,
+  jornada de salud, Telemedicina…), «Sin modalidad (medicamentos y otros servicios)» y al final el **total**;
+  una fila por contrato y actividad (antes, una fila por modalidad). Con una sola modalidad elegida: columna
+  «Modalidad» y sus veces. DNT conserva sus columnas de niños y %.
+
 ## 0.14.8 — 2026-11-24
 - **Unificado con el formato exacto del SIE.** El título «****USUARIOS****|» de cada mes quedaba en medio
   de los usuarios (uno por mes unido). Ahora cada sección lleva marcador, línea en blanco y título una sola

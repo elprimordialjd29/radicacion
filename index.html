@@ -377,7 +377,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.14.8</div>
+          <div class="usr-ver">Radicación cápita · v0.15.0</div>
         </div>
       </div>
     </div>
@@ -1463,7 +1463,7 @@ let frFiltro = '', frModalidad = '';
 // modalidad de realización (campo modalidadGrupoServicioTecSal): se muestra la descripción, no el número
 const MODALIDADES = { '01': 'Intramural', '02': 'Extramural unidad móvil', '03': 'Extramural domiciliaria', '04': 'Extramural jornada de salud',
   '06': 'Telemedicina interactiva', '07': 'Telemedicina no interactiva', '08': 'Telemedicina telexperticia', '09': 'Telemedicina telemonitoreo' };
-const conModalidad = (m) => ['3280', 'asis', 'todos'].includes(m);
+const conModalidad = (m) => ['3280', 'asis', 'todos', 'dx'].includes(m);   // medicamentos no traen modalidad en el RIPS
 async function renderFrecuencia(lista, mesesTodos) {
   const meses = selMeses(mesesTodos);
   const tipos = [...new Set(D.contratos.map((c) => tipoDe(c.contrato)))].sort();
@@ -1580,7 +1580,7 @@ function pintarFrecuencia(lista, meses, tipos) {
   const AYUDA = {
     dx: `cada grupo empieza con los <b>niños en ese grupo</b> (los que tienen un diagnóstico del grupo en el mes; si tienen de dos grupos, cuentan en el más severo). Debajo, cada CUPS: <b>veces</b> que se reportó en los RIPS de esos niños, cuántos <b>niños</b> lo recibieron y qué <b>%</b> del grupo es (barra).`,
     3280: `frecuencia de uso, no evaluación. Cada <b>programa</b> de la matriz 3280 empieza con sus pacientes: los de <b>curso de vida</b> por la edad (a la última atención del mes) y los de <b>RCV y materna</b> por el diagnóstico (DM, HTA, embarazo, preconcepción). Debajo, cada actividad: <b>veces</b> que vino su CUPS en los RIPS de esos pacientes (cada registro cuenta, aunque se repita o el paciente esté en varios programas; sin finalidad ni valor único), cuántos <b>pacientes</b> y qué <b>%</b> del programa. Solo se muestran las actividades con registros; al final, los códigos de PyM que reportan y la matriz no trae.`,
-    med: `contratos de <b>medicamentos</b> (MD, MDC, MD-RCV): solo se cuentan los medicamentos del RIPS, igual que la <b>Evaluación Cápita Asistencial</b>: cada medicamento suma la <b>cantidad</b> dispensada (unidades). Debajo de cada código: unidades, pacientes y %.`,
+    med: `contratos de <b>medicamentos</b> (MD, MDC, MD-RCV): solo se cuentan los medicamentos del RIPS, igual que la <b>Evaluación Cápita Asistencial</b>: cada medicamento suma la <b>cantidad</b> dispensada (unidades). Debajo de cada código: unidades, pacientes y %. Los medicamentos <b>no traen modalidad</b> en el RIPS (en el Excel van en «Sin modalidad»).`,
     asis: `igual que la <b>Evaluación Cápita Asistencial</b>: cada CUPS va a su <b>tipo de servicio</b>; consultas y procedimientos cuentan cada registro; medicamentos y otros servicios cuentan la <b>cantidad</b>. Cada tipo empieza con los <b>pacientes atendidos en ese tipo de servicio</b> (pacientes distintos con cualquier servicio del tipo: es la base del %); debajo, cada código: veces, pacientes que lo recibieron y qué % son de esa base.`,
     todos: `<b>todos los códigos</b> reportados en los RIPS de la EPS, clasificados solo con las matrices: <b>tipo de servicio de la Evaluación Asistencial</b> (asistencias, especialidades, complementarias, PAI, TAB, urgencias, hospitalización, medicamentos), <b>áreas de la matriz 3280</b> (cursos de vida, materna, RCV, demanda inducida) y los <b>catálogos cargados</b> (DNT…), con el nombre que traen. Los CUPS que no están en ninguna van aparte, al final: <b>«CUPS SIN CLASIFICAR»</b> por archivo RIPS, con el nombre oficial de la tabla CUPS de SISPRO. Cada registro cuenta.`,
   };
@@ -1720,23 +1720,25 @@ async function exportarFrecuenciaExcel() {
   const colPct = todos ? '% de los atendidos' : esDx ? '% del grupo' : motor === '3280' ? '% del programa'
     : motor === 'med' ? '% de los pacientes con medicamentos' : '% de los atendidos en el tipo de servicio';
   const NOTA = {
-    3280: '«Veces»: cuántas veces se hizo cada actividad en los RIPS del contrato (cada registro cuenta, aunque se repita). «Modalidad»: dónde se hizo (medicamentos y otros servicios no la traen).',
-    asis: '«Veces»: cuántas veces se hizo cada código en los RIPS del contrato (cada registro cuenta, aunque se repita). «Modalidad»: dónde se hizo (medicamentos y otros servicios no la traen).',
-    med: '«Unidades»: cantidad dispensada de cada medicamento en los RIPS del contrato.',
+    3280: 'Veces que se hizo cada actividad en los RIPS del contrato, en una columna por modalidad (dónde se hizo: intramural, extramural, telemedicina); medicamentos y otros servicios no traen modalidad en el RIPS («Sin modalidad»). La última columna es el total.',
+    asis: 'Veces que se hizo cada código en los RIPS del contrato, en una columna por modalidad (dónde se hizo: intramural, extramural, telemedicina); medicamentos y otros servicios no traen modalidad en el RIPS («Sin modalidad»). La última columna es el total.',
+    med: 'Unidades dispensadas de cada medicamento en los RIPS del contrato. Los medicamentos no traen modalidad en el RIPS: todo va en «Sin modalidad», igual al total.',
+    dx: 'Veces que se hizo cada CUPS, en una columna por modalidad (dónde se hizo) y al final el total; niños del grupo, niños que lo recibieron y % como antes.',
   };
   // frecuencia de uso = cantidad de actividades: el reporte trae solo las veces; las columnas de pacientes y % solo
   // quedan en DNT (como estaba)
   const conBase = esDx, conPac = esDx;
   NOTA.todos = NOTA.asis;
-  const modTxt = conModalidad(motor) ? (FR.modalidad ? MODALIDADES[FR.modalidad] || FR.modalidad : 'Todas las modalidades') : null;
-  // con «Todas las modalidades», cada actividad se parte en una fila por modalidad: se piden las cifras de cada
-  // modalidad al servidor (ya están calculadas) y lo que el RIPS no trae con modalidad va en su propia fila
-  let porMod = null;
-  if (conModalidad(motor) && !FR.modalidad) {
-    const presentes = [...new Set(Object.values(FR.mods || {}).flatMap((d) => Object.keys(d)))].filter((m) => MODALIDADES[m]).sort();
-    porMod = {};
-    for (const [i, m] of presentes.entries()) {
-      avisoExcel(`⏳ Modalidades ${i + 1}/${presentes.length}…`);
+  // modalidad: con una sola elegida, columna «Modalidad» + veces; con «Todas», una columna de veces por cada modalidad,
+  // «Sin modalidad» (medicamentos y otros servicios no la traen en el RIPS) y al final el total
+  const unaMod = FR.modalidad ? (MODALIDADES[FR.modalidad] || FR.modalidad) : null;
+  const vecesTxt = motor === 'med' ? 'Unidades' : 'Veces';
+  const SIN_MOD = 'Sin modalidad (medicamentos y otros servicios)';
+  let porMod = {}, mods = [];
+  if (!unaMod && conModalidad(motor)) {
+    mods = [...new Set(Object.values(FR.mods || {}).flatMap((d) => Object.keys(d)))].filter((m) => MODALIDADES[m]).sort();
+    for (const [i, m] of mods.entries()) {   // cifras de cada modalidad (el servidor ya las tiene calculadas)
+      avisoExcel(`⏳ Modalidades ${i + 1}/${mods.length}…`);
       let j = null;
       for (let intento = 0; intento < 30; intento++) {
         const res = await pedirJSON('/api/frecuencia?' + new URLSearchParams({ tipo: FR.tipo, anio: FR.anio, meses: (FR.meses || []).join(','), regimen: st.reg || '', modalidad: m }));
@@ -1748,30 +1750,34 @@ async function exportarFrecuenciaExcel() {
       porMod[m] = Object.fromEntries((j?.grupos || []).filter((g) => g.nivel === 'contrato').map((g) => [g.nombre, g]));
     }
   }
-  const f = [['Departamento', 'Municipio', 'Contrato', 'Prestador', ...(modTxt ? ['Modalidad'] : []), colGrupo, ...(colCrit ? [colCrit] : []), ...(conBase ? [colBase] : []),
-    motor === '3280' || esDx ? 'Actividad' : 'Descripción', motor === '3280' || esDx ? 'CUPS' : 'Código', motor === 'med' ? 'Unidades' : 'Veces', ...(conPac ? [colPac, colPct] : [])]];
+  const colsMod = unaMod ? ['Modalidad', vecesTxt] : [...mods.map((m) => MODALIDADES[m]), SIN_MOD, `Total ${vecesTxt.toLowerCase()}`];
+  const f = [['Departamento', 'Municipio', 'Contrato', 'Prestador', colGrupo, ...(colCrit ? [colCrit] : []), ...(conBase ? [colBase] : []),
+    motor === '3280' || esDx ? 'Actividad' : 'Descripción', motor === '3280' || esDx ? 'CUPS' : 'Código', ...colsMod, ...(conPac ? [colPac, colPct] : [])]];
+  let hayResto = false;
   for (const g of filasG) for (const a of FR.catalogo.actividades) {
     const gr = a.grupo || 'GENERAL', k = `${gr}|${a.codigo}`, v = g.actividades[k] || [0, 0, 0, 0];
     const base = todos ? g.pacientes : ((g.pacientes_grupo || {})[gr] || 0);
     const veces = todos ? v[2] : v[0], ninos = todos ? v[3] : v[1];
     if (!esDx && !veces) continue;   // sin filas vacías: solo lo que el contrato reportó (DNT queda como estaba)
-    const fila = (mod, ve, pa, ba) => f.push([...ubic(g), ...(modTxt ? [mod] : []), gr, ...(colCrit ? [esDx ? dxG(gr) : (a.criterio || '')] : []), ...(conBase ? [ba] : []),
-      (a.descripciones || []).join(' / '), a.cups_txt || a.codigo, ve, ...(conPac ? [pa, pa === '' ? '' : pct(pa, ba)] : [])]);
-    if (!porMod) { fila(modTxt, veces, ninos, base); continue; }
-    let resto = veces, conMod = false;
-    for (const m of Object.keys(porMod)) {
-      const gm = porMod[m][g.nombre], vm = gm?.actividades?.[k];
-      const ve = vm ? (todos ? vm[2] : vm[0]) : 0;
-      if (!ve) continue;
-      const bm = todos || motor === '3280' ? base : ((gm.pacientes_grupo || {})[gr] || 0);
-      fila(MODALIDADES[m], ve, todos ? vm[3] : vm[1], bm);
-      resto -= ve; conMod = true;
+    let cifras;
+    if (unaMod) cifras = [unaMod, veces];
+    else {
+      const porM = mods.map((m) => { const vm = porMod[m]?.[g.nombre]?.actividades?.[k]; return vm ? (todos ? vm[2] : vm[0]) : 0; });
+      const resto = veces - porM.reduce((t, x) => t + x, 0);
+      if (resto > 0) hayResto = true;
+      cifras = [...porM, Math.max(resto, 0), veces];
     }
-    // medicamentos y otros servicios no traen modalidad en el RIPS
-    if (resto > 0) fila('Sin modalidad (medicamentos y otros servicios)', resto, conMod ? '' : ninos, conMod ? '' : base);
+    f.push([...ubic(g), gr, ...(colCrit ? [esDx ? dxG(gr) : (a.criterio || '')] : []), ...(conBase ? [base] : []),
+      (a.descripciones || []).join(' / '), a.cups_txt || a.codigo, ...cifras, ...(conPac ? [ninos, pct(ninos, base)] : [])]);
   }
+  // si ninguna fila tiene registros sin modalidad, esa columna sobra
+  if (!unaMod && !hayResto && mods.length) {
+    const iSin = f[0].indexOf(SIN_MOD);
+    for (const fila of f) fila.splice(iSin, 1);
+  }
+  const anchosMod = f[0].slice(f[0].indexOf(motor === '3280' || esDx ? 'CUPS' : 'Código') + 1, f[0].length - (conPac ? 2 : 0)).map((c) => (c === 'Modalidad' ? 24 : 13));
   hojaListaFmt(wb, motor === '3280' ? 'Frecuencia actividades' : 'Frecuencia CUPS', f,
-    [22, 18, 19, 30, ...(modTxt ? [24] : []), 34, ...(colCrit ? [22] : []), ...(conBase ? [14] : []), 52, 18, 12, ...(conPac ? [14, 10] : [])],
+    [22, 18, 19, 30, 34, ...(colCrit ? [22] : []), ...(conBase ? [14] : []), 52, 18, ...anchosMod, ...(conPac ? [14, 10] : [])],
     cabecera(`Frecuencia de uso ${FR.tipo === 'TODOS' ? 'toda la EPS' : FR.tipo} — ${MOTOR_TXT[motor] || motor}`, NOTA[motor],
       `${periodoFrec()} (meses de atención con RIPS radicados)`));
   if ((FR.catalogo.diagnosticos || []).length) {

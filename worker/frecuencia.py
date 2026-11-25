@@ -38,7 +38,7 @@ CAMPOS = {
                                "codDiagnosticoRelacionadoE2", "codDiagnosticoRelacionadoE3"]),
 }
 RE_CIE = re.compile(r"^[A-Z]\d{2}[0-9X]?$")
-VERSION_CACHE = 1
+VERSION_CACHE = 2   # 2: resumen DNT con modalidad
 # tipos de contrato que se cuentan con la matriz 3280 (versión sencilla); TODOS = toda la EPS;
 # los demás, como la Evaluación Cápita Asistencial; un tipo con catálogo cargado usa su catálogo (p. ej. DNT)
 TIPOS_3280 = {"PMS", "RCV"}
@@ -180,14 +180,15 @@ class Frecuencia:
 
     # ------------------------------------------------------- lectura de RIPS
     def _resumen(self, ruta):
-        """{svc: {codigo: {paciente: n}}, dxp: {paciente: [dx]}, dxs: {dx: n servicios}} de un soporte (en caché)."""
+        """{svc: {codigo: {paciente: n}}, svcm: {codigo: {modalidad: {paciente: n}}}, dxp: {paciente: [dx]},
+        dxs: {dx: n servicios}} de un soporte (en caché)."""
         st = ruta.stat()
         clave = hashlib.sha1(f"{VERSION_CACHE}|{ruta}|{st.st_mtime_ns}|{st.st_size}".encode()).hexdigest()[:20]
         archivo = self.cache / f"{clave}.json"
         if archivo.exists():
             return json.loads(archivo.read_text(encoding="utf-8"))
         sec = self.rj.leer_plano(self.rj.leer_archivo(ruta))
-        svc, dxp, dxs = {}, {}, {}
+        svc, svcm, dxp, dxs = {}, {}, {}, {}
         for nombre, (campo_cod, campos_dx) in CAMPOS.items():
             lineas = sec.get(nombre, [])
             if not lineas:
@@ -204,18 +205,22 @@ class Frecuencia:
                     if cod:
                         d = svc.setdefault(cod, {})
                         d[pac] = d.get(pac, 0) + 1
+                        mod = self.M.modalidad(reg.get("modalidadGrupoServicioTecSal"))   # consultas y procedimientos
+                        if mod:
+                            dm = svcm.setdefault(cod, {}).setdefault(mod, {})
+                            dm[pac] = dm.get(pac, 0) + 1
                 for cd in campos_dx:
                     dx = _codigo(reg.get(cd))
                     if dx and RE_CIE.match(dx):
                         dxp.setdefault(pac, set()).add(dx)
                         dxs[dx] = dxs.get(dx, 0) + 1
-        out = {"svc": svc, "dxp": {k: sorted(v) for k, v in dxp.items()}, "dxs": dxs,
+        out = {"svc": svc, "svcm": svcm, "dxp": {k: sorted(v) for k, v in dxp.items()}, "dxs": dxs,
                "pacientes": len({l.split(",")[0] + l.split(",")[1] for l in sec.get("USUARIOS", []) if l.count(",") > 2})}
         archivo.write_text(json.dumps(out), encoding="utf-8")
         return out
 
     # -------------------------------------------------------------- cálculo
-    def calcular(self, tipo, anio, meses, regimen, contratos_meta, hist):
+    def calcular(self, tipo, anio, meses, regimen, contratos_meta, hist, modalidad=""):
         """Conteos por actividad/diagnóstico para TOTAL, departamento, municipio y contrato."""
         tipo = tipo.upper()
         cat = self.catalogo().get(tipo)
@@ -228,7 +233,8 @@ class Frecuencia:
         cods = {c for _, c in acts}
         contratos = {c["contrato"]: c for c in contratos_meta if c["contrato"].upper().startswith(tipo + "-")}
         # grupos: clave → acumuladores (pacientes como conjuntos para no contar dos veces)
-        grupos = {}
+        grupos, mods = {}, {}
+        modalidad = modalidad if modalidad in self.M.MODALIDADES else ""
 
         def g(nivel, nombre):
             k = (nivel, nombre)
@@ -274,7 +280,15 @@ class Frecuencia:
                                 G["pac_grupo"].setdefault(gr, set()).add(pref + p)
                             for gr, cod in acts:
                                 k = f"{gr}|{cod}"
-                                for p, n in R["svc"].get(cod, {}).items():
+                                # con una modalidad elegida, solo los registros de esa modalidad
+                                fuente_cod = (R.get("svcm", {}).get(cod, {}).get(modalidad, {}) if modalidad
+                                              else R["svc"].get(cod, {}))
+                                if G["nivel"] == "total" and not modalidad:   # marca: veces por modalidad (total)
+                                    for mod, dm in R.get("svcm", {}).get(cod, {}).items():
+                                        acc = mods.setdefault(k, {}).setdefault(mod, [0, 0, 0, 0])
+                                        acc[2] += sum(dm.values())
+                                        acc[0] += sum(n for p, n in dm.items() if grupo_de.get(p) == gr)
+                                for p, n in fuente_cod.items():
                                     G["svc"][k] = G["svc"].get(k, 0) + n            # todos los pacientes
                                     G["pac"].setdefault(k, set()).add(pref + p)
                                     if grupo_de.get(p) == gr:                      # pacientes de ese grupo
@@ -306,6 +320,7 @@ class Frecuencia:
                 c = contratos.get(s["nombre"], {})
                 s["prestador"], s["municipio"] = c.get("prestador", ""), c.get("municipio", "")
         return {"tipo": tipo, "anio": anio, "meses": meses, "regimen": regimen or "RS+RC",
+                "modalidad": modalidad, "modalidades": self.M.MODALIDADES, "mods": mods,
                 "catalogo": {"grupos": orden_g, **{k: cat.get(k) for k in ("actividades", "sin_codigo", "diagnosticos", "actualizado", "por")}},
                 "grupos": salida, "contratos_tipo": len(contratos), "meses_datos": sorted(meses_con)}
 
@@ -345,7 +360,7 @@ class Frecuencia:
         """Resultado listo o, si falta calcular contratos, {'calculando': True, 'hechos', 'total'} (se calcula aparte)."""
         motor = self.motor_de(tipo)
         if motor == "dx":
-            res = self.calcular(tipo, anio, meses, regimen, contratos_meta, hist)
+            res = self.calcular(tipo, anio, meses, regimen, contratos_meta, hist, modalidad=modalidad)
             res["motor"] = "dx"
             return res
         t = tipo.upper()
