@@ -26,6 +26,7 @@ Usuarios ─► radicacion.vercel.app ─► api/*.js (Vercel, con WORKER_TOKEN)
 | Usuarios del tablero | `bot/worker_datos/usuarios.json` (claves con scrypt, permisos 600) |
 | Cola de consultas | `bot/worker_datos/consultas.db` |
 | Seguridad | `bot/worker_datos/seguridad.db` (eventos 90 días, IP conocidas, avisos enviados) |
+| Liquidación LMA | `bot/worker_datos/liquidacion.db` (prefacturas, filas por contrato, búsquedas, corridas) y `bot/descargas/prefacturas/<n.º>.xlsx` (Excel del SIE) |
 | Servicio | `systemctl status radicacion-worker` · logs `journalctl -u radicacion-worker -f` |
 | nginx | `/etc/nginx/sites-available/radicacion` (puerto 8443, cert de evaluador3280) |
 
@@ -63,6 +64,7 @@ correo de prueba y solo guarda si llegó.
 | `GET/PUT /usuarios` | Usuarios del tablero |
 | `GET /monitor` | Memoria, disco, CPU, servicios, cola, almacenamiento y seguridad |
 | `GET /duplicados`, `GET /duplicados/excel` | Análisis de facturas duplicadas |
+| `GET /liquidacion?anio=`, `POST /liquidacion/actualizar`, `GET /consultas?tipo=liquidacion` | Liquidación LMA: JSON de la pestaña (última prefactura por contrato, régimen y mes), poner en cola el bot `bot/liquidacion.py` y ver sus corridas |
 | `GET /frecuencia`, `GET /frecuencia/catalogo`, `PUT /frecuencia/catalogo/{tipo}` | Frecuencia de uso (catálogo en `worker_datos/frecuencia_catalogo.json`). Si falta calcular responde `{calculando, hechos, total}` y lo calcula aparte (`worker/frecuencia_job.py` con los motores de `worker/motores.py`); cachés en `worker_datos/frecuencia_cache/` (`r_*` por RIPS, `c_*` por contrato) |
 | `POST /seguridad/evento`, `GET /seguridad/estado`, `GET /seguridad`, `POST /seguridad/prueba` | Registro, bloqueos y alertas |
 
@@ -84,9 +86,24 @@ Los nombres de CUPS de las pantallas asistencial, medicamentos y TODOS salen de
 TODOS usan `worker/config/cups_nombres_web.json` (tabla CUPSRips de SISPRO). `GET /frecuencia` acepta
 `modalidad=01…09` (modalidadGrupoServicioTecSal).
 
+## Liquidación LMA
+`bot/liquidacion.py` (Playwright) entra a Gestión de Sistema Financiero → Prefactura con el mismo usuario del
+bot, busca cada contrato del listado (`#cmdBuscar`, vuelve a la primera página del paginador, recorre todas) y
+descarga cada prefactura **una vez por corrida** con la impresora (`button:has(.fa-print)`); en cada corrida
+se vuelven a bajar todas, para tener los valores que hoy tiene el SIE. `bot/liquidacion_datos.py` (sin
+Playwright) lee el Excel, guarda en `liquidacion.db` y arma el JSON: por contrato, régimen y mes la
+prefactura de consecutivo más alto (regla del usuario: siempre la última). Corre como trabajo
+`tipo='liquidacion'` en la misma cola de `consultas.db`, con los mismos reintentos.
+
+```bash
+cd /opt/radicacion/bot && .venv/bin/python liquidacion.py --oculto --contratos worker_datos/contratos.json --solo PMS-44001-2026-30
+.venv/bin/python tests/test_liquidacion_datos.py      # pruebas sin SIE
+```
+
 ## Consultas programadas y reintentos
 - `radicacion-programada.timer` lanza una consulta completa (todos los contratos, RS y RC,
-  enero → mes actual) a las **12:00 m y 12:00 a. m. hora Colombia**, como usuario `programada`.
+  enero → mes actual) a las **12:00 m y 12:00 a. m. hora Colombia**, como usuario `programada`, y
+  después pone en cola la actualización de la **liquidación LMA** (todos los contratos, RS y RC).
 - Si una consulta falla, el worker crea un **reintento** en cola (5, 10, 20, 30 min y luego cada
   hora; máximo 10 intentos; si el error es de inicio de sesión espera mínimo 30 min). Se omite si
   otra consulta igual ya terminó bien. Lanzar una consulta igual adelanta el reintento.

@@ -6,7 +6,9 @@
 //   GET /api/frecuencia-cursos?tipo&anio&meses&regimen → hoja de curso de vida y oportunidad (ver_reporte)
 //   GET /api/frecuencia-catalogo      → catálogos de CUPS/diagnósticos por tipo de contrato (ver_reporte)
 //   PUT /api/frecuencia-catalogo?tipo=DNT {actividades, diagnosticos} → cargar catálogo (admin_usuarios)
-// (vercel.json reescribe /api/frecuencia y /api/frecuencia-catalogo hacia aquí con ?accion=…)
+//   GET  /api/liquidacion?anio        → liquidación LMA por contrato, régimen y mes (ver_reporte)
+//   POST /api/liquidacion {anio, contratos} → actualizar desde el SIE: pone en cola el bot de prefacturas (consultar_sie)
+// (vercel.json reescribe /api/frecuencia, /api/frecuencia-catalogo y /api/liquidacion hacia aquí con ?accion=…)
 import { worker } from './_auth.js';
 import { requiere } from './_usuarios.js';
 
@@ -45,12 +47,31 @@ async function catalogo(req, res) {
   return json(res, r, await r.text());
 }
 
+// liquidación LMA: prefacturas de cápita del SIE (la última por contrato, mes y régimen)
+async function liquidacion(req, res) {
+  if (req.method === 'POST') {
+    const ctx = await requiere(req, res, 'consultar_sie');
+    if (!ctx) return;
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const contratos = Array.isArray(body.contratos) ? body.contratos.map(String).slice(0, 1000) : [];
+    const r = await worker('/liquidacion/actualizar', {
+      method: 'POST', body: JSON.stringify({ anio: +body.anio || new Date().getFullYear(), contratos, usuario: ctx.yo.usuario }),
+    });
+    return json(res, r, await r.text());
+  }
+  if (!(await requiere(req, res, 'ver_reporte'))) return;
+  const anio = String(req.query.anio || new Date().getFullYear()).replace(/\D/g, '').slice(0, 4);
+  const r = await worker('/liquidacion?' + new URLSearchParams({ anio }), { signal: AbortSignal.timeout(55000) });
+  return json(res, r, await r.text());
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   try {
     if (req.query.accion === 'frecuencia') return await frecuencia(req, res);
     if (req.query.accion === 'catalogo') return await catalogo(req, res);
     if (req.query.accion === 'cursos') return await cursos(req, res);
+    if (req.query.accion === 'liquidacion') return await liquidacion(req, res);
     const excel = req.query.excel === '1';
     if (!(await requiere(req, res, excel ? 'descargar_rips' : 'ver_reporte'))) return;
     const r = await worker(excel ? '/duplicados/excel' : '/duplicados', { signal: AbortSignal.timeout(55000) });

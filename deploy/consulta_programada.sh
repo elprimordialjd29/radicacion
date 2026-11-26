@@ -1,5 +1,6 @@
 #!/bin/bash
 # Consulta automática (la lanza radicacion-programada.timer a las 12:00 m y 12:00 a. m. hora Colombia).
+# Después de la radicación pone en cola la actualización de la liquidación LMA.
 # Todos los contratos · RS y RC · meses de enero al mes actual del año en curso (hora Colombia).
 # Entra a la misma cola del worker: se ve en el dashboard como usuario "programada".
 set -euo pipefail
@@ -11,4 +12,9 @@ MESES=$(seq -s, 1 "$MES")
 curl -fsS -H "x-token: $TOKEN" -H "Content-Type: application/json" \
   -d "{\"anio\": $ANIO, \"meses\": [$MESES], \"contratos\": [], \"regimenes\": [\"RS\",\"RC\"], \"usuario\": \"programada\"}" \
   http://127.0.0.1:8092/consultas
+echo
+# Liquidación LMA (prefacturas de cápita, siempre RS y RC): entra a la misma cola y corre después de la radicación
+curl -fsS -H "x-token: $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"anio\": $ANIO, \"contratos\": [], \"usuario\": \"programada\"}" \
+  http://127.0.0.1:8092/liquidacion/actualizar
 echo

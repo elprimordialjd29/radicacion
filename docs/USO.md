@@ -66,6 +66,26 @@ misma hoja o en otra, CIE-10 · GRUPO), o pegar desde Excel: actividades (GRUPO 
 varios CUPS en una celda separados por coma o punto y coma) y diagnósticos (CIE-10 · GRUPO, con el
 mismo nombre de grupo). Reemplaza el catálogo anterior de ese tipo.
 
+### Liquidación LMA (permiso «Ver reporte»)
+Lo que el SIE liquidó a cada contrato por cápita, mes a mes, sacado de **Gestión de Sistema Financiero →
+Ordenes de Pago → Prefactura** (Excel del ícono de la impresora). Usa los filtros de arriba (año, régimen,
+tipo, municipio, buscador y meses).
+
+- **Regla: siempre la última.** Por contrato, mes y régimen vale la prefactura de número más alto que trae
+  ese contrato, aunque se haya hecho meses después (un ajuste de marzo hecho en julio reemplaza a marzo) o
+  diga «PRUEBA». Los valores son los del Excel del SIE, sin recalcular.
+- **Liquidación por mes**: valor y afiliados por régimen (RS / RC) y la prefactura usada. «↻» = hubo
+  liquidaciones anteriores de ese mes. Clic en un valor: detalle por concepto (curso de vida, ruta o
+  servicio) y las liquidaciones anteriores con su diferencia. Algunos contratos traen solo el TOTAL.
+- **Prefacturas**: las prefacturas de los contratos filtrados, cuáles se usan y cuáles quedaron reemplazadas.
+- **Revisar**: contratos sin liquidación, avisos de la última actualización y prefacturas con mes o
+  régimen dudosos o que ya no salen en el SIE.
+- **⬇ Excel (Subsidiado y Contributivo)**: una hoja por régimen, una fila por contrato y mes con las columnas
+  del Excel del SIE y el total al final.
+- **🔄 Actualizar desde el SIE** (permiso «Lanzar consultas al SIE»): todos los contratos o los filtrados;
+  siempre los dos regímenes. Tarda unos 25 minutos con todos. También corre sola cada 12 horas, después de
+  la consulta programada de radicación.
+
 ### Servidor (solo administradores)
 Memoria, disco, CPU, servicios, cola de consultas, almacenamiento y **Seguridad** (intentos sin
 permiso, bloqueos, estado del correo de alertas).

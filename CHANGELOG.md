@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.17.0 — 2026-11-26
+- **Nueva pestaña «💵 Liquidación LMA»** (al lado de Frecuencia de uso, permiso «Ver reporte»), con el
+  estilo del Tablero: indicadores, valor liquidado por mes, última actualización, tarjeta «🔄 Actualizar
+  desde el SIE» (los dos regímenes siempre marcados) y pestañas Liquidación por mes · Prefacturas · Revisar.
+- **Bot nuevo `bot/liquidacion.py`**: entra al SIE → Gestión de Sistema Financiero → Ordenes de Pago →
+  **Prefactura**, busca cada contrato del listado, recorre todas las páginas y descarga cada prefactura con el
+  **ícono de la impresora** (Excel «estadistica.xlsx»: una fila por contrato con TOTAL, AFILIADOS y el valor
+  por curso de vida, ruta o servicio). Solo consulta y descarga: no cambia nada en el SIE.
+- **Siempre la última**: por contrato, mes y régimen vale la prefactura de número más alto que trae ese
+  contrato, aunque sea un ajuste hecho meses después (p. ej. marzo reliquidado en julio) o una «PRUEBA».
+  Cada Excel descargado actualiza **todos** los contratos que trae (hay liquidaciones múltiples: partes,
+  reliquidaciones, liquidaciones de un solo contrato). Las anteriores quedan como historial (↻ en la celda).
+- **Valores tal cual del Excel del SIE** (sin recalcular ni redondear). Mes: el nombre del mes de la
+  descripción (las fechas a veces están mal); régimen: SUBSIDIADO → RS, CONTRIBUTIVO → RC.
+- Control en cada corrida: TOTAL = suma de los conceptos (cuando el Excel trae detalle) y cada prefactura
+  trae los contratos con que se encontró; lo que no cuadre queda en «Revisar». Una prefactura que ya no sale
+  en el SIE (anulada o reversada) deja de contarse tras una corrida completa.
+- **Excel con una hoja «Subsidiado» y otra «Contributivo»**: una fila por contrato y mes con las columnas del
+  Excel del SIE (NIT, IPS, contrato, TOTAL, AFILIADOS y conceptos) más departamento, mes y prefactura usada;
+  total al final en negrilla.
+- Corre en la **misma cola** de las consultas (una sesión del SIE a la vez): **cada 12 horas** después de la
+  consulta programada (12 m y 12 a. m.) y a mano con «▶ Actualizar desde el SIE» (permiso «Lanzar consultas
+  al SIE»; todos los contratos o los filtrados). Datos aparte en `bot/worker_datos/liquidacion.db` (no toca
+  la radicación). Worker: `GET /liquidacion`, `POST /liquidacion/actualizar`, `GET /consultas?tipo=liquidacion`;
+  Vercel: `/api/liquidacion` (sin funciones nuevas).
+
 ## 0.16.1 — 2026-11-26
 - Hoja «Curso de vida CUPS» **solo con códigos CUPS**: fuera códigos que no son CUPS («0», «000», «00016»…),
   códigos propios (DI, PYM, I1, PM…), los que la tabla CUPS de SISPRO dice que no existen y los medicamentos.

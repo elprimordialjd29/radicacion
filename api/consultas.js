@@ -1,5 +1,6 @@
 // Puente dashboard → worker del servidor (consultas al SIE).
-//   GET  /api/consultas               lista
+//   GET  /api/consultas               lista (radicación)
+//   GET  /api/consultas?tipo=liquidacion   lista de actualizaciones de la liquidación LMA
 //   GET  /api/consultas?id=X          detalle (con log)
 //   POST /api/consultas               nueva {anio, meses, contratos, catalogo}
 //   POST /api/consultas?id=X&accion=cancelar
@@ -9,13 +10,13 @@ import { requiere } from './_usuarios.js';
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   try {
-    const { id, accion } = req.query;
+    const { id, accion, tipo } = req.query;
     // ver la lista: cualquier usuario; lanzar o cancelar: permiso consultar_sie
     const ctx = await requiere(req, res, req.method === 'GET' ? null : 'consultar_sie');
     if (!ctx) return;
     let r;
     if (req.method === 'GET') {
-      r = await worker(id ? `/consultas/${encodeURIComponent(id)}` : '/consultas?limit=15');
+      r = await worker(id ? `/consultas/${encodeURIComponent(id)}` : '/consultas?limit=15' + (tipo === 'liquidacion' ? '&tipo=liquidacion' : ''));
     } else if (req.method === 'POST' && id && accion === 'cancelar') {
       r = await worker(`/consultas/${encodeURIComponent(id)}/cancelar`, { method: 'POST' });
     } else if (req.method === 'POST') {

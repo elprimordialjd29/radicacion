@@ -12,6 +12,9 @@ Endpoints (todos exigen el header x-token = WORKER_TOKEN):
   GET  /consultas/{id}            detalle + log
   GET  /consultas/{id}/excel      descarga el Excel generado
   POST /consultas/{id}/cancelar   cancela (en cola o corriendo)
+  GET  /consultas?tipo=liquidacion   actualizaciones de la liquidación LMA (misma cola)
+  GET  /liquidacion?anio=         liquidación LMA por contrato, régimen y mes (prefacturas del SIE)
+  POST /liquidacion/actualizar    pone en cola la actualización desde el SIE (bot/liquidacion.py)
 """
 import io
 import json
@@ -115,6 +118,9 @@ def _iniciar_db():
         for col, tipo in (("intento", "INTEGER DEFAULT 1"), ("reintento_de", "TEXT"), ("no_antes", "TEXT")):
             if col not in cols:
                 con.execute(f"ALTER TABLE consultas ADD COLUMN {col} {tipo}")
+        # tipo de trabajo en la misma cola (una sola sesión del SIE a la vez): radicación o liquidación LMA
+        if "tipo" not in cols:
+            con.execute("ALTER TABLE consultas ADD COLUMN tipo TEXT DEFAULT 'radicacion'")
 
 
 _iniciar_db()
@@ -169,17 +175,29 @@ RE_PROG = re.compile(r"\[(\d+)/(\d+)\]\s+(\S+)")
 RE_TOTAL = re.compile(r"se consultan (\d+)\)")
 
 
+def tipo_de(r):
+    return (r["tipo"] if "tipo" in r.keys() else None) or "radicacion"
+
+
 def ejecutar(r):
     cid = r["id"]
-    args = [PY, "-u", str(BOT / "sie_bot.py")]
-    meses = json.loads(r["meses"])
-    args += [str(m) for m in meses] if meses else ["--todos"]
-    args += ["--anio", str(r["anio"]), "--oculto", "--contratos", str(CATALOGO)]
     contratos = json.loads(r["contratos"])
-    if contratos:
-        args += ["--solo", *contratos]
-    # el modo rápido (sin soportes) se retiró del tablero: siempre se descargan los soportes
-    args += ["--regimen", r["regimenes"] or "RS,RC"]
+    liquidacion = tipo_de(r) == "liquidacion"
+    if liquidacion:
+        # liquidación LMA: prefacturas del SIE (Gestión de Sistema Financiero), siempre RS y RC
+        args = [PY, "-u", str(BOT / "liquidacion.py"), "--anio", str(r["anio"]), "--oculto",
+                "--contratos", str(CATALOGO)]
+        if contratos:
+            args += ["--solo", *contratos]
+    else:
+        args = [PY, "-u", str(BOT / "sie_bot.py")]
+        meses = json.loads(r["meses"])
+        args += [str(m) for m in meses] if meses else ["--todos"]
+        args += ["--anio", str(r["anio"]), "--oculto", "--contratos", str(CATALOGO)]
+        if contratos:
+            args += ["--solo", *contratos]
+        # el modo rápido (sin soportes) se retiró del tablero: siempre se descargan los soportes
+        args += ["--regimen", r["regimenes"] or "RS,RC"]
 
     actualizar(cid, estado="corriendo", inicio=ahora())
     log, excel = [], None
@@ -206,6 +224,9 @@ def ejecutar(r):
                log="\n".join(log[-400:]))
     if not cancelada and code != 0:
         programar_reintento(cid, log)
+    if liquidacion:
+        _LIQ_CACHE.clear()
+        return
     try:   # deja listo el análisis de duplicados con los datos nuevos
         _duplicados(esperar=True)
     except Exception:
@@ -248,9 +269,9 @@ def programar_reintento(cid, log):
     nuevo = uuid.uuid4().hex[:10]
     with _lock, db() as con:
         con.execute("INSERT INTO consultas (id, creada, usuario, anio, meses, contratos, sin_soportes, estado, total, "
-                    "hechos, regimenes, intento, reintento_de, no_antes) VALUES (?,?,?,?,?,?,0,'en_cola',0,0,?,?,?,?)",
+                    "hechos, regimenes, intento, reintento_de, no_antes, tipo) VALUES (?,?,?,?,?,?,0,'en_cola',0,0,?,?,?,?,?)",
                     (nuevo, ahora(), r["usuario"], r["anio"], r["meses"], r["contratos"], r["regimenes"],
-                     intento + 1, r["reintento_de"] or cid, cuando.isoformat(timespec="seconds")))
+                     intento + 1, r["reintento_de"] or cid, cuando.isoformat(timespec="seconds"), tipo_de(r)))
     actualizar(cid, resumen=f"Reintento automático #{intento + 1} programado para las "
                             f"{cuando.strftime('%I:%M %p')}. Error: {motivo}")
     if login and intento == 1:   # el usuario del SIE necesita atención de una persona: avisar una vez
@@ -263,7 +284,8 @@ def programar_reintento(cid, log):
 def _hay_exito_posterior(r):
     # si después de la falla otra consulta igual ya terminó bien (p. ej. la programada), el reintento sobra
     return q1("SELECT 1 FROM consultas WHERE estado='terminada' AND anio=? AND meses=? AND contratos=? "
-              "AND regimenes=? AND creada>?", (r["anio"], r["meses"], r["contratos"], r["regimenes"], r["creada"]))
+              "AND regimenes=? AND creada>? AND COALESCE(tipo,'radicacion')=?",
+              (r["anio"], r["meses"], r["contratos"], r["regimenes"], r["creada"], tipo_de(r)))
 
 
 def bucle():
@@ -484,9 +506,11 @@ def salud(x_token: str = Header("")):
 
 
 @app.get("/consultas")
-def listar(limit: int = 20, x_token: str = Header("")):
+def listar(limit: int = 20, tipo: str = "radicacion", x_token: str = Header("")):
     auth(x_token)
-    rs = qall("SELECT * FROM consultas ORDER BY creada DESC LIMIT ?", (min(limit, 100),))
+    tipo = "liquidacion" if tipo == "liquidacion" else "radicacion"
+    rs = qall("SELECT * FROM consultas WHERE COALESCE(tipo,'radicacion')=? ORDER BY creada DESC LIMIT ?",
+              (tipo, min(limit, 100)))
     return [fila(r) for r in rs]
 
 
@@ -508,7 +532,7 @@ def crear(c: NuevaConsulta, x_token: str = Header("")):
     if desconocidos:
         raise HTTPException(400, f"Contratos que no están en el listado: {desconocidos[:5]}")
     activa = q1("SELECT id FROM consultas WHERE estado IN ('en_cola','corriendo') AND anio=? "
-                          "AND meses=? AND contratos=? AND regimenes=?",
+                          "AND meses=? AND contratos=? AND regimenes=? AND COALESCE(tipo,'radicacion')='radicacion'",
                           (c.anio, json.dumps(sorted(c.meses)), json.dumps(sorted(c.contratos)),
                            ",".join(regs)))
     if activa:
@@ -561,6 +585,64 @@ def cancelar(cid: str, x_token: str = Header("")):
         actualizar(cid, estado="cancelando")
         _proceso["popen"].terminate()
     return {"ok": True}
+
+
+# ------------------------------------------------------------------ liquidación LMA
+# Prefacturas de cápita del SIE (Gestión de Sistema Financiero > Prefactura). El bot liquidacion.py corre en la
+# MISMA cola que las consultas de radicación (tipo='liquidacion'): nunca hay dos sesiones del SIE a la vez.
+import liquidacion_datos as LIQ  # noqa: E402  (sin Playwright)
+
+_LIQ_CACHE = {}
+
+
+class NuevaLiquidacion(BaseModel):
+    anio: int = Field(ge=2020, le=2100)
+    contratos: List[str] = []          # vacío = todos los del catálogo
+    usuario: str = "desconocido"
+
+
+@app.get("/liquidacion")
+def liquidacion(anio: int, x_token: str = Header("")):
+    """Por contrato, régimen y mes: la última prefactura que lo trae, con los valores tal cual del Excel del SIE."""
+    auth(x_token)
+    if not LIQ.DB.exists():
+        return {"anio": anio, "corrida": None, "conceptos": [], "pref": {}, "liq": {}, "info": {}, "sin": [],
+                "vacio": True, "generado": ahora()}
+    marca = (anio, LIQ.DB.stat().st_mtime, CATALOGO.stat().st_mtime if CATALOGO.exists() else 0)
+    if _LIQ_CACHE.get("marca") != marca:
+        meta = json.loads(CATALOGO.read_text(encoding="utf-8")) if CATALOGO.exists() else []
+        with closing(LIQ.abrir(LIQ.DB)) as con:
+            datos = LIQ.armar(con, meta, anio)
+        datos["generado"] = ahora()
+        _LIQ_CACHE.clear()
+        _LIQ_CACHE.update(marca=marca, datos=datos)
+    return _LIQ_CACHE["datos"]
+
+
+@app.post("/liquidacion/actualizar")
+def liquidacion_actualizar(c: NuevaLiquidacion, x_token: str = Header("")):
+    """Pone en cola la actualización desde el SIE (todos los contratos o los indicados; siempre RS y RC)."""
+    auth(x_token)
+    if not CATALOGO.exists():
+        raise HTTPException(400, "No hay listado de contratos en el servidor")
+    validos = {x["contrato"] for x in json.loads(CATALOGO.read_text(encoding="utf-8"))}
+    desconocidos = [x for x in c.contratos if x not in validos]
+    if desconocidos:
+        raise HTTPException(400, f"Contratos que no están en el listado: {desconocidos[:5]}")
+    contratos = json.dumps(sorted(set(c.contratos)))
+    activa = q1("SELECT id FROM consultas WHERE estado IN ('en_cola','corriendo') AND tipo='liquidacion' "
+                "AND contratos=?", (contratos,))
+    if activa:
+        actualizar(activa["id"], no_antes=None)
+        _hay_trabajo.set()
+        return {"id": activa["id"], "duplicada": True}
+    cid = uuid.uuid4().hex[:10]
+    with _lock, db() as con:
+        con.execute("INSERT INTO consultas (id, creada, usuario, anio, meses, contratos, sin_soportes, estado, total, "
+                    "hechos, regimenes, tipo) VALUES (?,?,?,?,?,?,0,'en_cola',?,0,'RC,RS','liquidacion')",
+                    (cid, ahora(), c.usuario[:60], c.anio, "[]", contratos, len(set(c.contratos)) or len(validos)))
+    _hay_trabajo.set()
+    return {"id": cid}
 
 
 # ------------------------------------------------------------------ RIPS

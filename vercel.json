@@ -29,6 +29,10 @@
     {
       "source": "/api/frecuencia-cursos",
       "destination": "/api/duplicados?accion=cursos"
+    },
+    {
+      "source": "/api/liquidacion",
+      "destination": "/api/duplicados?accion=liquidacion"
     }
   ],
   "headers": [

@@ -6,6 +6,8 @@
 | `bot/sie_bot.py` | Automatización Playwright del SIE: consulta, descarga de soportes, periodo, Excel, publicación |
 | `bot/rips_json.py` | Plano del SIE → JSON Res. 2275 (`convertir`) y unión de varios meses (`unir_planos`) |
 | `bot/duplicados.py` | Análisis de facturas duplicadas (proceso aparte) |
+| `bot/liquidacion.py` | Playwright: Prefactura del SIE (Gestión de Sistema Financiero), descarga con la impresora |
+| `bot/liquidacion_datos.py` | Liquidación LMA sin Playwright: lee el Excel, guarda en `worker_datos/liquidacion.db`, arma el JSON (siempre la última prefactura) |
 | `bot/historial.db` | SQLite: `registros`, `consultas`, `corridas`, `migraciones` (no versionado) |
 | `bot/descargas/soportes/<contrato>/` | Soportes RIPS tal como los entrega el SIE (no versionados) |
 | `worker/app.py` | API FastAPI del VPS: cola de consultas, RIPS, datos, usuarios, monitor, duplicados, seguridad |
