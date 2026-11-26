@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.1 — 2026-11-26
+- Hoja «Curso de vida CUPS» **solo con códigos CUPS**: fuera códigos que no son CUPS («0», «000», «00016»…),
+  códigos propios (DI, PYM, I1, PM…), los que la tabla CUPS de SISPRO dice que no existen y los medicamentos.
+  Un código cuenta como CUPS si tiene 6 caracteres y es numérico o está en la tabla oficial de SISPRO o en las
+  matrices.
+- Se quita la hoja de resumen «Curso de vida» (repetía lo de «Curso de vida CUPS»).
+
 ## 0.16.0 — 2026-11-26
 - **Excel de frecuencia: hojas «Curso de vida» y «Curso de vida CUPS»** (todas las categorías, también DNT,
   medicamentos y TODOS). Cada registro del RIPS va al curso de vida del usuario según su edad a la fecha de

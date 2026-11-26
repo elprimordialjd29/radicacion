@@ -377,7 +377,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.16.0</div>
+          <div class="usr-ver">Radicación cápita · v0.16.1</div>
         </div>
       </div>
     </div>
@@ -1795,12 +1795,7 @@ async function exportarFrecuenciaExcel() {
   if (cvR && !cvR.calculando && cvR.resumen) {
     const C = cvR.contratos, CV = cvR.cursos || {}, ub = (i) => [C[i][3], C[i][2], C[i][0], C[i][1]];
     const per = `${periodoFrec()} (meses de atención con RIPS radicados)`;
-    const notaCv = 'Curso de vida: edad del usuario a la fecha de cada atención (fecha de nacimiento del RIPS). Cantidad de CUPS: códigos distintos que recibió ese curso de vida. Veces: registros del RIPS (cada atención cuenta). Medicamentos: registros de dispensación (no son CUPS). Oportunidad: días entre la fecha de la atención y la radicación de su factura en el SIE (promedio, mínimo y máximo).';
-    const h1 = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Curso de vida', 'Usuarios atendidos', 'Cantidad de CUPS (códigos distintos)',
-      'Veces (CUPS)', 'Medicamentos (registros)', 'Oportunidad promedio (días)', 'Oportunidad mínima (días)', 'Oportunidad máxima (días)']];
-    for (const r of cvR.resumen) h1.push([...ub(r[0]), CV[r[1]] || r[1], r[2], r[3], r[4], r[5], r[6] ?? '', r[7] ?? '', r[8] ?? '']);
-    hojaListaFmt(wb, 'Curso de vida', h1, [22, 18, 19, 30, 30, 12, 14, 12, 14, 14, 13, 13],
-      cabecera(`Curso de vida y oportunidad — ${FR.tipo === 'TODOS' ? 'toda la EPS' : FR.tipo}`, notaCv, per));
+    const notaCv = 'Solo códigos CUPS (sin medicamentos ni códigos propios como DI, PYM o I1). Curso de vida: edad del usuario a la fecha de cada atención (fecha de nacimiento del RIPS). Veces: registros del RIPS (cada atención cuenta). Oportunidad: días entre la fecha de la atención y la radicación de su factura en el SIE (promedio, mínimo y máximo). La cantidad de CUPS de un curso de vida es el número de filas al filtrar contrato y curso de vida.';
     const h2 = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Curso de vida', 'CUPS', 'Descripción', 'Veces',
       'Oportunidad promedio (días)', 'Oportunidad mínima (días)', 'Oportunidad máxima (días)']];
     for (const d of cvR.detalle) h2.push([...ub(d[0]), CV[d[1]] || d[1], d[2], (cvR.nombres || {})[d[2]] || '', d[3], d[4] ?? '', d[5] ?? '', d[6] ?? '']);

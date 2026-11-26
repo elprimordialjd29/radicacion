@@ -423,6 +423,8 @@ class Frecuencia:
                 resumen.append([ci, cv, r.get("pcv", {}).get(cv, 0), len(cs), sum(a[0] for a in cs.values()),
                                 med[0] if med else 0, *dias(tot)])
                 for cod, a in sorted(cs.items(), key=lambda x: -x[1][0]):
+                    if not M.es_cups(cod):   # la hoja es de CUPS: fuera códigos propios, basura y medicamentos
+                        continue
                     detalle.append([ci, cv, cod, a[0], *dias(a)])
                     cods.add(cod)
         nom_cat = {}

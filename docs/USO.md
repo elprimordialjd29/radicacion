@@ -51,10 +51,9 @@ reportó y, debajo, pacientes distintos y % del grupo. El selector dice cómo se
 
 Solo se muestran las actividades con registros (no salen filas vacías); con «Contar en todos los
 pacientes» aparecen también las que solo tienen registros fuera del grupo.
-**Curso de vida y oportunidad**: el Excel trae las hojas «Curso de vida» (por contrato y curso de vida:
-usuarios, cantidad de CUPS distintos, veces, medicamentos y oportunidad = días entre la atención y la
-radicación de la factura en el SIE) y «Curso de vida CUPS» (el detalle por CUPS). La edad es la del usuario a
-la fecha de cada atención.
+**Curso de vida y oportunidad**: el Excel trae la hoja «Curso de vida CUPS»: por contrato, curso de vida y
+CUPS (solo códigos CUPS), las veces y la oportunidad = días entre la atención y la radicación de la factura en
+el SIE (promedio, mínimo, máximo). La edad es la del usuario a la fecha de cada atención.
 **Modalidad** (PMS, RCV, asistenciales y TODOS): debajo de cada actividad, en gris, cuántas veces se hizo en
 cada modalidad (Intramural, Extramural unidad móvil, domiciliaria, jornada de salud, Telemedicina…); el
 selector «Todas las modalidades» deja ver una sola (solo consultas y procedimientos traen modalidad).

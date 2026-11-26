@@ -667,6 +667,16 @@ def resumen_cv(ruta):
     return {"c": c, "m": m, "p": {k: sorted(v) for k, v in p.items()}, "n": nom}
 
 
+def es_cups(cod):
+    """¿Es un código CUPS? 6 caracteres, que no sea solo ceros ni esté entre los que la tabla CUPS de SISPRO dice que
+    no existen, y que sea numérico o esté en la tabla oficial (SISPRO) o en las matrices (mapa asistencial, archivos
+    de la EPS). Deja por fuera códigos propios (DI…, PYM…, I1…, PM…), basura («0», «00016») y medicamentos."""
+    c = str(cod or "").strip().upper()
+    if not re.fullmatch(r"[0-9A-Z]{6}", c) or set(c) == {"0"} or c in CUPS_NO_EXISTEN:
+        return False
+    return c.isdigit() or c in CUPS_NOMBRES_WEB or c in CUPS_NOMBRES or c in CUPS_TIPO
+
+
 _RAD = {}
 
 
