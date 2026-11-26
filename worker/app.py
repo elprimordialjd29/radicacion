@@ -415,8 +415,15 @@ def frecuencia_guardar(tipo: str, c: CatalogoFrec, x_token: str = Header("")):
         raise HTTPException(400, str(e))
 
 
+@app.get("/frecuencia/cursos")
+def frecuencia_cursos(tipo: str, anio: int, meses: str, regimen: str = "", x_token: str = Header("")):
+    """Hoja de curso de vida y oportunidad (días atención → radicación) del Excel de frecuencia."""
+    return frecuencia(tipo, anio, meses, regimen, "", x_token, motor="cv")
+
+
 @app.get("/frecuencia")
-def frecuencia(tipo: str, anio: int, meses: str, regimen: str = "", modalidad: str = "", x_token: str = Header("")):
+def frecuencia(tipo: str, anio: int, meses: str, regimen: str = "", modalidad: str = "", x_token: str = Header(""),
+               motor: str = ""):
     auth(x_token)
     try:
         lista = sorted({int(m) for m in meses.split(",") if m.strip()})
@@ -429,7 +436,8 @@ def frecuencia(tipo: str, anio: int, meses: str, regimen: str = "", modalidad: s
     if not hist.exists():
         raise HTTPException(404, "Sin historial")
     meta = json.loads(CATALOGO.read_text(encoding="utf-8")) if CATALOGO.exists() else []
-    return FREC.solicitar(tipo, anio, lista, regimen, meta, hist, modalidad=modalidad.strip())
+    return FREC.solicitar(tipo, anio, lista, regimen, meta, hist, modalidad=modalidad.strip(),
+                          motor="cv" if motor == "cv" else None)
 
 
 def _meses_activos(anio):
@@ -462,6 +470,7 @@ def precalentar_frecuencia():
         for t in tipos:
             if FREC.motor_de(t) != "dx":
                 FREC.solicitar(t, anio, meses, "", meta, BOT / "historial.db")
+            FREC.solicitar(t, anio, meses, "", meta, BOT / "historial.db", motor="cv")   # hoja de curso de vida
     except Exception as e:
         print(f"[frecuencia] no se pudo precalcular: {e}", flush=True)
 

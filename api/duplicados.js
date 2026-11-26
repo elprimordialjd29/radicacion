@@ -3,6 +3,7 @@
 //   GET /api/duplicados?excel=1       → Excel con detalle de servicios repetidos (datos de pacientes:
 //                                        permiso descargar_rips)
 //   GET /api/frecuencia?tipo&anio&meses&regimen&modalidad → frecuencia de uso de CUPS y diagnósticos (ver_reporte)
+//   GET /api/frecuencia-cursos?tipo&anio&meses&regimen → hoja de curso de vida y oportunidad (ver_reporte)
 //   GET /api/frecuencia-catalogo      → catálogos de CUPS/diagnósticos por tipo de contrato (ver_reporte)
 //   PUT /api/frecuencia-catalogo?tipo=DNT {actividades, diagnosticos} → cargar catálogo (admin_usuarios)
 // (vercel.json reescribe /api/frecuencia y /api/frecuencia-catalogo hacia aquí con ?accion=…)
@@ -17,6 +18,14 @@ async function frecuencia(req, res) {
   if (!(await requiere(req, res, 'ver_reporte'))) return;
   const { tipo = '', anio = '', meses = '', regimen = '', modalidad = '' } = req.query;
   const r = await worker('/frecuencia?' + new URLSearchParams({ tipo, anio, meses, regimen, modalidad }), { signal: AbortSignal.timeout(55000) });
+  return json(res, r, await r.text());
+}
+
+// hoja de curso de vida y oportunidad del Excel de frecuencia
+async function cursos(req, res) {
+  if (!(await requiere(req, res, 'ver_reporte'))) return;
+  const { tipo = '', anio = '', meses = '', regimen = '' } = req.query;
+  const r = await worker('/frecuencia/cursos?' + new URLSearchParams({ tipo, anio, meses, regimen }), { signal: AbortSignal.timeout(55000) });
   return json(res, r, await r.text());
 }
 
@@ -41,6 +50,7 @@ export default async function handler(req, res) {
   try {
     if (req.query.accion === 'frecuencia') return await frecuencia(req, res);
     if (req.query.accion === 'catalogo') return await catalogo(req, res);
+    if (req.query.accion === 'cursos') return await cursos(req, res);
     const excel = req.query.excel === '1';
     if (!(await requiere(req, res, excel ? 'descargar_rips' : 'ver_reporte'))) return;
     const r = await worker(excel ? '/duplicados/excel' : '/duplicados', { signal: AbortSignal.timeout(55000) });

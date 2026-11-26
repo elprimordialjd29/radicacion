@@ -25,6 +25,10 @@
     {
       "source": "/api/frecuencia-catalogo",
       "destination": "/api/duplicados?accion=catalogo"
+    },
+    {
+      "source": "/api/frecuencia-cursos",
+      "destination": "/api/duplicados?accion=cursos"
     }
   ],
   "headers": [

@@ -19,7 +19,9 @@ Cada RIPS se resume UNA vez (caché por archivo); el resultado de un contrato ju
 import hashlib
 import json
 import re
+import sqlite3
 import sys
+from datetime import date
 from pathlib import Path
 
 DIR = Path(__file__).resolve().parent
@@ -28,7 +30,7 @@ import rips_json  # noqa: E402
 
 VERSION = 1
 # versión del cálculo por motor (cambiarla invalida solo la caché de ese motor)
-VERSIONES = {"asis": 3, "todos": 5, "3280": 4, "med": 3}
+VERSIONES = {"asis": 3, "todos": 5, "3280": 4, "med": 3, "cv": 2}
 CFG3280 = json.loads((DIR / "config" / "res3280_cups.json").read_text(encoding="utf-8"))
 COR3280 = json.loads((DIR / "config" / "res3280_correcciones.json").read_text(encoding="utf-8"))
 ASIS = json.loads((DIR / "config" / "asistencial_cups.json").read_text(encoding="utf-8"))
@@ -588,8 +590,117 @@ def resumen_3280(ruta):
             "x": extra, "xm": extra_m, "xn": extra_nom}
 
 
+# ══════════════════════════════════════════════════════════════════ CURSO DE VIDA Y OPORTUNIDAD
+# Hoja del Excel de frecuencia: cada registro del RIPS va al curso de vida del usuario (edad a la fecha de esa
+# atención, con la fecha de nacimiento del RIPS) y su oportunidad = días entre la atención y la radicación de la
+# factura en el SIE. Los CUPS van por código; los medicamentos (no son CUPS) se suman aparte.
+CURSOS = [("PRIMERA_INFANCIA", "Primera infancia (0-5 años)"), ("INFANCIA", "Infancia (6-11 años)"),
+          ("ADOLESCENCIA", "Adolescencia (12-17 años)"), ("JOVENES", "Juventud (18-28 años)"),
+          ("ADULTEZ", "Adultez (29-59 años)"), ("VEJEZ", "Vejez (60 años y más)"),
+          ("SIN_EDAD", "Sin edad (sin fecha de nacimiento válida)")]
+_CAMPO_FECHA = {"CONSULTAS": "fechaInicioAtencion", "PROCEDIMIENTOS": "fechaInicioAtencion",
+                "MEDICAMENTOS": "fechaDispensAdmon", "OTROS": "fechaSuministroTecnologia",
+                "HOSPITALIZACION": "fechaInicioAtencion", "URGENCIAS": "fechaEgreso"}
+
+
+def _iso(f):
+    """Fecha del RIPS (AAAA-MM-DD…, DD/MM/AAAA o AAAAMMDD) → 'AAAA-MM-DD' o ''."""
+    f = _fecha_iso(str(f or "").strip().split(" ")[0].split("T")[0])
+    return f if re.fullmatch(r"\d{4}-\d{2}-\d{2}", f or "") else ""
+
+
+def _ordinal(iso):
+    try:
+        return date.fromisoformat(iso).toordinal() if iso else None
+    except ValueError:
+        return None
+
+
+def _acum_fecha(acc, f):
+    """acc = [veces, suma de fechas (ordinal), veces con fecha, fecha mín, fecha máx]."""
+    acc[0] += 1
+    if f:
+        acc[1] += f
+        acc[2] += 1
+        acc[3] = f if acc[3] is None else min(acc[3], f)
+        acc[4] = f if acc[4] is None else max(acc[4], f)
+
+
+def resumen_cv(ruta):
+    """{'c': {curso: {código: acc}}, 'm': {curso: acc de medicamentos}, 'p': {curso: [pacientes]}} de un soporte."""
+    sec = rips_json.leer_plano(rips_json.leer_archivo(ruta))
+    fnac = {}
+    for l in sec.get("USUARIOS", []):
+        cc = rips_json._campos(l)
+        if len(cc) > 3:
+            fnac[f"{cc[0]}{cc[1]}"] = _iso(cc[3])
+    regs, ref, nom = [], "", {}
+    for nombre_sec in ("CONSULTAS", "PROCEDIMIENTOS", "OTROS", "MEDICAMENTOS", "URGENCIAS", "HOSPITALIZACION"):
+        lineas = sec.get(nombre_sec, [])
+        if not lineas or nombre_sec not in rips_json.SERVICIOS:
+            continue
+        _, campos, campo_texto = rips_json.SERVICIOS[nombre_sec]
+        nombres = ["_f", "_t", "_d"] + campos
+        for l in lineas:
+            reg = dict(zip(nombres, rips_json._ajustar(rips_json._campos(l), 3 + len(campos), campo_texto, nombres)))
+            campo = _CAMPO_COD.get(nombre_sec)
+            if nombre_sec == "MEDICAMENTOS":
+                cod = None
+            else:
+                cod = normalizar_codigo(reg.get(campo)) if campo else nombre_sec
+                if not cod:
+                    continue
+                n_rips = (reg.get("nomTecnologiaSalud") or "").strip()
+                if n_rips and cod not in nom:
+                    nom[cod] = n_rips[:120]
+            f = _iso(reg.get(_CAMPO_FECHA.get(nombre_sec, "")))
+            regs.append((f"{reg['_t']}{reg['_d']}", cod, f))
+            ref = max(ref, f)
+    c, m, p = {}, {}, {}
+    for pac, cod, f in regs:
+        nac = fnac.get(pac)
+        cv = (_grupo_cv(_edad(nac, f or ref)) if nac and (f or ref) else None) or "SIN_EDAD"
+        p.setdefault(cv, set()).add(pac)
+        acc = m.setdefault(cv, [0, 0, 0, None, None]) if cod is None else \
+            c.setdefault(cv, {}).setdefault(cod, [0, 0, 0, None, None])
+        _acum_fecha(acc, _ordinal(f))
+    return {"c": c, "m": m, "p": {k: sorted(v) for k, v in p.items()}, "n": nom}
+
+
+_RAD = {}
+
+
+def _radicacion(ruta):
+    """Fecha (ordinal) en que se radicó en el SIE la factura de ese RIPS (Fecha Recepción de su recepción)."""
+    ruta = Path(ruta)
+    rec = ruta.name.split("__")[0]
+    if rec not in _RAD:
+        db = DIR.parent / "bot" / "historial.db"
+        try:
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=30)
+            fila = con.execute("SELECT fecha_recepcion FROM registros WHERE recepcion=? ORDER BY ultima_vez DESC LIMIT 1",
+                               (rec,)).fetchone()
+            con.close()
+        except sqlite3.Error:
+            fila = None
+        f = str(fila[0] if fila else "").strip().replace("/", "-")[:10]
+        _RAD[rec] = _ordinal(f) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", f) else None
+    return _RAD[rec]
+
+
+def _acum_oportunidad(dst, acc, rad):
+    """dst = [veces, suma de días, veces con días, días mín, días máx] con los días = radicación − atención."""
+    dst[0] += acc[0]
+    if rad and acc[2]:
+        dst[1] += acc[2] * rad - acc[1]
+        dst[2] += acc[2]
+        dmin, dmax = rad - acc[4], rad - acc[3]
+        dst[3] = dmin if dst[3] is None else min(dst[3], dmin)
+        dst[4] = dmax if dst[4] is None else max(dst[4], dmax)
+
+
 # ══════════════════════════════════════════════════════════════════ por contrato
-RESUMIDORES = {"asis": resumen_asistencial, "todos": resumen_todos, "3280": resumen_3280}
+RESUMIDORES = {"asis": resumen_asistencial, "todos": resumen_todos, "3280": resumen_3280, "cv": resumen_cv}
 
 
 def resumen_archivo(motor, ruta, cache_dir):
@@ -623,6 +734,22 @@ def resultado_contrato(motor, archivos, cache_dir):
     pg[grupo] = pacientes distintos del grupo; n = nombres; s = sección de cada código;
     mod[modalidad] = {act, pg} solo con los registros de esa modalidad (consultas y procedimientos)."""
     act, pg, nombres, secc, pacientes, por_mod = {}, {}, {}, {}, set(), {}
+    if motor == "cv":   # curso de vida y oportunidad
+        C, MED, P = {}, {}, {}
+        for ruta in archivos:
+            r = resumen_archivo("cv", ruta, cache_dir)
+            rad = _radicacion(ruta)
+            for cv, cods in r["c"].items():
+                for cod, acc in cods.items():
+                    _acum_oportunidad(C.setdefault(cv, {}).setdefault(cod, [0, 0, 0, None, None]), acc, rad)
+            for cv, acc in r["m"].items():
+                _acum_oportunidad(MED.setdefault(cv, [0, 0, 0, None, None]), acc, rad)
+            for cv, lst in r["p"].items():
+                P.setdefault(cv, set()).update(lst)
+                pacientes.update(lst)
+            nombres.update({k: v for k, v in r.get("n", {}).items() if k not in nombres})
+        return {"cv": C, "med": MED, "pcv": {k: len(v) for k, v in P.items()}, "pac": len(pacientes),
+                "arch": len(archivos), "n": nombres}
     if motor == "3280":
         a, t, g, x, am, tm, xm = {}, {}, {}, {}, {}, {}, {}
         for ruta in archivos:

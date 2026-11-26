@@ -377,7 +377,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.15.0</div>
+          <div class="usr-ver">Radicación cápita · v0.16.0</div>
         </div>
       </div>
     </div>
@@ -1780,6 +1780,33 @@ async function exportarFrecuenciaExcel() {
     [22, 18, 19, 30, 34, ...(colCrit ? [22] : []), ...(conBase ? [14] : []), 52, 18, ...anchosMod, ...(conPac ? [14, 10] : [])],
     cabecera(`Frecuencia de uso ${FR.tipo === 'TODOS' ? 'toda la EPS' : FR.tipo} — ${MOTOR_TXT[motor] || motor}`, NOTA[motor],
       `${periodoFrec()} (meses de atención con RIPS radicados)`));
+  // hojas de CURSO DE VIDA y OPORTUNIDAD (todas las categorías): la edad del usuario a la fecha de cada atención
+  // y los días entre la atención y la radicación de su factura en el SIE
+  avisoExcel('⏳ Curso de vida…');
+  let cvR = null;
+  for (let intento = 0; intento < 60; intento++) {
+    const res = await pedirJSON('/api/frecuencia-cursos?' + new URLSearchParams({ tipo: FR.tipo, anio: FR.anio, meses: (FR.meses || []).join(','), regimen: st.reg || '' }));
+    if (!res.r.ok) throw new Error(res.j.error || res.j.detail || res.r.status);
+    cvR = res.j;
+    if (!cvR.calculando) break;
+    avisoExcel(`⏳ Curso de vida ${fmtN(cvR.hechos || 0)}/${fmtN(cvR.total || 0)}…`);
+    await new Promise((ok) => setTimeout(ok, 3000));
+  }
+  if (cvR && !cvR.calculando && cvR.resumen) {
+    const C = cvR.contratos, CV = cvR.cursos || {}, ub = (i) => [C[i][3], C[i][2], C[i][0], C[i][1]];
+    const per = `${periodoFrec()} (meses de atención con RIPS radicados)`;
+    const notaCv = 'Curso de vida: edad del usuario a la fecha de cada atención (fecha de nacimiento del RIPS). Cantidad de CUPS: códigos distintos que recibió ese curso de vida. Veces: registros del RIPS (cada atención cuenta). Medicamentos: registros de dispensación (no son CUPS). Oportunidad: días entre la fecha de la atención y la radicación de su factura en el SIE (promedio, mínimo y máximo).';
+    const h1 = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Curso de vida', 'Usuarios atendidos', 'Cantidad de CUPS (códigos distintos)',
+      'Veces (CUPS)', 'Medicamentos (registros)', 'Oportunidad promedio (días)', 'Oportunidad mínima (días)', 'Oportunidad máxima (días)']];
+    for (const r of cvR.resumen) h1.push([...ub(r[0]), CV[r[1]] || r[1], r[2], r[3], r[4], r[5], r[6] ?? '', r[7] ?? '', r[8] ?? '']);
+    hojaListaFmt(wb, 'Curso de vida', h1, [22, 18, 19, 30, 30, 12, 14, 12, 14, 14, 13, 13],
+      cabecera(`Curso de vida y oportunidad — ${FR.tipo === 'TODOS' ? 'toda la EPS' : FR.tipo}`, notaCv, per));
+    const h2 = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Curso de vida', 'CUPS', 'Descripción', 'Veces',
+      'Oportunidad promedio (días)', 'Oportunidad mínima (días)', 'Oportunidad máxima (días)']];
+    for (const d of cvR.detalle) h2.push([...ub(d[0]), CV[d[1]] || d[1], d[2], (cvR.nombres || {})[d[2]] || '', d[3], d[4] ?? '', d[5] ?? '', d[6] ?? '']);
+    hojaListaFmt(wb, 'Curso de vida CUPS', h2, [22, 18, 19, 30, 30, 12, 52, 10, 14, 13, 13],
+      cabecera(`Curso de vida y oportunidad por CUPS — ${FR.tipo === 'TODOS' ? 'toda la EPS' : FR.tipo}`, notaCv, per));
+  }
   if ((FR.catalogo.diagnosticos || []).length) {
     const d = [['Departamento', 'Municipio', 'Contrato', 'Prestador', 'Grupo', 'CIE-10', 'Niños con el diagnóstico', 'Atenciones']];
     for (const g of filasG) for (const x of FR.catalogo.diagnosticos) { const v = g.diagnosticos[x.codigo] || [0, 0]; d.push([...ubic(g), x.grupo, x.codigo, v[0], v[1]]); }

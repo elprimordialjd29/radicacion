@@ -356,9 +356,10 @@ class Frecuencia:
                         meses_con.add(m)
         return rutas
 
-    def solicitar(self, tipo, anio, meses, regimen, contratos_meta, hist, encolar=True, modalidad=""):
-        """Resultado listo o, si falta calcular contratos, {'calculando': True, 'hechos', 'total'} (se calcula aparte)."""
-        motor = self.motor_de(tipo)
+    def solicitar(self, tipo, anio, meses, regimen, contratos_meta, hist, encolar=True, modalidad="", motor=None):
+        """Resultado listo o, si falta calcular contratos, {'calculando': True, 'hechos', 'total'} (se calcula aparte).
+        motor="cv" → hoja de curso de vida y oportunidad (sirve para cualquier tipo, también DNT y TODOS)."""
+        motor = motor or self.motor_de(tipo)
         if motor == "dx":
             res = self.calcular(tipo, anio, meses, regimen, contratos_meta, hist, modalidad=modalidad)
             res["motor"] = "dx"
@@ -384,9 +385,58 @@ class Frecuencia:
                 self._encolar(motor, faltan)
             return {"tipo": t, "motor": motor, "calculando": True, "total": len(tareas),
                     "hechos": len(tareas) - len(faltan)}
-        res = self._agregar(motor, t, anio, meses, regimen, tareas, modalidad)
+        if motor == "cv":
+            res = self._agregar_cv(t, anio, meses, regimen, tareas)
+        else:
+            res = self._agregar(motor, t, anio, meses, regimen, tareas, modalidad)
         res["meses_datos"] = sorted(meses_con)   # meses de atención que sí tienen RIPS radicados
         return res
+
+    def _agregar_cv(self, tipo, anio, meses, regimen, tareas):
+        """Hoja «curso de vida»: por contrato × curso de vida, usuarios, CUPS distintos, veces y oportunidad (días
+        entre la atención y la radicación de la factura); detalle por CUPS. Listas compactas (respuesta liviana)."""
+        M = self.M
+        contratos, resumen, detalle, cods, nom_rips = [], [], [], set(), {}
+        dias = lambda a: [round(a[1] / a[2], 1) if a[2] else None, a[3], a[4]]   # promedio, mínimo, máximo
+        for c, rutas, out in tareas:
+            if not (rutas and out.exists()):
+                continue
+            r = json.loads(out.read_text(encoding="utf-8"))
+            if r.get("error"):
+                continue
+            nom_rips.update({k: v for k, v in r.get("n", {}).items() if k not in nom_rips})
+            ci = len(contratos)
+            contratos.append([c["contrato"], c.get("prestador", ""), c.get("municipio", ""), departamento(c["contrato"])])
+            for cv, _ in M.CURSOS:
+                cs, med = r.get("cv", {}).get(cv, {}), r.get("med", {}).get(cv)
+                if not cs and not med:
+                    continue
+                tot = [0, 0, 0, None, None]
+                for a in list(cs.values()) + ([med] if med else []):
+                    tot[0] += a[0]
+                    tot[1] += a[1]
+                    tot[2] += a[2]
+                    if a[3] is not None:
+                        tot[3] = a[3] if tot[3] is None else min(tot[3], a[3])
+                        tot[4] = a[4] if tot[4] is None else max(tot[4], a[4])
+                # [contrato, curso, usuarios, CUPS distintos, veces CUPS, veces medicamentos, días prom, mín, máx]
+                resumen.append([ci, cv, r.get("pcv", {}).get(cv, 0), len(cs), sum(a[0] for a in cs.values()),
+                                med[0] if med else 0, *dias(tot)])
+                for cod, a in sorted(cs.items(), key=lambda x: -x[1][0]):
+                    detalle.append([ci, cv, cod, a[0], *dias(a)])
+                    cods.add(cod)
+        nom_cat = {}
+        for cat in self.catalogo().values():
+            for a in cat.get("actividades", []):
+                if a.get("descripciones"):
+                    nom_cat.setdefault(str(a["codigo"]).upper(), a["descripciones"][0])
+        nombres = {k: (M.CUPS_NOMBRES.get(k) or M.NOMBRE_CUPS.get(k) or nom_cat.get(k) or M.CUPS_NOMBRES_WEB.get(k)
+                       or NOMBRES_SECCION.get(k) or nom_rips.get(k)
+                       or ("Código que no existe en la tabla CUPS (SISPRO)" if k in M.CUPS_NO_EXISTEN else M.SIN_NOMBRE))
+                   for k in cods}
+        return {"tipo": tipo, "motor": "cv", "anio": anio, "meses": meses, "regimen": regimen or "RS+RC",
+                "cursos": dict(M.CURSOS), "contratos": contratos, "resumen": resumen, "detalle": detalle,
+                "nombres": nombres}
 
     def _encolar(self, motor, tareas):
         with self._cola_lock:

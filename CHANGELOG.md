@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.16.0 — 2026-11-26
+- **Excel de frecuencia: hojas «Curso de vida» y «Curso de vida CUPS»** (todas las categorías, también DNT,
+  medicamentos y TODOS). Cada registro del RIPS va al curso de vida del usuario según su edad a la fecha de
+  esa atención (fecha de nacimiento del RIPS): primera infancia 0-5, infancia 6-11, adolescencia 12-17,
+  juventud 18-28, adultez 29-59, vejez 60+ (y «sin edad»).
+  - «Curso de vida»: por contrato y curso de vida, usuarios atendidos, **cantidad de CUPS distintos**, veces,
+    medicamentos (registros) y **oportunidad**: días entre la atención y la radicación de su factura en el
+    SIE (promedio, mínimo, máximo).
+  - «Curso de vida CUPS»: el detalle por CUPS con su descripción, veces y oportunidad.
+- Servidor: motor «cv» (worker/motores.py: resumen_cv, en caché por RIPS y contrato), endpoint
+  `GET /frecuencia/cursos` (Vercel: `/api/frecuencia-cursos`), precálculo con los demás.
+
 ## 0.15.0 — 2026-11-25
 - **Modalidad en todas las categorías de la frecuencia de uso**, también **DNT** (catálogo): marca gris por
   CUPS y selector de modalidad. Medicamentos (MD, MDC, MD-RCV) no traen modalidad en el RIPS: van en «Sin
