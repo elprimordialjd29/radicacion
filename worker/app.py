@@ -619,6 +619,17 @@ def liquidacion(anio: int, x_token: str = Header("")):
     return _LIQ_CACHE["datos"]
 
 
+@app.get("/liquidacion/prefactura/{n}")
+def liquidacion_prefactura(n: int, x_token: str = Header("")):
+    """El Excel tal como lo bajó la impresora del SIE (trae todos los contratos de esa prefactura)."""
+    auth(x_token)
+    ruta = LIQ.CARPETA / f"{n}.xlsx"
+    if not ruta.exists():
+        raise HTTPException(404, "Esa prefactura no está descargada")
+    return FileResponse(ruta, filename=f"Prefactura_{n}_SIE.xlsx",
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 @app.post("/liquidacion/actualizar")
 def liquidacion_actualizar(c: NuevaLiquidacion, x_token: str = Header("")):
     """Pone en cola la actualización desde el SIE (todos los contratos o los indicados; siempre RS y RC)."""

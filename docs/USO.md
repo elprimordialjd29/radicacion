@@ -82,6 +82,10 @@ tipo, municipio, buscador y meses).
   régimen dudosos o que ya no salen en el SIE.
 - **⬇ Excel (Subsidiado y Contributivo)**: una hoja por régimen, una fila por contrato y mes con las columnas
   del Excel del SIE y el total al final.
+- **Descargas por contrato** (como los RIPS): **XLS** en cada celda = la liquidación de ese mes y régimen
+  (con las anteriores de ese mes en otra hoja); **⬇ Consolidado** bajo el contrato = todos los meses elegidos
+  en un solo Excel (hoja Subsidiado y hoja Contributivo). En el detalle también está **⬇ Original del SIE**:
+  el Excel de la prefactura tal como lo baja la impresora (trae todos sus contratos).
 - **🔄 Actualizar desde el SIE** (permiso «Lanzar consultas al SIE»): todos los contratos o los filtrados;
   siempre los dos regímenes. Tarda unos 25 minutos con todos. También corre sola cada 12 horas, después de
   la consulta programada de radicación.

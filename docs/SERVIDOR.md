@@ -64,7 +64,7 @@ correo de prueba y solo guarda si llegó.
 | `GET/PUT /usuarios` | Usuarios del tablero |
 | `GET /monitor` | Memoria, disco, CPU, servicios, cola, almacenamiento y seguridad |
 | `GET /duplicados`, `GET /duplicados/excel` | Análisis de facturas duplicadas |
-| `GET /liquidacion?anio=`, `POST /liquidacion/actualizar`, `GET /consultas?tipo=liquidacion` | Liquidación LMA: JSON de la pestaña (última prefactura por contrato, régimen y mes), poner en cola el bot `bot/liquidacion.py` y ver sus corridas |
+| `GET /liquidacion?anio=`, `POST /liquidacion/actualizar`, `GET /consultas?tipo=liquidacion`, `GET /liquidacion/prefactura/{n}` | Liquidación LMA: JSON de la pestaña (última prefactura por contrato, régimen y mes), poner en cola el bot `bot/liquidacion.py` ver sus corridas y bajar el Excel original de una prefactura |
 | `GET /frecuencia`, `GET /frecuencia/catalogo`, `PUT /frecuencia/catalogo/{tipo}` | Frecuencia de uso (catálogo en `worker_datos/frecuencia_catalogo.json`). Si falta calcular responde `{calculando, hechos, total}` y lo calcula aparte (`worker/frecuencia_job.py` con los motores de `worker/motores.py`); cachés en `worker_datos/frecuencia_cache/` (`r_*` por RIPS, `c_*` por contrato) |
 | `POST /seguridad/evento`, `GET /seguridad/estado`, `GET /seguridad`, `POST /seguridad/prueba` | Registro, bloqueos y alertas |
 

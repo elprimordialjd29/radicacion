@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.17.1 — 2026-11-26
+- Liquidación LMA: **descargas como las de los RIPS**.
+  - **Individual**: en cada celda (contrato, mes y régimen) un enlace **XLS** con esa liquidación en el formato
+    del Excel del SIE; si ese mes tuvo liquidaciones anteriores, van en una segunda hoja con la diferencia.
+  - **Consolidado** del contrato (como el «Unificado» de RIPS): bajo cada contrato «⬇ Consolidado Mar–Nov · XLS»,
+    un solo Excel con todos los meses elegidos, hoja Subsidiado y hoja Contributivo, total al final.
+  - En el detalle (clic en un valor): «⬇ Excel de este mes», «⬇ Consolidado del contrato» y «⬇ Original del SIE»
+    (el Excel de la prefactura tal como lo baja la impresora). Worker `GET /liquidacion/prefactura/{n}`,
+    Vercel `/api/liquidacion?prefactura=n` (permiso «Descargar reportes»).
+- Aviso «Actualización desde el SIE en curso» mientras corre el bot (los valores se van completando y la
+  pestaña se recarga cada minuto y al terminar). Gráfica con etiquetas cortas (cabe en el celular).
+
 ## 0.17.0 — 2026-11-26
 - **Nueva pestaña «💵 Liquidación LMA»** (al lado de Frecuencia de uso, permiso «Ver reporte»), con el
   estilo del Tablero: indicadores, valor liquidado por mes, última actualización, tarjeta «🔄 Actualizar

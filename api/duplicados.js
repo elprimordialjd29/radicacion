@@ -8,6 +8,7 @@
 //   PUT /api/frecuencia-catalogo?tipo=DNT {actividades, diagnosticos} → cargar catálogo (admin_usuarios)
 //   GET  /api/liquidacion?anio        → liquidación LMA por contrato, régimen y mes (ver_reporte)
 //   POST /api/liquidacion {anio, contratos} → actualizar desde el SIE: pone en cola el bot de prefacturas (consultar_sie)
+//   GET  /api/liquidacion?prefactura=N → Excel original de esa prefactura, tal como lo baja el SIE (descargar_reportes)
 // (vercel.json reescribe /api/frecuencia, /api/frecuencia-catalogo y /api/liquidacion hacia aquí con ?accion=…)
 import { worker } from './_auth.js';
 import { requiere } from './_usuarios.js';
@@ -58,6 +59,16 @@ async function liquidacion(req, res) {
       method: 'POST', body: JSON.stringify({ anio: +body.anio || new Date().getFullYear(), contratos, usuario: ctx.yo.usuario }),
     });
     return json(res, r, await r.text());
+  }
+  // Excel original de una prefactura (tal como lo baja la impresora del SIE): datos por contrato, sin pacientes
+  if (req.query.prefactura) {
+    if (!(await requiere(req, res, 'descargar_reportes'))) return;
+    const n = String(req.query.prefactura).replace(/\D/g, '').slice(0, 8);
+    const r = await worker(`/liquidacion/prefactura/${n}`, { signal: AbortSignal.timeout(55000) });
+    if (!r.ok) return res.status(r.status).json({ error: 'Esa prefactura no está descargada en el servidor' });
+    res.setHeader('Content-Type', r.headers.get('content-type') || 'application/octet-stream');
+    res.setHeader('Content-Disposition', r.headers.get('content-disposition') || `attachment; filename="Prefactura_${n}_SIE.xlsx"`);
+    return res.status(200).send(Buffer.from(await r.arrayBuffer()));
   }
   if (!(await requiere(req, res, 'ver_reporte'))) return;
   const anio = String(req.query.anio || new Date().getFullYear()).replace(/\D/g, '').slice(0, 4);
