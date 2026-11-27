@@ -95,8 +95,9 @@ def periodo(descripcion, fecha_ini="", fecha_fin=""):
     anios = re.findall(r"(?<!\d)(20\d{2})(?!\d)", d)
     anio = int(anios[0]) if anios else a_fi
 
-    rs = bool(re.search(r"SUBSIDIAD|\bRS\b", d))
-    rc = bool(re.search(r"CONTRIBUTIV|\bRC\b", d))
+    # tolera errores de digitación del SIE: «CONTRIBBUTIVO», «CONTRIBUTIBO», «SUBSIDADO»…
+    rs = bool(re.search(r"SUBSI|\bRS\b", d))
+    rc = bool(re.search(r"CONTRI|\bRC\b", d))
     regimen = "RS" if rs and not rc else "RC" if rc and not rs else ""
     if not regimen:
         avisos.append("la descripción nombra los dos regímenes" if rs and rc
@@ -172,7 +173,10 @@ def leer_excel(ruta):
 def registrar(con, consecutivo, descripcion, fecha_ini, fecha_fin, ahora):
     """La prefactura salió en una búsqueda: guarda o actualiza su descripción, fechas y periodo."""
     anio, mes, reg, aviso = periodo(descripcion, fecha_ini, fecha_fin)
-    if con.execute("SELECT 1 FROM prefacturas WHERE consecutivo=?", (consecutivo,)).fetchone():
+    previo = con.execute("SELECT regimen, aviso FROM prefacturas WHERE consecutivo=?", (consecutivo,)).fetchone()
+    if previo and not reg and previo[0]:
+        reg, aviso = previo     # régimen deducido antes por los afiliados (la descripción no lo dice): se conserva
+    if previo:
         con.execute("UPDATE prefacturas SET descripcion=?, fecha_ini=?, fecha_fin=?, anio=?, mes=?, regimen=?, aviso=?, "
                     "vigente=1, ultima_vista=? WHERE consecutivo=?",
                     (descripcion, fecha_ini, fecha_fin, anio, mes, reg, aviso, ahora, consecutivo))
@@ -190,6 +194,39 @@ def guardar_excel(con, consecutivo, conceptos, filas, ahora):
     con.executemany("INSERT INTO prefactura_filas VALUES (?,?,?,?,?,?,?,?)",
                     [(consecutivo, c, f["nit"], f["ips"], f["municipio"], f["total"], f["afiliados"],
                       json.dumps(f["conceptos"], ensure_ascii=False)) for c, f in filas.items()])
+
+
+def deducir_regimenes(con):
+    """Prefacturas cuya descripción no dice el régimen (p. ej. «PRUEBA MARZO PMS-20001-2026-7 …»): se deduce
+    comparando los afiliados de cada contrato con los de las prefacturas del mismo mes que sí lo dicen
+    (subsidiado y contributivo difieren mucho en afiliados). Solo si todos los contratos apuntan al mismo
+    régimen, cerca (≤ 15 %) de ese y lejos (≥ 50 %) del otro. Devuelve los avisos."""
+    avisos = []
+    sin = con.execute("SELECT consecutivo, anio, mes, descripcion FROM prefacturas "
+                      "WHERE COALESCE(regimen,'')='' AND mes IS NOT NULL").fetchall()
+    for k, anio, mes, desc in sin:
+        votos, n = set(), 0
+        for contrato, af in con.execute("SELECT contrato, afiliados FROM prefactura_filas WHERE consecutivo=?", (k,)).fetchall():
+            dist = {}
+            for rg, af2 in con.execute(
+                    "SELECT p.regimen, f.afiliados FROM prefactura_filas f JOIN prefacturas p ON p.consecutivo=f.consecutivo "
+                    "WHERE f.contrato=? AND p.anio=? AND p.mes=? AND p.regimen IN ('RS','RC') AND p.consecutivo<>?",
+                    (contrato, anio, mes, k)):
+                d = abs((af or 0) - (af2 or 0)) / max(af or 0, af2 or 0, 1)
+                dist[rg] = min(d, dist.get(rg, 9))
+            if not dist:
+                continue
+            rg = min(dist, key=dist.get)
+            otro = dist.get("RC" if rg == "RS" else "RS", 9)
+            votos.add(rg if dist[rg] <= 0.15 and otro >= 0.5 else "?")
+            n += 1
+        if n and len(votos) == 1 and "?" not in votos:
+            rg = votos.pop()
+            nota = (f"la descripción no dice el régimen; por los afiliados de sus {n} contrato(s) es "
+                    f"{'subsidiado' if rg == 'RS' else 'contributivo'}")
+            con.execute("UPDATE prefacturas SET regimen=?, aviso=? WHERE consecutivo=?", (rg, nota, k))
+            avisos.append(f"Prefactura {k} «{desc}»: {nota}.")
+    return avisos
 
 
 def guardar_busqueda(con, contrato, consecutivos, ahora):

@@ -184,6 +184,33 @@ def main():
             err_desc[k] = "Excel ilegible: " + str(e).splitlines()[0][:120]
             S.log(f"    prefactura {k}: {err_desc[k]}")
 
+    def consultar(page, c, etiqueta):
+        """Busca un contrato (2 intentos, recargando la página entre uno y otro). True si quedó bien."""
+        for intento in (1, 2):
+            try:
+                if "login" in page.url:      # la sesión se venció en medio de la corrida
+                    S.iniciar_sesion(page, usuario, clave, a.anio)
+                    abrir_prefactura(page)
+                antes = len(bajadas)
+                filas = buscar(page, c, al_ver, quiere_bajar, al_bajar)
+                LD.guardar_busqueda(con, c, [f[0] for f in filas], ahora())
+                con.commit()
+                listados[c] = [f[0] for f in filas]
+                nuevas = len(bajadas) - antes
+                S.log(f"{etiqueta} {c}: {len(filas)} prefacturas" + (f" · {nuevas} descargadas" if nuevas else ""))
+                errores.pop(c, None)
+                return True
+            except Exception as e:
+                errores[c] = str(e).splitlines()[0][:150]
+                S.log(f"{etiqueta} {c}: error ({errores[c]})")
+                S.evidencia(page, f"liq_error_{re.sub(r'[^A-Za-z0-9-]', '_', c)}")
+                if intento == 1:
+                    try:
+                        abrir_prefactura(page)   # recargar la página y reintentar
+                    except Exception:
+                        pass
+        return False
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=a.oculto, slow_mo=0 if a.oculto else 60)
         page = browser.new_page(viewport={"width": 1500, "height": 950}, accept_downloads=True)
@@ -193,30 +220,25 @@ def main():
             S.iniciar_sesion(page, usuario, clave, a.anio)
             abrir_prefactura(page)
             for n, c in enumerate(contratos, 1):
-                for intento in (1, 2):
-                    try:
-                        if "login" in page.url:      # la sesión se venció en medio de la corrida
-                            S.iniciar_sesion(page, usuario, clave, a.anio)
-                            abrir_prefactura(page)
-                        antes = len(bajadas)
-                        filas = buscar(page, c, al_ver, quiere_bajar, al_bajar)
-                        LD.guardar_busqueda(con, c, [f[0] for f in filas], ahora())
-                        con.commit()
-                        listados[c] = [f[0] for f in filas]
-                        nuevas = len(bajadas) - antes
-                        S.log(f"[{n}/{len(contratos)}] {c}: {len(filas)} prefacturas"
-                              + (f" · {nuevas} descargadas" if nuevas else ""))
-                        errores.pop(c, None)
-                        break
-                    except Exception as e:
-                        errores[c] = str(e).splitlines()[0][:150]
-                        S.log(f"[{n}/{len(contratos)}] {c}: error ({errores[c]})")
-                        S.evidencia(page, f"liq_error_{re.sub(r'[^A-Za-z0-9-]', '_', c)}")
-                        if intento == 1:
-                            try:
-                                abrir_prefactura(page)   # recargar la página y reintentar
-                            except Exception:
-                                pass
+                consultar(page, c, f"[{n}/{len(contratos)}]")
+            # segunda pasada (regla del usuario: si sale error, reintenta): contratos con error y prefacturas que no
+            # se pudieron bajar (se vuelven a buscar con un contrato que las trae)
+            otra = [c for c in contratos if c in errores]
+            for k in sorted(vistos - bajadas):
+                intentos[k] = 0
+                c = next((x for x, lst in listados.items() if k in lst), None)
+                if c and c not in otra:
+                    otra.append(c)
+            if otra:
+                S.log(f"Segunda pasada: {len(otra)} contrato(s) con error o con prefacturas sin descargar…")
+                try:
+                    if "login" in page.url:
+                        S.iniciar_sesion(page, usuario, clave, a.anio)
+                    abrir_prefactura(page)
+                except Exception as e:
+                    S.log(f"  no se pudo volver a abrir Prefactura: {str(e).splitlines()[0][:120]}")
+                for c in otra:
+                    consultar(page, c, "  (reintento)")
         finally:
             browser.close()
 
@@ -226,6 +248,8 @@ def main():
     completa = not a.solo and not errores and len(listados) == len(todos)
     if completa:
         LD.marcar_vigentes(con, vistos)
+    # prefacturas cuya descripción no dice el régimen: se deduce por los afiliados (queda como aviso en «Revisar»)
+    LD.deducir_regimenes(con)
     avisos = LD.validar(con, listados, bajadas, todos)
     avisos += [f"Prefactura {k.split()[0]}: {v}" for k, v in err_desc.items() if str(k).endswith("(aviso)")]
     fin = ahora()
@@ -242,8 +266,16 @@ def main():
     for k, v in list(errores.items())[:15]:
         print(f"   ✕ {k}: {v}")
     print("=" * 60)
-    if not listados:
-        sys.exit(1)   # no se pudo consultar nada: el worker la reintenta sola
+    if errores:
+        # quedaron errores: el worker la vuelve a poner en cola sola (5, 10, 20, 30 min y luego cada hora),
+        # solo con los contratos que faltaron
+        faltan = {c for c in errores if not c.startswith("Prefactura ")}
+        for k in errores:
+            if k.startswith("Prefactura "):
+                faltan |= {next((x for x, lst in listados.items() if int(k.split()[1]) in lst), "")}
+        faltan.discard("")
+        print("@@REINTENTAR " + " ".join(sorted(faltan or set(contratos))), flush=True)
+        sys.exit(3)
 
 
 if __name__ == "__main__":

@@ -267,10 +267,13 @@ def programar_reintento(cid, log):
         espera = max(espera, 30)   # usuario inactivo / clave: dar tiempo a que lo reactiven
     cuando = datetime.now().astimezone() + timedelta(minutes=espera)
     nuevo = uuid.uuid4().hex[:10]
+    # el bot de liquidación dice qué contratos faltaron («@@REINTENTAR …»): el reintento va solo con esos
+    pedido = next((l.split()[1:] for l in reversed(log) if l.startswith("@@REINTENTAR ")), None)
+    contratos = json.dumps(sorted(set(pedido))) if pedido else r["contratos"]
     with _lock, db() as con:
         con.execute("INSERT INTO consultas (id, creada, usuario, anio, meses, contratos, sin_soportes, estado, total, "
                     "hechos, regimenes, intento, reintento_de, no_antes, tipo) VALUES (?,?,?,?,?,?,0,'en_cola',0,0,?,?,?,?,?)",
-                    (nuevo, ahora(), r["usuario"], r["anio"], r["meses"], r["contratos"], r["regimenes"],
+                    (nuevo, ahora(), r["usuario"], r["anio"], r["meses"], contratos, r["regimenes"],
                      intento + 1, r["reintento_de"] or cid, cuando.isoformat(timespec="seconds"), tipo_de(r)))
     actualizar(cid, resumen=f"Reintento automático #{intento + 1} programado para las "
                             f"{cuando.strftime('%I:%M %p')}. Error: {motivo}")
@@ -289,10 +292,18 @@ def _hay_exito_posterior(r):
 
 
 def bucle():
-    # al arrancar, lo que quedó "corriendo" de un reinicio se marca como error
+    # al arrancar, lo que quedó "corriendo" de un reinicio se marca como error y se REINTENTA solo
+    # (p. ej. la actualización automática del sistema reinició el servicio en medio de la corrida)
+    cortadas = [x["id"] for x in qall("SELECT id FROM consultas WHERE estado='corriendo'")]
     with db() as con:
         con.execute("UPDATE consultas SET estado='error', fin=? WHERE estado IN ('corriendo','cancelando')",
                     (ahora(),))
+    for cid in cortadas:
+        try:
+            programar_reintento(cid, ["Interrumpida: el servicio del servidor se reinició en medio de la corrida "
+                                      "(p. ej. actualización automática del sistema)"])
+        except Exception as e:
+            print(f"[cola] no se pudo reintentar {cid}: {e}", flush=True)
     while True:
         r = q1("SELECT * FROM consultas WHERE estado='en_cola' AND (no_antes IS NULL OR no_antes<=?) "
                "ORDER BY creada LIMIT 1", (ahora(),))

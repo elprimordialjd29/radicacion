@@ -389,7 +389,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.17.1</div>
+          <div class="usr-ver">Radicación cápita · v0.17.2</div>
         </div>
       </div>
     </div>
@@ -2143,8 +2143,9 @@ async function cargarJobsLiq() {
     return `<li class="job">
       <div class="job-h"><span><span class="st ${cls}"><i>${ico}</i> ${j.estado === 'corriendo' ? 'Actualizando' : txt}</span> <b style="margin-left:6px">${j.anio} · ${j.n_contratos ? j.n_contratos + ' contrato(s)' : 'Todos los contratos'}</b></span>
         <span class="muted" style="font-size:12px">${esc(j.usuario)} · ${fmtFecha(j.creada)}</span></div>
-      <div class="job-m">Subsidiado y contributivo${j.estado === 'corriendo' ? ` · ${j.hechos}/${j.total} · ${esc(j.actual || 'iniciando…')} · ${duracion(j.inicio)}` : ''}${j.fin ? ' · duró ' + duracion(j.inicio, j.fin) : ''}${(j.intento || 1) > 1 ? ` · <b>reintento automático #${j.intento}</b>` : ''}${j.estado === 'en_cola' ? ' · espera su turno (una consulta al SIE a la vez)' : ''}</div>
-      ${j.resumen && !activa ? `<div class="job-m" style="white-space:pre-line">${esc(String(j.resumen).split('\n').slice(0, 6).join('\n'))}</div>` : ''}
+      <div class="job-m">Subsidiado y contributivo${j.estado === 'corriendo' ? ` · ${j.hechos}/${j.total} · ${esc(j.actual || 'iniciando…')} · ${duracion(j.inicio)}` : ''}${j.fin ? ' · duró ' + duracion(j.inicio, j.fin) : ''}${(j.intento || 1) > 1 ? ` · <b>reintento automático #${j.intento}</b>` : ''}${j.estado === 'en_cola' ? (j.no_antes && new Date(j.no_antes) > new Date()
+        ? ` · ⏱ correrá a las ${new Date(j.no_antes).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}` : ' · espera su turno (una consulta al SIE a la vez)') : ''}</div>
+      ${j.resumen && (!activa || /reintento/i.test(j.resumen)) ? `<div class="job-m" style="white-space:pre-line">${j.estado === 'error' ? '↻ ' : ''}${esc(String(j.resumen).split('\n').slice(0, 6).join('\n'))}</div>` : ''}
       ${j.estado === 'corriendo' ? `<div class="prog"><div style="width:${pct}%"></div></div>` : ''}
       <div class="acc">${activa && puede('consultar_sie') ? `<button class="btn sm" data-lqcancel="${j.id}">Cancelar</button>` : ''}<button class="btn sm" data-lqlog="${j.id}">${lqAbiertos.has(j.id) ? 'Ocultar detalle' : 'Ver detalle'}</button></div>
       ${lqAbiertos.has(j.id) && det[j.id] ? `<pre>${esc(det[j.id].log || det[j.id].resumen || 'Sin registro aún')}</pre>` : ''}

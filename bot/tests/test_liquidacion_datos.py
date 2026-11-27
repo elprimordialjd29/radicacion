@@ -28,6 +28,34 @@ def test_periodo_mes_de_la_descripcion():
     assert LD.periodo("PRUEBA CAPITA CONTRIBUTIVO JUNIO 2026 SIN PMS", "2026/06/01", "2026/11/30")[:3] == (2026, 6, "RC")
 
 
+def test_regimen_con_errores_de_digitacion():
+    # casos reales del SIE
+    assert LD.periodo("LIQUIDACION CAPITA SEGUNDA PARTE MARZO 2026 CONTRIBBUTIVO PMS", "2026/03/01", "")[2] == "RC"
+    assert LD.periodo("LIQUIDACION CONTRATOS PMS-44430-2026-14 CONTRIBUTIBO JUNIO 2026", "2026/06/01", "")[2] == "RC"
+    assert LD.periodo("LIQUIDACION SUBSIDADO JULIO 2026", "2026/07/01", "")[2] == "RS"
+    assert LD.periodo("LIQUIDACION DE CONTRATOS AGOSTO 2026", "2026/08/01", "")[2] == ""   # «CONTRATOS» no es contributivo
+
+
+def test_deducir_regimen_por_afiliados():
+    con = _bd()
+    _pref(con, 1888, "PRUEBA CAPITA SUBSIDIADO MARZO 2026 PMS", "2026/03/01", {"PMS-7": (294664116, 12792), "PMS-31": (213900105, 13319)})
+    _pref(con, 1889, "PRUEBA CAPITA CONTRIBUTIVO MARZO 2026 PMS", "2026/03/01", {"PMS-7": (30365811, 1150), "PMS-31": (13289408, 718)})
+    _pref(con, 1950, "PRUEBA MARZO PMS-7 PMS-31", "2026/03/01", {"PMS-7": (300000000, 12800), "PMS-31": (214000000, 13320)})
+    assert con.execute("SELECT regimen FROM prefacturas WHERE consecutivo=1950").fetchone()[0] == ""
+    LD.deducir_regimenes(con)
+    reg, aviso = con.execute("SELECT regimen, aviso FROM prefacturas WHERE consecutivo=1950").fetchone()
+    assert reg == "RS" and "afiliados" in aviso
+    # ya deducido, una nueva búsqueda (misma descripción sin régimen) no lo borra
+    LD.registrar(con, 1950, "PRUEBA MARZO PMS-7 PMS-31", "2026/03/01", "", "2026-11-28T00:00:00-05:00")
+    assert con.execute("SELECT regimen FROM prefacturas WHERE consecutivo=1950").fetchone()[0] == "RS"
+    # y cuenta como la última de marzo subsidiado
+    assert LD.armar(con, [{"contrato": "PMS-7"}], 2026)["liq"]["PMS-7"]["RS"]["3"]["p"] == 1950
+    # si los afiliados no se parecen a ninguno, no se adivina
+    _pref(con, 1951, "AJUSTE MARZO PMS-7", "2026/03/01", {"PMS-7": (1000, 6000)})
+    LD.deducir_regimenes(con)
+    assert con.execute("SELECT regimen FROM prefacturas WHERE consecutivo=1951").fetchone()[0] == ""
+
+
 def test_periodo_avisos():
     assert "no dice si es subsidiado" in LD.periodo("LIQUIDACION MARZO 2026", "2026/03/01", "")[3]
     assert LD.periodo("LIQUIDACION MARZO 2026", "2026/03/01", "")[2] == ""

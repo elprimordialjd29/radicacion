@@ -87,8 +87,9 @@ tipo, municipio, buscador y meses).
   en un solo Excel (hoja Subsidiado y hoja Contributivo). En el detalle también está **⬇ Original del SIE**:
   el Excel de la prefactura tal como lo baja la impresora (trae todos sus contratos).
 - **🔄 Actualizar desde el SIE** (permiso «Lanzar consultas al SIE»): todos los contratos o los filtrados;
-  siempre los dos regímenes. Tarda unos 25 minutos con todos. También corre sola cada 12 horas, después de
-  la consulta programada de radicación.
+  siempre los dos regímenes. Tarda unos 20 a 25 minutos con todos. También corre sola cada 12 horas, después de
+  la consulta programada de radicación. **Si sale error, se reintenta sola** (primero dentro de la misma corrida
+  y luego en cola: 5, 10, 20, 30 min y cada hora); en «Actualizaciones recientes» se ve a qué hora correrá.
 
 ### Servidor (solo administradores)
 Memoria, disco, CPU, servicios, cola de consultas, almacenamiento y **Seguridad** (intentos sin

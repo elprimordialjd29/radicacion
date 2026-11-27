@@ -107,6 +107,11 @@ cd /opt/radicacion/bot && .venv/bin/python liquidacion.py --oculto --contratos w
 - Si una consulta falla, el worker crea un **reintento** en cola (5, 10, 20, 30 min y luego cada
   hora; máximo 10 intentos; si el error es de inicio de sesión espera mínimo 30 min). Se omite si
   otra consulta igual ya terminó bien. Lanzar una consulta igual adelanta el reintento.
+- Si el servicio se reinicia con una corrida en curso (p. ej. `apt-daily-upgrade` + needrestart reinician
+  servicios hacia las 06:00–07:00 hora del VPS = 00:00–01:00 Colombia), al arrancar la marca con error y le
+  programa el reintento.
+- El bot de liquidación hace una segunda pasada con lo que falló; si aún quedan errores imprime
+  `@@REINTENTAR <contratos>` y sale con código 3: el reintento va solo con esos contratos.
 - Correo de aviso si el SIE no deja iniciar sesión (primer fallo) o si se agotan los intentos.
 
 ```bash

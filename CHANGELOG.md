@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.17.2 — 2026-11-27
+- **Si sale error, reintenta** (regla del usuario), en la liquidación LMA y en las consultas:
+  - Si el servicio del servidor se reinicia en medio de una corrida (p. ej. la actualización automática del
+    sistema, que la madrugada del 27-nov cortó la liquidación programada en el contrato 10), la corrida se marca
+    con error y **se vuelve a poner en cola sola** (5, 10, 20, 30 min y luego cada hora; máximo 10 intentos).
+  - El bot de liquidación hace una **segunda pasada** dentro de la misma corrida con los contratos que fallaron y
+    las prefacturas que no se pudieron bajar; si aún quedan errores, termina con error y el reintento automático
+    va **solo con los contratos que faltaron**.
+- Régimen de la prefactura **tolerante a errores de digitación del SIE** («CONTRIBBUTIVO», «CONTRIBUTIBO»,
+  «SUBSIDADO»…). Si la descripción no dice el régimen (p. ej. «PRUEBA MARZO PMS-20001-2026-7 …»), se **deduce por
+  los afiliados** de sus contratos comparados con las prefacturas del mismo mes que sí lo dicen, y queda el aviso
+  en «Revisar». Antes esas prefacturas quedaban por fuera (hoy no cambiaban ningún valor: todas tenían una
+  posterior).
+- Verificación de la primera corrida completa: 2.445 valores contrato-mes-régimen idénticos al Excel del SIE y
+  todos tomados de la última prefactura.
+
 ## 0.17.1 — 2026-11-26
 - Liquidación LMA: **descargas como las de los RIPS**.
   - **Individual**: en cada celda (contrato, mes y régimen) un enlace **XLS** con esa liquidación en el formato
