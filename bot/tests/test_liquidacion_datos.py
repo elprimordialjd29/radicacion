@@ -115,6 +115,17 @@ def test_prefactura_no_vigente_no_cuenta():
     assert LD.armar(con, [{"contrato": "PMS-1"}], 2026)["liq"]["PMS-1"]["RS"]["5"]["p"] == 11   # volvió a salir
 
 
+def test_corrida_parcial_muestra_la_ultima_completa():
+    con = _bd()
+    _pref(con, 10, "LIQUIDACION SUBSIDIADO MAYO 2026", "2026/05/01", {"PMS-1": (100, 5)})
+    LD.registrar_corrida(con, "2026-11-27T07:38:09-05:00", "2026-11-27T07:58:30-05:00", 144, 144, 272, 272, {}, ["aviso completa"], True)
+    LD.registrar_corrida(con, "2026-11-27T07:58:31-05:00", "2026-11-27T07:59:40-05:00", 1, 1, 32, 32, {}, [], False)
+    k = LD.armar(con, [{"contrato": "PMS-1"}], 2026)["corrida"]
+    assert k["consultados"] == 1 and not k["completa"]
+    assert k["ultima_completa"]["consultados"] == 144 and k["ultima_completa"]["prefacturas"] == 272
+    assert k["avisos"] == ["aviso completa"]
+
+
 def test_validar():
     con = _bd()
     _pref(con, 20, "LIQUIDACION SUBSIDIADO JUNIO 2026", "2026/06/01", {"PMS-1": (100, 5)})

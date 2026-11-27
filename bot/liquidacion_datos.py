@@ -336,6 +336,14 @@ def armar(con, catalogo, anio):
                    "descargadas": ult[5], "errores": json.loads(ult[6] or "{}"), "avisos": json.loads(ult[7] or "[]"),
                    "completa": bool(ult[8]), "primera": not previa,
                    "nuevas": sorted((k for k, p in prefs.items() if (p[11] or "") >= ult[0]), reverse=True)}
+        if not ult[8]:   # la última fue parcial (algunos contratos o con errores): también la última completa
+            c = con.execute("SELECT inicio, fin, contratos, consultados, prefacturas, descargadas, avisos FROM corridas "
+                            "WHERE completa=1 ORDER BY inicio DESC LIMIT 1").fetchone()
+            if c:
+                corrida["ultima_completa"] = {"inicio": c[0], "fin": c[1], "contratos": c[2], "consultados": c[3],
+                                              "prefacturas": c[4], "descargadas": c[5]}
+                # los avisos de la última completa siguen valiendo (la parcial solo revisó algunos contratos)
+                corrida["avisos"] += [a for a in json.loads(c[6] or "[]") if a not in corrida["avisos"]]
     return {
         "anio": anio,
         "corrida": corrida,

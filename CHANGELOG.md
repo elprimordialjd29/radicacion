@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.3 — 2026-11-27
+- Liquidación LMA, «Última actualización desde el SIE»: si la última fue **parcial** (los filtrados o un
+  reintento de algunos contratos) se muestra también la **última completa**, y los avisos de esa completa
+  siguen en «Revisar».
+- Reintento de la programada que cortó el reinicio del servidor: 144/144 contratos, 272 prefacturas, 0 errores;
+  2.445 valores idénticos al Excel del SIE y todos de la última prefactura.
+
 ## 0.17.2 — 2026-11-27
 - **Si sale error, reintenta** (regla del usuario), en la liquidación LMA y en las consultas:
   - Si el servicio del servidor se reinicia en medio de una corrida (p. ej. la actualización automática del

@@ -389,7 +389,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.17.2</div>
+          <div class="usr-ver">Radicación cápita · v0.17.3</div>
         </div>
       </div>
     </div>
@@ -1983,8 +1983,12 @@ function pintarNovLiq() {
     return;
   }
   const errs = Object.entries(k.errores || {});
-  let html = `<li><span class="st ${errs.length ? 'err' : 'ok'}"><i>${errs.length ? '!' : '✓'}</i> ${errs.length ? 'Con errores' : 'Completa'}</span> <b>${fmtFecha(k.fin)}</b><br>
+  const parcial = !errs.length && !k.completa;   // solo algunos contratos (actualización de los filtrados o reintento)
+  let html = `<li><span class="st ${errs.length ? 'err' : 'ok'}"><i>${errs.length ? '!' : '✓'}</i> ${errs.length ? 'Con errores (se reintenta sola)' : parcial ? 'Parcial' : 'Completa'}</span> <b>${fmtFecha(k.fin)}</b><br>
     <span class="muted">${fmtN(k.consultados)} de ${fmtN(k.contratos)} contratos consultados · ${fmtN(k.prefacturas)} prefacturas · ${fmtN(k.descargadas)} descargadas con la impresora</span></li>`;
+  const uc = k.ultima_completa;
+  if (uc) html += `<li><span class="st ok"><i>✓</i> Última completa</span> <b>${fmtFecha(uc.fin)}</b><br>
+    <span class="muted">${fmtN(uc.consultados)} de ${fmtN(uc.contratos)} contratos · ${fmtN(uc.prefacturas)} prefacturas · ${fmtN(uc.descargadas)} descargadas</span></li>`;
   const nuevas = (k.nuevas || []).map(String).filter((x) => LQ.pref[x]);
   if (k.primera) html += `<li><span class="st ok"><i>✓</i> Primera actualización</span> ${fmtN(nuevas.length)} prefacturas con contratos del listado</li>`;
   else {
