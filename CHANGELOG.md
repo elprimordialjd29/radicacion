@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.18.0 — 2026-11-27
+- **Permiso propio para la Liquidación LMA: «Ver liquidación LMA»** (Usuarios y permisos). Se puede marcar a
+  cualquier usuario, sea cual sea su rol (antes la pestaña iba con «Ver reporte»). Sus Excel piden además
+  «Descargar reportes»; «Actualizar desde el SIE» sigue pidiendo «Lanzar consultas al SIE».
+- Roles: Analista y Reporte (ver y descargar) lo traen marcado; rol nuevo **«Liquidación LMA (ver y
+  descargar)»**. El administrador tiene todos.
+- Nadie pierde acceso: a los usuarios que ya veían la pestaña (los que tenían «Ver reporte») se les marcó el
+  permiso nuevo al instalar esta versión.
+
 ## 0.17.3 — 2026-11-27
 - Liquidación LMA, «Última actualización desde el SIE»: si la última fue **parcial** (los filtrados o un
   reintento de algunos contratos) se muestra también la **última completa**, y los avisos de esa completa

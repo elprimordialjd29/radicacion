@@ -26,16 +26,22 @@ cambio de clave van en `api/cuenta.js`; duplicados y frecuencia de uso en `api/d
 agrupar en una existente.**
 
 ## Usuarios y permisos
-Permisos: ver reporte, lanzar consultas al SIE, descargar RIPS, descargar reportes, administrar usuarios.
+Permisos: ver reporte, **ver liquidación LMA**, lanzar consultas al SIE, descargar RIPS, descargar reportes,
+administrar usuarios. El rol solo propone los permisos: a cada usuario se le marcan o desmarcan uno por uno
+(p. ej. «Ver liquidación LMA» a alguien con rol Descarga RIPS).
 
 | Rol | Permisos |
 |---|---|
 | Administrador | Todos |
-| Analista | Reporte, consultas al SIE, RIPS, reportes |
+| Analista | Reporte, liquidación LMA, consultas al SIE, RIPS, reportes |
 | Auditor RIPS | Reporte, RIPS |
 | Descarga RIPS (solo tablero) | RIPS |
-| Reporte (ver y descargar) | Reporte, reportes |
+| Reporte (ver y descargar) | Reporte, liquidación LMA, reportes |
+| Liquidación LMA (ver y descargar) | Liquidación LMA, reportes (Excel) |
 | Solo consulta | Solo el tablero |
+
+«Ver liquidación LMA» abre la pestaña 💵 Liquidación LMA; sus Excel piden además «Descargar reportes» y
+«Actualizar desde el SIE» pide «Lanzar consultas al SIE».
 
 Se crean en el tablero: menú del usuario → **Usuarios y permisos**. Primer ingreso de un usuario
 nuevo: debe cambiar la clave.

@@ -9,6 +9,7 @@ const RUTA = 'radicacion/usuarios.json';
 
 export const PERMISOS = {
   ver_reporte: 'Ver reporte de desviación',
+  ver_liquidacion: 'Ver liquidación LMA',
   consultar_sie: 'Lanzar consultas al SIE',
   descargar_rips: 'Descargar RIPS (TXT / JSON)',
   descargar_reportes: 'Descargar reportes (Excel / CSV)',
@@ -16,10 +17,11 @@ export const PERMISOS = {
 };
 export const ROLES = {
   admin: { nombre: 'Administrador', permisos: Object.keys(PERMISOS) },
-  analista: { nombre: 'Analista', permisos: ['ver_reporte', 'consultar_sie', 'descargar_rips', 'descargar_reportes'] },
+  analista: { nombre: 'Analista', permisos: ['ver_reporte', 'ver_liquidacion', 'consultar_sie', 'descargar_rips', 'descargar_reportes'] },
   auditor: { nombre: 'Auditor RIPS', permisos: ['ver_reporte', 'descargar_rips'] },
   rips: { nombre: 'Descarga RIPS (solo tablero)', permisos: ['descargar_rips'] },
-  reporte: { nombre: 'Reporte (ver y descargar)', permisos: ['ver_reporte', 'descargar_reportes'] },
+  reporte: { nombre: 'Reporte (ver y descargar)', permisos: ['ver_reporte', 'ver_liquidacion', 'descargar_reportes'] },
+  lma: { nombre: 'Liquidación LMA (ver y descargar)', permisos: ['ver_liquidacion', 'descargar_reportes'] },
   consulta: { nombre: 'Solo consulta', permisos: [] },
 };
 

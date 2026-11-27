@@ -389,7 +389,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.17.3</div>
+          <div class="usr-ver">Radicación cápita · v0.18.0</div>
         </div>
       </div>
     </div>
@@ -2307,7 +2307,8 @@ const VISTA_HASH = { '#reporte': 'reporte', '#servidor': 'servidor', '#frecuenci
 let vista = VISTA_HASH[location.hash] || 'tablero';
 function aplicarVista() {
   if (!$('#vistaTablero') || !$('#vistaReporte')) return;   // pantalla de "sin datos"
-  if ((vista === 'reporte' || vista === 'frecuencia' || vista === 'liquidacion') && !puede('ver_reporte')) vista = 'tablero';
+  if ((vista === 'reporte' || vista === 'frecuencia') && !puede('ver_reporte')) vista = 'tablero';
+  if (vista === 'liquidacion' && !puede('ver_liquidacion')) vista = 'tablero';
   if (vista === 'servidor' && !puede('admin_usuarios')) vista = 'tablero';
   document.querySelectorAll('.vbtn').forEach((b) => b.setAttribute('aria-selected', b.dataset.vista === vista));
   $('#vistaTablero').hidden = vista !== 'tablero';
@@ -2837,7 +2838,7 @@ function aplicarPermisos() {
   $('#btnCsv').hidden = !puede('descargar_reportes');
   document.querySelector('[data-vista="reporte"]').hidden = !puede('ver_reporte');
   document.querySelector('[data-vista="frecuencia"]').hidden = !puede('ver_reporte');
-  document.querySelector('[data-vista="liquidacion"]').hidden = !puede('ver_reporte');
+  document.querySelector('[data-vista="liquidacion"]').hidden = !puede('ver_liquidacion');
 }
 // si la sesión vence en medio del uso, cualquier llamada 401 lleva al login
 const _fetch = window.fetch.bind(window);
