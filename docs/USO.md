@@ -66,7 +66,7 @@ misma hoja o en otra, CIE-10 · GRUPO), o pegar desde Excel: actividades (GRUPO 
 varios CUPS en una celda separados por coma o punto y coma) y diagnósticos (CIE-10 · GRUPO, con el
 mismo nombre de grupo). Reemplaza el catálogo anterior de ese tipo.
 
-### Liquidación LMA (permiso «Ver liquidación LMA»)
+### Liquidación LMA (permiso «Ver y descargar liquidación LMA»)
 Lo que el SIE liquidó a cada contrato por cápita, mes a mes, sacado de **Gestión de Sistema Financiero →
 Ordenes de Pago → Prefactura** (Excel del ícono de la impresora). Usa los filtros de arriba (año, régimen,
 tipo, municipio, buscador y meses).

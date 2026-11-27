@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.18.1 — 2026-11-27
+- El permiso de la liquidación ahora es **«Ver y descargar liquidación LMA»**: con él se ven la pestaña y se
+  bajan **todos sus Excel** (general Subsidiado/Contributivo, XLS de cada mes, consolidado por contrato y el
+  original del SIE) sin necesitar «Descargar reportes». El rol «Liquidación LMA (ver y descargar)» queda solo
+  con ese permiso.
+
 ## 0.18.0 — 2026-11-27
 - **Permiso propio para la Liquidación LMA: «Ver liquidación LMA»** (Usuarios y permisos). Se puede marcar a
   cualquier usuario, sea cual sea su rol (antes la pestaña iba con «Ver reporte»). Sus Excel piden además

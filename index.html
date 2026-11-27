@@ -389,7 +389,7 @@ details.rv-det summary { cursor: pointer; font-weight: 600; font-size: 14px; pad
           <button role="menuitem" data-acc="clave">🔑 Cambiar mi clave</button>
           <button role="menuitem" data-acc="usuarios" data-perm="admin_usuarios">👥 Usuarios y permisos</button>
           <button role="menuitem" data-acc="salir">↪ Salir</button>
-          <div class="usr-ver">Radicación cápita · v0.18.0</div>
+          <div class="usr-ver">Radicación cápita · v0.18.1</div>
         </div>
       </div>
     </div>
@@ -1908,7 +1908,7 @@ function esqueletoLiq() {
         <button class="tab" role="tab" data-lqtab="matriz">Liquidación por mes</button>
         <button class="tab" role="tab" data-lqtab="pref">Prefacturas</button>
         <button class="tab" role="tab" data-lqtab="rev">Revisar</button>
-        <button class="btn sm" id="lqExcel" data-perm="descargar_reportes" title="Una hoja de subsidiado y otra de contributivo, con las columnas del Excel del SIE">⬇ Excel (Subsidiado y Contributivo)</button>
+        <button class="btn sm" id="lqExcel" data-perm="ver_liquidacion" title="Una hoja de subsidiado y otra de contributivo, con las columnas del Excel del SIE">⬇ Excel (Subsidiado y Contributivo)</button>
       </div>
       <div class="legend" id="lqLeyenda"></div>
       <div class="tbl-wrap" id="lqTabla"></div>
@@ -2027,7 +2027,7 @@ function pintarTablaLiq(lista, M) {
           const p = LQ.pref[x.p] || {};
           const tip = `${REG_NOM[rg]} · ${MESES_L[m - 1]}: ${fmtValor(x.t)} · ${fmtN(x.af)} afiliados · prefactura ${x.p} «${p.d || ''}»` +
             (x.prev.length ? ` · reemplaza a ${x.prev.map(([k, t, af]) => `${k} (${fmtValor(t)}, ${fmtN(af)} afiliados)`).join('; ')}` : '');
-          const dl = puede('descargar_reportes') ? `<span class="dl"><a href="#" data-lqdl="${esc(c.contrato)}|${rg}|${m}" title="Descargar la liquidación ${REG_NOM[rg]} de ${MESES_L[m - 1]} de este contrato (Excel)">XLS</a></span>` : '';
+          const dl = puede('ver_liquidacion') ? `<span class="dl"><a href="#" data-lqdl="${esc(c.contrato)}|${rg}|${m}" title="Descargar la liquidación ${REG_NOM[rg]} de ${MESES_L[m - 1]} de este contrato (Excel)">XLS</a></span>` : '';
           return `<div class="lq-reg" data-lq="${esc(c.contrato)}|${rg}|${m}" data-tip="${esc(tip)}"><span class="rg">${rg}</span><span class="lq-v">${fmtValor(x.t)}</span>${x.prev.length ? '<span class="recarga">↻</span>' : ''}${dl}<div class="lq-af">${fmtN(x.af)} afil. · pref. ${x.p}</div></div>`;
         }).join('');
         return `<td class="num"><div class="celda lq-celda"><span class="mes-cel">${MESES[m - 1]}</span>${lineas || '<span class="st na">—</span>'}</div></td>`;
@@ -2035,7 +2035,7 @@ function pintarTablaLiq(lista, M) {
       totGen += tot; csv.push(tot); filasCsv.push(csv);
       const sinSie = LQ.sin.includes(c.contrato);
       const msC = M.filter((m) => R.some((rg) => celdaLiq(c.contrato, rg, m)));
-      const cons = puede('descargar_reportes') && msC.length > 1
+      const cons = puede('ver_liquidacion') && msC.length > 1
         ? `<div class="unif"><small>⬇ Consolidado ${MESES[msC[0] - 1]}–${MESES[msC[msC.length - 1] - 1]}</small><span class="dl"><a href="#" data-lqcons="${esc(c.contrato)}" title="Un solo Excel con la liquidación de ${msC.map((m) => MESES_L[m - 1]).join(', ')}: hoja Subsidiado y hoja Contributivo">XLS</a></span></div>` : '';
       html += `<tr><td><b>${esc(c.contrato)}</b>${sinSie ? '<div class="lq-af">Sin prefacturas en el SIE</div>' : ''}${cons}</td><td class="wrap">${esc(c.prestador)}</td><td>${esc(c.municipio)}</td>${celdas}<td class="num"><b>${tot ? fmtValor(tot) : '—'}</b></td></tr>`;
     }
@@ -2090,7 +2090,7 @@ function detalleLiq(contrato, rg, m) {
   mostrarModal(`<div class="dt-cab"><div><div class="rp-kicker">Liquidación LMA · ${REG_NOM[rg]} · ${MESES_L[m - 1]} ${st.anio}</div>
       <h3 id="modalTitulo" class="dt-titulo">${esc(contrato)}</h3>
       <div class="sub">${esc(inf[1] || c.prestador || '')} · NIT ${esc(inf[0] || c.nit || '')} · ${esc(c.municipio || inf[2] || '')}</div></div>
-      <div class="rp-acciones">${puede('descargar_reportes') ? `<button class="btn sm" data-lqdl="${esc(contrato)}|${rg}|${m}" title="Excel con la liquidación de este contrato, mes y régimen">⬇ Excel de este mes</button>
+      <div class="rp-acciones">${puede('ver_liquidacion') ? `<button class="btn sm" data-lqdl="${esc(contrato)}|${rg}|${m}" title="Excel con la liquidación de este contrato, mes y régimen">⬇ Excel de este mes</button>
         <button class="btn sm" data-lqcons="${esc(contrato)}" title="Un solo Excel con todos los meses elegidos: hoja Subsidiado y hoja Contributivo">⬇ Consolidado del contrato</button>
         <a class="btn sm" href="/api/liquidacion?prefactura=${x.p}" title="El Excel tal como lo descarga la impresora del SIE (trae todos los contratos de esa prefactura)">⬇ Original del SIE (prefactura ${x.p})</a>` : ''}
         <button class="btn sm" id="dtPdf">🖨 Imprimir / PDF</button></div></div>

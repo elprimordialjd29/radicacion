@@ -8,7 +8,7 @@
 //   PUT /api/frecuencia-catalogo?tipo=DNT {actividades, diagnosticos} → cargar catálogo (admin_usuarios)
 //   GET  /api/liquidacion?anio        → liquidación LMA por contrato, régimen y mes (ver_liquidacion)
 //   POST /api/liquidacion {anio, contratos} → actualizar desde el SIE: pone en cola el bot de prefacturas (consultar_sie)
-//   GET  /api/liquidacion?prefactura=N → Excel original de esa prefactura, tal como lo baja el SIE (ver_liquidacion + descargar_reportes)
+//   GET  /api/liquidacion?prefactura=N → Excel original de esa prefactura, tal como lo baja el SIE (ver_liquidacion: ver y descargar)
 // (vercel.json reescribe /api/frecuencia, /api/frecuencia-catalogo y /api/liquidacion hacia aquí con ?accion=…)
 import { worker } from './_auth.js';
 import { requiere } from './_usuarios.js';
@@ -62,9 +62,7 @@ async function liquidacion(req, res) {
   }
   // Excel original de una prefactura (tal como lo baja la impresora del SIE): datos por contrato, sin pacientes
   if (req.query.prefactura) {
-    const ctx = await requiere(req, res, 'ver_liquidacion');
-    if (!ctx) return;
-    if (!(ctx.yo.permisos || []).includes('descargar_reportes')) return res.status(403).json({ error: 'No tienes permiso: Descargar reportes (Excel / CSV).' });
+    if (!(await requiere(req, res, 'ver_liquidacion'))) return;   // el permiso de LMA incluye descargarla
     const n = String(req.query.prefactura).replace(/\D/g, '').slice(0, 8);
     const r = await worker(`/liquidacion/prefactura/${n}`, { signal: AbortSignal.timeout(55000) });
     if (!r.ok) return res.status(r.status).json({ error: 'Esa prefactura no está descargada en el servidor' });

@@ -1,6 +1,6 @@
 {
   "name": "radicasion",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "description": "Seguimiento de radicación de contratos cápita (SIE Dusakawi) + dashboard en Vercel",
   "directories": {
     "doc": "docs"
